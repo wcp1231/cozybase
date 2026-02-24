@@ -1,0 +1,5 @@
+{
+  "name": "cozybase",
+  "private": true,
+  "workspaces": ["packages/*"]
+}
