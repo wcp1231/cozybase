@@ -1,0 +1,13 @@
+columns:
+  - name: id
+    type: text
+    primary_key: true
+  - name: name
+    type: text
+    required: true
+  - name: email
+    type: text
+    unique: true
+  - name: created_at
+    type: text
+    default: "(datetime('now'))"
