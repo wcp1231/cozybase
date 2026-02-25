@@ -1,8 +1,9 @@
 import { join } from 'path';
-import { existsSync, readdirSync, copyFileSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
+import { exportFunctionsFromDb } from './file-export';
 import { BadRequestError } from './errors';
 import { HTTP_METHODS } from '../modules/functions/types';
 
@@ -56,9 +57,13 @@ export class DraftReconciler {
     // 1. Destroy draft database
     appContext.resetDraft();
 
-    // 2. Scan migrations
-    const migrationsDir = join(this.workspace.appsDir, appName, 'migrations');
-    const migrations = this.migrationRunner.scanMigrations(migrationsDir);
+    // 2. Query migrations from app_files
+    const platformDb = this.workspace.getPlatformDb();
+    const migrationRecords = platformDb.query(
+      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+    ).all(appName) as { path: string; content: string }[];
+
+    const migrations = MigrationRunner.fromDbRecords(migrationRecords);
 
     // 3. Execute all migrations on fresh draft database
     const db = appContext.draftDb;
@@ -73,9 +78,12 @@ export class DraftReconciler {
       };
     }
 
-    // 4. Load seeds
-    const seedsDir = join(this.workspace.appsDir, appName, 'seeds');
-    const seedResult = this.seedLoader.loadSeeds(db, seedsDir);
+    // 4. Load seeds from app_files
+    const seedRecords = platformDb.query(
+      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'seeds/%' ORDER BY path",
+    ).all(appName) as { path: string; content: string }[];
+
+    const seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
 
     if (!seedResult.success) {
       return {
@@ -86,8 +94,9 @@ export class DraftReconciler {
       };
     }
 
-    // 5. Copy functions to draft directory
-    this.copyFunctionsToDraft(appName);
+    // 5. Export functions from DB to draft directory
+    const draftFunctionsDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
+    exportFunctionsFromDb(platformDb, appName, draftFunctionsDir);
 
     // 6. Validate functions (optional, non-blocking)
     const functionsResult = await this.validateFunctions(appName);
@@ -147,28 +156,5 @@ export class DraftReconciler {
     }
 
     return { validated, warnings };
-  }
-
-  /** Copy function files from source to draft directory */
-  private copyFunctionsToDraft(appName: string): void {
-    const srcDir = join(this.workspace.appsDir, appName, 'functions');
-    const destDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
-
-    // Clean destination
-    if (existsSync(destDir)) {
-      rmSync(destDir, { recursive: true, force: true });
-    }
-
-    // Copy if source exists
-    if (existsSync(srcDir)) {
-      const entries = readdirSync(srcDir, { withFileTypes: true });
-      const files = entries.filter((e) => e.isFile());
-      if (files.length > 0) {
-        mkdirSync(destDir, { recursive: true });
-        for (const entry of files) {
-          copyFileSync(join(srcDir, entry.name), join(destDir, entry.name));
-        }
-      }
-    }
   }
 }

@@ -1,7 +1,8 @@
 import { join } from 'path';
-import { existsSync, copyFileSync, unlinkSync, mkdirSync, readdirSync, rmSync } from 'fs';
+import { existsSync, copyFileSync, unlinkSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
+import { exportFunctionsFromDb } from './file-export';
 import { BadRequestError } from './errors';
 import type { FunctionRuntime } from '../modules/functions/types';
 
@@ -56,10 +57,15 @@ export class Publisher {
       copyFileSync(appContext.stableDbPath, backupPath);
     }
 
+    const platformDb = this.workspace.getPlatformDb();
+
     try {
-      // 2. Scan migrations
-      const migrationsDir = join(this.workspace.appsDir, appName, 'migrations');
-      const allMigrations = this.migrationRunner.scanMigrations(migrationsDir);
+      // 2. Query migrations from app_files
+      const migrationRecords = platformDb.query(
+        "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+      ).all(appName) as { path: string; content: string }[];
+
+      const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
 
       const db = appContext.stableDb;
 
@@ -71,10 +77,10 @@ export class Publisher {
       const pendingMigrations = this.migrationRunner.getPendingMigrations(allMigrations, executedVersions);
 
       if (pendingMigrations.length === 0 && !isNewApp) {
-        // No migrations to apply — still commit file changes (functions, seeds, etc.)
-        this.copyFunctionsToStable(appName);
+        // No migrations to apply — still export functions and update versions
+        this.exportFunctions(appName);
         this.reloadFunctions(appName);
-        this.commitChanges(appName, 'no new migrations');
+        this.markImmutableAndUpdateVersion(appName, allMigrations.map(m => m.version));
         this.cleanup(appContext);
         this.workspace.refreshAppState(appName);
         return { success: true, migrationsApplied: [] };
@@ -84,7 +90,7 @@ export class Publisher {
       const result = this.migrationRunner.executeMigrations(db, pendingMigrations);
 
       if (!result.success) {
-        // Rollback: restore backup
+        // Rollback: restore backup (don't update version or immutable)
         appContext.closeStable();
         this.restoreBackup(appContext.stableDbPath, backupPath, isNewApp);
         return {
@@ -99,17 +105,17 @@ export class Publisher {
         this.migrationRunner.recordMigration(db, migration);
       }
 
-      // 7. Copy function files to stable data dir
-      this.copyFunctionsToStable(appName);
+      // 7. Export function files from DB to stable data dir
+      this.exportFunctions(appName);
 
       // 8. Reload functions
       this.reloadFunctions(appName);
 
-      // 8. Git commit
-      const summary = pendingMigrations.map((m) => m.filename).join(', ');
-      this.commitChanges(appName, summary);
+      // 9. Mark executed migrations immutable + update published_version
+      const allExecutedVersions = [...executedVersions, ...pendingMigrations.map(m => m.version)];
+      this.markImmutableAndUpdateVersion(appName, allExecutedVersions);
 
-      // 8. Cleanup
+      // 10. Cleanup
       this.cleanup(appContext);
       this.workspace.refreshAppState(appName);
 
@@ -118,7 +124,7 @@ export class Publisher {
         migrationsApplied: result.executed,
       };
     } catch (err: any) {
-      // Unexpected error: attempt rollback
+      // Unexpected error: attempt rollback (don't update version or immutable)
       appContext.closeStable();
       this.restoreBackup(appContext.stableDbPath, backupPath, isNewApp);
       return {
@@ -129,13 +135,32 @@ export class Publisher {
     }
   }
 
-  /** Commit app changes via git */
-  private commitChanges(appName: string, summary: string): void {
-    try {
-      this.workspace.commitApp(appName, `publish: ${appName} - ${summary}`);
-    } catch (err: any) {
-      console.warn(`[publisher] Git commit failed: ${err.message}`);
+  /** Mark executed migration files as immutable and update published_version */
+  private markImmutableAndUpdateVersion(appName: string, executedVersions: number[]): void {
+    const platformDb = this.workspace.getPlatformDb();
+
+    // Mark all executed migration files as immutable
+    for (const version of executedVersions) {
+      const versionPrefix = String(version).padStart(3, '0');
+      platformDb.query(
+        "UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?",
+      ).run(appName, `migrations/${versionPrefix}_%`);
     }
+
+    // Update published_version = current_version
+    platformDb.query(
+      "UPDATE apps SET published_version = current_version, updated_at = datetime('now') WHERE name = ?",
+    ).run(appName);
+  }
+
+  /** Export function files from DB to stable data dir */
+  private exportFunctions(appName: string): void {
+    const appContext = this.workspace.getOrCreateApp(appName);
+    if (!appContext) return;
+
+    const destDir = join(appContext.stableDataDir, 'functions');
+    const platformDb = this.workspace.getPlatformDb();
+    exportFunctionsFromDb(platformDb, appName, destDir);
   }
 
   /** Notify FunctionRuntime to reload cached modules for this app */
@@ -144,29 +169,6 @@ export class Publisher {
       this.functionRuntime.reload(appName).catch((err) => {
         console.warn(`[publisher] Function reload failed for '${appName}': ${err.message}`);
       });
-    }
-  }
-
-  /** Copy function files from workspace to stable data dir (published snapshot) */
-  private copyFunctionsToStable(appName: string): void {
-    const srcDir = join(this.workspace.appsDir, appName, 'functions');
-    const appContext = this.workspace.getOrCreateApp(appName);
-    if (!appContext) return;
-
-    const destDir = join(appContext.stableDataDir, 'functions');
-
-    // Clean destination
-    if (existsSync(destDir)) {
-      rmSync(destDir, { recursive: true, force: true });
-    }
-
-    // Copy if source exists
-    if (existsSync(srcDir)) {
-      mkdirSync(destDir, { recursive: true });
-      const files = readdirSync(srcDir);
-      for (const file of files) {
-        copyFileSync(join(srcDir, file), join(destDir, file));
-      }
     }
   }
 

@@ -5,6 +5,7 @@
         "bunx": true,
         "bun": true,
         "npx tsc": true,
-        "mkdir": true
+        "mkdir": true,
+        "./node_modules/.bin/tsc": true
     }
 }

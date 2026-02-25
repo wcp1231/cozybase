@@ -8,7 +8,6 @@ export interface MigrationFile {
   version: number;
   name: string;       // e.g. "001_create_todos"
   filename: string;   // e.g. "001_create_todos.sql"
-  path: string;       // full path
   sql: string;        // file content
 }
 
@@ -26,7 +25,43 @@ const MIGRATION_PATTERN = /^(\d{3})_([a-z0-9_]+)\.sql$/;
 // --- MigrationRunner ---
 
 export class MigrationRunner {
-  /** Scan and sort migration files from a directory */
+  /** Build MigrationFile list from DB records (app_files query result) */
+  static fromDbRecords(records: { path: string; content: string }[]): MigrationFile[] {
+    const migrations: MigrationFile[] = [];
+    let lastVersion = 0;
+
+    // Sort by path to ensure order
+    const sorted = [...records].sort((a, b) => a.path.localeCompare(b.path));
+
+    for (const record of sorted) {
+      // Extract filename from path (e.g. "migrations/001_init.sql" → "001_init.sql")
+      const filename = record.path.replace(/^migrations\//, '');
+      const match = filename.match(MIGRATION_PATTERN);
+      if (!match) {
+        if (filename.endsWith('.sql')) {
+          throw new Error(
+            `Invalid migration filename: ${filename} (expected {NNN}_{description}.sql format)`,
+          );
+        }
+        continue;
+      }
+
+      const version = parseInt(match[1], 10);
+      const name = basename(filename, '.sql');
+
+      // Warn on non-consecutive versions
+      if (lastVersion > 0 && version !== lastVersion + 1) {
+        console.warn(`[migration] Non-consecutive version: ${filename} (expected ${String(lastVersion + 1).padStart(3, '0')})`);
+      }
+      lastVersion = version;
+
+      migrations.push({ version, name, filename, sql: record.content });
+    }
+
+    return migrations;
+  }
+
+  /** Scan and sort migration files from a directory (used for filesystem migration) */
   scanMigrations(migrationsDir: string): MigrationFile[] {
     if (!existsSync(migrationsDir)) {
       return [];
@@ -49,8 +84,7 @@ export class MigrationRunner {
 
       const version = parseInt(match[1], 10);
       const name = basename(filename, '.sql');
-      const path = join(migrationsDir, filename);
-      const sql = readFileSync(path, 'utf-8');
+      const sql = readFileSync(join(migrationsDir, filename), 'utf-8');
 
       // Warn on non-consecutive versions
       if (lastVersion > 0 && version !== lastVersion + 1) {
@@ -58,7 +92,7 @@ export class MigrationRunner {
       }
       lastVersion = version;
 
-      migrations.push({ version, name, filename, path, sql });
+      migrations.push({ version, name, filename, sql });
     }
 
     return migrations;

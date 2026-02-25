@@ -1,21 +1,20 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { Database } from 'bun:sqlite';
 import { DraftReconciler } from '../../src/core/draft-reconciler';
 import { Verifier } from '../../src/core/verifier';
 import { Publisher } from '../../src/core/publisher';
 import {
   createTestWorkspace,
   createTestApp,
-  commitAll,
   addMigration,
   addFunction,
   modifyMigration,
+  deleteAppFile,
+  readAppFile,
   setAppSpec,
   openDraftDb,
   openStableDb,
-  gitExec,
   MIGRATION_CREATE_TODOS,
   MIGRATION_ADD_PRIORITY,
   MIGRATION_BAD_SQL,
@@ -36,8 +35,8 @@ describe('End-to-end Reconciler Scenarios', () => {
     test('full draft development cycle', async () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app with migration + seed (uncommitted)
-      createTestApp(handle.root, 'todos', {
+      // Step 1: Create app with migration + seed
+      createTestApp(handle, 'todos', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         seeds: { '01_seed.sql': SEED_TODOS_SQL },
       });
@@ -60,7 +59,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       db.close();
 
       // Step 5: Add new migration
-      addMigration(handle.root, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+      addMigration(handle, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
 
       // Step 6: Re-reconcile
       const result2 = await reconciler.reconcile('todos');
@@ -84,8 +83,8 @@ describe('End-to-end Reconciler Scenarios', () => {
     test('publish from draft creates full stable environment', () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app (uncommitted)
-      createTestApp(handle.root, 'todos', {
+      // Step 1: Create app
+      createTestApp(handle, 'todos', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         seeds: { '01_seed.sql': SEED_TODOS_SQL },
       });
@@ -108,14 +107,17 @@ describe('End-to-end Reconciler Scenarios', () => {
       const versions = db.query('SELECT version FROM _migrations ORDER BY version').all() as { version: number }[];
       expect(versions.map((v) => v.version)).toEqual([1]);
 
-      // Step 6: Table structure exists in stable (Publisher runs migrations only, not seeds)
+      // Step 6: Table structure exists in stable
       const tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='todos'").all();
       expect(tables).toHaveLength(1);
       db.close();
 
-      // Step 7: Git log shows publish commit
-      const log = gitExec(handle.root, ['log', '--oneline']);
-      expect(log).toContain('publish: todos');
+      // Step 7: Migrations marked immutable
+      const platformDb = handle.workspace.getPlatformDb();
+      const migFile = platformDb.query(
+        "SELECT immutable FROM app_files WHERE app_name = 'todos' AND path LIKE 'migrations/001%'",
+      ).get() as { immutable: number };
+      expect(migFile.immutable).toBe(1);
 
       // Step 8: Draft DB removed
       const draftDbPath = join(handle.root, 'draft', 'apps', 'todos', 'db.sqlite');
@@ -133,15 +135,15 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app and publish (establish stable)
-      createTestApp(handle.root, 'todos', {
+      createTestApp(handle, 'todos', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('todos');
       const publisher = new Publisher(handle.workspace);
       publisher.publish('todos');
 
-      // Step 2: Add new migration (not committed)
-      addMigration(handle.root, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+      // Step 2: Add new migration
+      addMigration(handle, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
 
       // Step 3: State is stable_draft
       handle.workspace.refreshAppState('todos');
@@ -184,22 +186,22 @@ describe('End-to-end Reconciler Scenarios', () => {
   });
 
   // --- Scenario 9.4 ---
-  describe('9.4: Modify committed migration -> Verify -> immutability error', () => {
-    test('committed migration modification detected', () => {
+  describe('9.4: Modify published migration -> Verify -> immutability error', () => {
+    test('published migration tampering detected', () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app and publish (creates stable DB + git commit)
-      createTestApp(handle.root, 'todos', {
+      // Step 1: Create app and publish (marks migrations immutable)
+      createTestApp(handle, 'todos', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('todos');
       const publisher = new Publisher(handle.workspace);
       publisher.publish('todos');
 
-      // Step 2: Modify committed migration file
-      modifyMigration(handle.root, 'todos', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
+      // Step 2: Modify published migration (clears immutable flag in test helper)
+      modifyMigration(handle, 'todos', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
 
-      // Step 3: State is stable_draft (modified file detected by git)
+      // Step 3: State is stable_draft (current_version incremented)
       handle.workspace.refreshAppState('todos');
       expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
 
@@ -218,7 +220,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app marked as deleted
-      createTestApp(handle.root, 'todos', {
+      createTestApp(handle, 'todos', {
         spec: { description: 'old app', status: 'deleted' },
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
@@ -242,7 +244,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app and publish (establish stable)
-      createTestApp(handle.root, 'todos', {
+      createTestApp(handle, 'todos', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('todos');
@@ -254,14 +256,12 @@ describe('End-to-end Reconciler Scenarios', () => {
       appCtx.stableDb.exec("INSERT INTO todos (id, title) VALUES (999, 'canary')");
       appCtx.closeStable();
 
-      // Step 3: Add bad migration (not committed)
-      addMigration(handle.root, 'todos', '002_bad.sql', MIGRATION_BAD_SQL);
+      // Step 3: Add bad migration
+      addMigration(handle, 'todos', '002_bad.sql', MIGRATION_BAD_SQL);
 
       // Step 4: State is stable_draft
       handle.workspace.refreshAppState('todos');
       expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
-
-      const commitsBefore = gitExec(handle.root, ['log', '--oneline']).trim().split('\n').length;
 
       // Step 5: Publish should fail
       const result = publisher.publish('todos');
@@ -277,10 +277,6 @@ describe('End-to-end Reconciler Scenarios', () => {
       const versions = db.query('SELECT version FROM _migrations ORDER BY version').all() as { version: number }[];
       expect(versions.map((v) => v.version)).toEqual([1]);
       db.close();
-
-      // Step 8: No new git commit
-      const commitsAfter = gitExec(handle.root, ['log', '--oneline']).trim().split('\n').length;
-      expect(commitsAfter).toBe(commitsBefore);
     });
   });
 
@@ -289,36 +285,33 @@ describe('End-to-end Reconciler Scenarios', () => {
     test('after init + publish, template app is stable with DB and functions', () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app with migration + function (simulating template copy)
+      // Step 1: Create app with migration + function (simulating template)
       const fnCode = 'export async function GET(ctx) { return ctx.db.query("SELECT 1"); }';
-      createTestApp(handle.root, 'welcome', {
+      createTestApp(handle, 'welcome', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         seeds: { '01_seed.sql': SEED_TODOS_SQL },
         functions: { 'todos.ts': fnCode },
       });
 
-      // Step 2: Commit (simulating what workspace.init() does after template copy)
-      commitAll(handle.root, 'init workspace');
-
-      // Step 3: State is draft_only (no stable DB, no unstaged changes)
+      // Step 2: State is draft_only
       handle.workspace.refreshAppState('welcome');
       expect(handle.workspace.getAppState('welcome')).toBe('draft_only');
 
-      // Step 4: Auto-publish (simulating what server.ts does after init)
+      // Step 3: Auto-publish (simulating what server.ts does after init)
       const publisher = new Publisher(handle.workspace);
       const result = publisher.publish('welcome');
       expect(result.success).toBe(true);
 
-      // Step 5: Stable DB now exists
+      // Step 4: Stable DB now exists
       const stableDbPath = join(handle.root, 'data', 'apps', 'welcome', 'db.sqlite');
       expect(existsSync(stableDbPath)).toBe(true);
 
-      // Step 6: Stable functions directory exists with todos.ts
+      // Step 5: Stable functions directory exists with todos.ts
       const stableFnDir = join(handle.root, 'data', 'apps', 'welcome', 'functions');
       expect(existsSync(stableFnDir)).toBe(true);
       expect(existsSync(join(stableFnDir, 'todos.ts'))).toBe(true);
 
-      // Step 7: State is now stable
+      // Step 6: State is now stable
       handle.workspace.refreshAppState('welcome');
       expect(handle.workspace.getAppState('welcome')).toBe('stable');
     });
@@ -329,9 +322,9 @@ describe('End-to-end Reconciler Scenarios', () => {
     test('reconcile copies function files to draft/apps/{name}/functions/', async () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app with migration + function (uncommitted)
+      // Step 1: Create app with migration + functions
       const fnCode = 'export async function GET(ctx) { return []; }';
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
       });
@@ -354,26 +347,26 @@ describe('End-to-end Reconciler Scenarios', () => {
       const files = readdirSync(draftFnDir).sort();
       expect(files).toEqual(['orders.ts', 'users.ts']);
 
-      // Step 6: Content matches source
-      const srcContent = readFileSync(join(handle.root, 'apps', 'myapp', 'functions', 'orders.ts'), 'utf-8');
+      // Step 6: Content matches what was stored in DB
+      const dbContent = readAppFile(handle, 'myapp', 'functions/orders.ts');
       const draftContent = readFileSync(join(draftFnDir, 'orders.ts'), 'utf-8');
-      expect(draftContent).toBe(srcContent);
+      expect(draftContent).toBe(dbContent);
     });
   });
 
-  // --- Scenario 9.9: Draft functions isolation — source changes don't affect draft until reconcile ---
+  // --- Scenario 9.9: Draft functions isolation — DB changes don't affect draft until reconcile ---
   describe('9.9: Draft functions require reconcile after source modification', () => {
     test('modifying source function does not update draft until reconcile', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with function
       const fnCodeV1 = 'export async function GET(ctx) { return { version: 1 }; }';
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         functions: { 'handler.ts': fnCodeV1 },
       });
 
-      // Step 2: First reconcile — copies v1 to draft
+      // Step 2: First reconcile — exports v1 to draft
       handle.workspace.refreshAppState('myapp');
       const reconciler = new DraftReconciler(handle.workspace);
       const result1 = await reconciler.reconcile('myapp');
@@ -382,16 +375,16 @@ describe('End-to-end Reconciler Scenarios', () => {
       const draftFnPath = join(handle.root, 'draft', 'apps', 'myapp', 'functions', 'handler.ts');
       expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
 
-      // Step 3: Modify source function (v2)
+      // Step 3: Modify function in DB (v2)
       const fnCodeV2 = 'export async function GET(ctx) { return { version: 2 }; }';
-      addFunction(handle.root, 'myapp', 'handler.ts', fnCodeV2);
+      addFunction(handle, 'myapp', 'handler.ts', fnCodeV2);
 
       // Step 4: Draft still has v1 (no reconcile yet)
       expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
 
-      // Step 5: Source has v2
-      const srcFnPath = join(handle.root, 'apps', 'myapp', 'functions', 'handler.ts');
-      expect(readFileSync(srcFnPath, 'utf-8')).toContain('version: 2');
+      // Step 5: DB has v2
+      const dbContent = readAppFile(handle, 'myapp', 'functions/handler.ts');
+      expect(dbContent).toContain('version: 2');
 
       // Step 6: Reconcile again — draft now has v2
       const result2 = await reconciler.reconcile('myapp');
@@ -402,17 +395,17 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.10: Deleted function cleaned on re-reconcile ---
   describe('9.10: Re-reconcile cleans up deleted function from draft directory', () => {
-    test('removing a source function then reconciling clears it from draft', async () => {
+    test('removing a function from DB then reconciling clears it from draft', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with two functions
       const fnCode = 'export async function GET(ctx) { return []; }';
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
       });
 
-      // Step 2: First reconcile — both copied to draft
+      // Step 2: First reconcile — both exported to draft
       handle.workspace.refreshAppState('myapp');
       const reconciler = new DraftReconciler(handle.workspace);
       const result1 = await reconciler.reconcile('myapp');
@@ -421,8 +414,8 @@ describe('End-to-end Reconciler Scenarios', () => {
       const draftFnDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
       expect(readdirSync(draftFnDir).sort()).toEqual(['orders.ts', 'users.ts']);
 
-      // Step 3: Delete orders.ts from source
-      unlinkSync(join(handle.root, 'apps', 'myapp', 'functions', 'orders.ts'));
+      // Step 3: Delete orders.ts from app_files DB
+      deleteAppFile(handle, 'myapp', 'functions/orders.ts');
 
       // Step 4: Re-reconcile — draft should only have users.ts
       const result2 = await reconciler.reconcile('myapp');

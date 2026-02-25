@@ -1,38 +1,27 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
-import type { AppDefinition } from './workspace';
 
 export class AppContext {
   readonly name: string;
-  readonly specDir: string;
   readonly stableDataDir: string;
   readonly stableDbPath: string;
   readonly draftDataDir: string;
   readonly draftDbPath: string;
 
-  private _definition: AppDefinition;
   private _stableDb: Database | null = null;
   private _draftDb: Database | null = null;
 
   constructor(
     name: string,
-    definition: AppDefinition,
-    appsDir: string,
     dataRootDir: string,
     draftRootDir: string,
   ) {
     this.name = name;
-    this._definition = definition;
-    this.specDir = join(appsDir, name);
     this.stableDataDir = join(dataRootDir, 'apps', name);
     this.stableDbPath = join(this.stableDataDir, 'db.sqlite');
     this.draftDataDir = join(draftRootDir, 'apps', name);
     this.draftDbPath = join(this.draftDataDir, 'db.sqlite');
-  }
-
-  get definition(): AppDefinition {
-    return this._definition;
   }
 
   /** Get the app's Stable SQLite database connection (lazy initialized) */

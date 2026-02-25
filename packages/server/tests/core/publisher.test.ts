@@ -6,15 +6,12 @@ import { Publisher } from '../../src/core/publisher';
 import {
   createTestWorkspace,
   createTestApp,
-  commitAll,
   addMigration,
   createStableDb,
   openStableDb,
-  gitExec,
   MIGRATION_CREATE_TODOS,
   MIGRATION_ADD_PRIORITY,
   MIGRATION_BAD_SQL,
-  SEED_TODOS_SQL,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -26,9 +23,9 @@ describe('Publisher', () => {
   });
 
   describe('publish draft_only app', () => {
-    test('creates stable DB, records migrations, commits, cleans draft', () => {
+    test('creates stable DB, records migrations, marks immutable, cleans draft', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('myapp');
@@ -54,15 +51,24 @@ describe('Publisher', () => {
       expect(tables).toHaveLength(1);
       db.close();
 
-      // 4. Git commit exists
-      const log = gitExec(handle.root, ['log', '--oneline']);
-      expect(log).toContain('publish: myapp');
+      // 4. Migrations marked immutable in platform DB
+      const platformDb = handle.workspace.getPlatformDb();
+      const migFile = platformDb.query(
+        "SELECT immutable FROM app_files WHERE app_name = 'myapp' AND path LIKE 'migrations/001%'",
+      ).get() as { immutable: number };
+      expect(migFile.immutable).toBe(1);
 
-      // 5. Draft DB cleaned up
+      // 5. published_version updated
+      const appRow = platformDb.query(
+        "SELECT published_version, current_version FROM apps WHERE name = 'myapp'",
+      ).get() as { published_version: number; current_version: number };
+      expect(appRow.published_version).toBe(appRow.current_version);
+
+      // 6. Draft DB cleaned up
       const draftDbPath = join(handle.root, 'draft', 'apps', 'myapp', 'db.sqlite');
       expect(existsSync(draftDbPath)).toBe(false);
 
-      // 6. State is now stable
+      // 7. State is now stable
       handle.workspace.refreshAppState('myapp');
       expect(handle.workspace.getAppState('myapp')).toBe('stable');
     });
@@ -73,15 +79,15 @@ describe('Publisher', () => {
       handle = createTestWorkspace();
 
       // Phase 1: Create app and publish
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
       publisher.publish('myapp');
 
-      // Phase 2: Add new migration (not committed)
-      addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+      // Phase 2: Add new migration
+      addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
       handle.workspace.refreshAppState('myapp');
       expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
 
@@ -105,10 +111,12 @@ describe('Publisher', () => {
       const backupPath = join(handle.root, 'data', 'apps', 'myapp', 'db.sqlite.bak');
       expect(existsSync(backupPath)).toBe(true);
 
-      // 4. New git commit
-      const log = gitExec(handle.root, ['log', '--oneline']);
-      const publishCommits = log.split('\n').filter((l: string) => l.includes('publish: myapp'));
-      expect(publishCommits.length).toBeGreaterThanOrEqual(2);
+      // 4. Both migrations marked immutable
+      const platformDb = handle.workspace.getPlatformDb();
+      const immutableCount = platformDb.query(
+        "SELECT COUNT(*) as cnt FROM app_files WHERE app_name = 'myapp' AND path LIKE 'migrations/%' AND immutable = 1",
+      ).get() as { cnt: number };
+      expect(immutableCount.cnt).toBe(2);
 
       // 5. Draft cleaned, state stable
       handle.workspace.refreshAppState('myapp');
@@ -121,7 +129,7 @@ describe('Publisher', () => {
       handle = createTestWorkspace();
 
       // Phase 1: Create and publish
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('myapp');
@@ -135,10 +143,8 @@ describe('Publisher', () => {
       appCtx.closeStable();
 
       // Phase 2: Add bad migration
-      addMigration(handle.root, 'myapp', '002_bad.sql', MIGRATION_BAD_SQL);
+      addMigration(handle, 'myapp', '002_bad.sql', MIGRATION_BAD_SQL);
       handle.workspace.refreshAppState('myapp');
-
-      const commitsBefore = gitExec(handle.root, ['log', '--oneline']).trim().split('\n').length;
 
       // Publish should fail
       const result = publisher.publish('myapp');
@@ -156,15 +162,11 @@ describe('Publisher', () => {
       const versions = db.query('SELECT version FROM _migrations ORDER BY version').all() as { version: number }[];
       expect(versions.map((v) => v.version)).toEqual([1]);
       db.close();
-
-      // No new git commit
-      const commitsAfter = gitExec(handle.root, ['log', '--oneline']).trim().split('\n').length;
-      expect(commitsAfter).toBe(commitsBefore);
     });
 
     test('for new app failure: deletes failed stable DB', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_bad.sql': MIGRATION_BAD_SQL },
       });
       handle.workspace.refreshAppState('myapp');
@@ -183,7 +185,7 @@ describe('Publisher', () => {
   describe('edge cases', () => {
     test('throws BadRequestError for deleted app', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         spec: { description: 'test', status: 'deleted' },
       });
       handle.workspace.refreshAppState('myapp');
@@ -194,11 +196,10 @@ describe('Publisher', () => {
 
     test('throws BadRequestError for stable app with no draft changes', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
-      commitAll(handle.root, 'add app');
-      createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
       handle.workspace.refreshAppState('myapp');
 
       const publisher = new Publisher(handle.workspace);

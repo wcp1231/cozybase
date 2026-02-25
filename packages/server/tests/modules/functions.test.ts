@@ -3,6 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
+import { Database } from 'bun:sqlite';
 import { createServer } from '../../src/server';
 import type { Config } from '../../src/config';
 import {
@@ -10,7 +11,6 @@ import {
   createTestApp,
   addFunction,
   MIGRATION_CREATE_TODOS,
-  SEED_TODOS_SQL,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -79,7 +79,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('draft reconcile validates functions', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -98,7 +98,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('draft function GET returns correct response', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -119,7 +119,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('publish then stable function returns correct response', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -143,7 +143,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('draft function requires reconcile to pick up file changes', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -156,8 +156,8 @@ describe('Function Runtime (HTTP integration)', () => {
     const body1 = await jsonBody(res1);
     expect(body1.version).toBeUndefined();
 
-    // Modify function on disk (source only)
-    addFunction(handle.root, 'myapp', 'health.ts', FN_HEALTH_V2);
+    // Modify function in DB (source only)
+    addFunction(handle, 'myapp', 'health.ts', FN_HEALTH_V2);
 
     // Second call — draft still sees old code (loads from draft dir, not source)
     const res2 = await app.request('/draft/apps/myapp/functions/health');
@@ -175,7 +175,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('404 for nonexistent function', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -192,7 +192,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('405 for unsupported HTTP method', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -210,7 +210,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('500 for function runtime error with stack in draft', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'broken.ts': FN_BROKEN },
     });
@@ -229,7 +229,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('404 for _ prefix function (reserved)', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { '_utils.ts': 'export function helper() { return 1; }' },
     });
@@ -246,7 +246,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('reconcile reports warnings for function with no valid exports', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH, 'bad.ts': FN_NO_EXPORTS },
     });
@@ -266,7 +266,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('multi-method function routes correctly', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'items.ts': FN_MULTI_METHOD },
     });
@@ -291,7 +291,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('stable function does not see workspace changes without publish', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -309,10 +309,10 @@ describe('Function Runtime (HTTP integration)', () => {
     const body1 = await jsonBody(res1);
     expect(body1.version).toBeUndefined();
 
-    // Modify workspace function to v2 (without publishing)
-    addFunction(handle.root, 'myapp', 'health.ts', FN_HEALTH_V2);
+    // Modify function in DB (without publishing)
+    addFunction(handle, 'myapp', 'health.ts', FN_HEALTH_V2);
 
-    // Stable still returns v1 (reads from published snapshot, not workspace)
+    // Stable still returns v1 (reads from published snapshot, not DB)
     const res2 = await app.request('/stable/apps/myapp/functions/health');
     expect(res2.status).toBe(200);
     const body2 = await jsonBody(res2);
@@ -328,7 +328,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('publish refreshes stable function to new code', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -344,8 +344,8 @@ describe('Function Runtime (HTTP integration)', () => {
     const body1 = await jsonBody(res1);
     expect(body1.version).toBeUndefined();
 
-    // Update workspace function to v2 and publish again
-    addFunction(handle.root, 'myapp', 'health.ts', FN_HEALTH_V2);
+    // Update function in DB and publish again
+    addFunction(handle, 'myapp', 'health.ts', FN_HEALTH_V2);
     await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
     const pubRes2 = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
     expect((await jsonBody(pubRes2)).data.success).toBe(true);
@@ -359,7 +359,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('syntax error in function returns 500 with FUNCTION_LOAD_ERROR', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'bad.ts': FN_SYNTAX_ERROR },
     });
@@ -376,7 +376,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
   test('shutdown clears function runtime caches', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       functions: { 'health.ts': FN_HEALTH },
     });
@@ -442,11 +442,14 @@ describe('createServer() first-init auto-publish', () => {
       workspaceDir: tmpRoot,
       jwtSecret: 'test-secret',
     });
+    expect(ws1.getAppState('welcome')).toBe('stable');
     ws1.close();
 
-    // Delete the stable DB to simulate a "draft_only" state
-    const stableDir = join(tmpRoot, 'data', 'apps', 'welcome');
-    rmSync(stableDir, { recursive: true, force: true });
+    // Increment current_version in platform DB to simulate a new draft change
+    const platformDbPath = join(tmpRoot, 'data', 'platform.sqlite');
+    const db = new Database(platformDbPath);
+    db.query("UPDATE apps SET current_version = current_version + 1 WHERE name = 'welcome'").run();
+    db.close();
 
     // Second boot — should NOT auto-publish (workspace already initialized)
     const { workspace: ws2 } = createServer({
@@ -456,9 +459,9 @@ describe('createServer() first-init auto-publish', () => {
       jwtSecret: 'test-secret',
     });
 
-    // State should be draft_only — auto-publish did NOT run
+    // State should be stable_draft — auto-publish did NOT run
     const state = ws2.getAppState('welcome');
-    expect(state).toBe('draft_only');
+    expect(state).toBe('stable_draft');
 
     ws2.close();
   });

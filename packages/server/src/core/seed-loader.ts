@@ -20,7 +20,44 @@ const SeedJsonSchema = z.object({
 // --- SeedLoader ---
 
 export class SeedLoader {
-  /** Load all seed files from a directory into the database */
+  /** Load seeds from DB records (app_files query result) */
+  loadSeedsFromRecords(db: Database, records: { path: string; content: string }[]): SeedResult {
+    if (records.length === 0) {
+      return { success: true, loaded: [] };
+    }
+
+    // Sort by path to ensure order
+    const sorted = [...records].sort((a, b) => a.path.localeCompare(b.path));
+    const loaded: string[] = [];
+
+    for (const record of sorted) {
+      const filename = record.path.replace(/^seeds\//, '');
+
+      try {
+        if (filename.endsWith('.sql')) {
+          db.exec(record.content);
+          loaded.push(filename);
+        } else if (filename.endsWith('.json')) {
+          const parsed = JSON.parse(record.content);
+          const seed = SeedJsonSchema.parse(parsed);
+          this.insertJsonSeed(db, seed.table, seed.rows);
+          loaded.push(filename);
+        }
+        // Skip non-.sql/.json files silently
+      } catch (err: any) {
+        return {
+          success: false,
+          loaded,
+          error: err.message,
+          failedSeed: filename,
+        };
+      }
+    }
+
+    return { success: true, loaded };
+  }
+
+  /** Load all seed files from a directory into the database (used for filesystem migration) */
   loadSeeds(db: Database, seedsDir: string): SeedResult {
     if (!existsSync(seedsDir)) {
       return { success: true, loaded: [] };

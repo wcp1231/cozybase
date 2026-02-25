@@ -25,7 +25,6 @@ export interface TestWorkspaceHandle {
 export function createTestWorkspace(): TestWorkspaceHandle {
   const root = mkdtempSync(join(tmpdir(), 'cozybase-test-'));
 
-  mkdirSync(join(root, 'apps'), { recursive: true });
   mkdirSync(join(root, 'data'), { recursive: true });
   mkdirSync(join(root, 'draft'), { recursive: true });
 
@@ -34,19 +33,6 @@ export function createTestWorkspace(): TestWorkspaceHandle {
     stringifyYAML({ name: 'cozybase', version: 1 }),
     'utf-8',
   );
-
-  writeFileSync(
-    join(root, '.gitignore'),
-    ['data/', 'draft/', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', ''].join('\n'),
-    'utf-8',
-  );
-
-  // Init git repo with user config for commits
-  gitExec(root, ['init']);
-  gitExec(root, ['config', 'user.email', 'test@test.com']);
-  gitExec(root, ['config', 'user.name', 'Test']);
-  gitExec(root, ['add', '.']);
-  gitExec(root, ['commit', '-m', 'init workspace']);
 
   const workspace = new Workspace(root);
   workspace.load();
@@ -61,93 +47,139 @@ export function createTestWorkspace(): TestWorkspaceHandle {
   };
 }
 
-// ---- App creation ----
+// ---- App creation (DB-backed) ----
 
 export function createTestApp(
-  root: string,
+  handle: TestWorkspaceHandle,
   appName: string,
   opts: TestAppSpec = {},
 ): void {
-  const appDir = join(root, 'apps', appName);
-  mkdirSync(appDir, { recursive: true });
+  const db = handle.workspace.getPlatformDb();
 
   const spec = opts.spec ?? { description: `Test app: ${appName}` };
-  writeFileSync(join(appDir, 'app.yaml'), stringifyYAML(spec), 'utf-8');
+  const description = typeof spec.description === 'string' ? spec.description : '';
+  const status = typeof spec.status === 'string' ? spec.status : 'active';
 
+  // Create app record
+  db.query(
+    'INSERT INTO apps (name, description, status, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
+  ).run(appName, description, status);
+
+  // Insert app.yaml
+  db.query(
+    'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+  ).run(appName, 'app.yaml', stringifyYAML(spec));
+
+  // Insert migrations
   if (opts.migrations) {
-    const migrationsDir = join(appDir, 'migrations');
-    mkdirSync(migrationsDir, { recursive: true });
     for (const [filename, sql] of Object.entries(opts.migrations)) {
-      writeFileSync(join(migrationsDir, filename), sql, 'utf-8');
+      db.query(
+        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+      ).run(appName, `migrations/${filename}`, sql);
     }
   }
 
+  // Insert seeds
   if (opts.seeds) {
-    const seedsDir = join(appDir, 'seeds');
-    mkdirSync(seedsDir, { recursive: true });
     for (const [filename, content] of Object.entries(opts.seeds)) {
-      writeFileSync(join(seedsDir, filename), content, 'utf-8');
+      db.query(
+        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+      ).run(appName, `seeds/${filename}`, content);
     }
   }
 
+  // Insert functions
   if (opts.functions) {
-    const functionsDir = join(appDir, 'functions');
-    mkdirSync(functionsDir, { recursive: true });
     for (const [filename, code] of Object.entries(opts.functions)) {
-      writeFileSync(join(functionsDir, filename), code, 'utf-8');
+      db.query(
+        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+      ).run(appName, `functions/${filename}`, code);
     }
   }
 }
 
-// ---- Git helpers ----
+// ---- File mutation helpers (DB-backed) ----
 
-export function gitExec(root: string, args: string[]): string {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim();
-    throw new Error(`git ${args.join(' ')} failed: ${stderr}`);
+export function addMigration(handle: TestWorkspaceHandle, appName: string, filename: string, sql: string): void {
+  const db = handle.workspace.getPlatformDb();
+  db.query(`
+    INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)
+    ON CONFLICT(app_name, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
+  `).run(appName, `migrations/${filename}`, sql);
+
+  // Increment current_version
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+}
+
+export function addFunction(handle: TestWorkspaceHandle, appName: string, filename: string, code: string): void {
+  const db = handle.workspace.getPlatformDb();
+  db.query(`
+    INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)
+    ON CONFLICT(app_name, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
+  `).run(appName, `functions/${filename}`, code);
+
+  // Increment current_version
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+}
+
+export function deleteAppFile(handle: TestWorkspaceHandle, appName: string, path: string): void {
+  const db = handle.workspace.getPlatformDb();
+  db.query('DELETE FROM app_files WHERE app_name = ? AND path = ?').run(appName, path);
+
+  // Increment current_version
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+}
+
+export function modifyMigration(handle: TestWorkspaceHandle, appName: string, filename: string, newSql: string): void {
+  const db = handle.workspace.getPlatformDb();
+
+  // Check if immutable - force-clear immutable flag to simulate modification of published migration
+  const record = db.query(
+    'SELECT immutable FROM app_files WHERE app_name = ? AND path = ?',
+  ).get(appName, `migrations/${filename}`) as { immutable: number } | null;
+
+  if (record && record.immutable === 1) {
+    // Clear immutable flag and update content (simulates someone tampering with a published migration)
+    db.query(
+      "UPDATE app_files SET immutable = 0, content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = ?",
+    ).run(newSql, appName, `migrations/${filename}`);
+  } else {
+    db.query(
+      "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = ?",
+    ).run(newSql, appName, `migrations/${filename}`);
   }
-  return result.stdout.toString();
+
+  // Increment current_version
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
 }
 
-export function commitAll(root: string, message = 'test commit'): void {
-  gitExec(root, ['add', '-A']);
-  gitExec(root, ['commit', '-m', message]);
+export function setAppSpec(handle: TestWorkspaceHandle, appName: string, spec: Record<string, unknown>): void {
+  const db = handle.workspace.getPlatformDb();
+  const content = stringifyYAML(spec);
+
+  db.query(
+    "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = 'app.yaml'",
+  ).run(content, appName);
+
+  // Also update description and status in apps table if provided
+  if (spec.description !== undefined) {
+    db.query('UPDATE apps SET description = ? WHERE name = ?').run(String(spec.description), appName);
+  }
+  if (spec.status !== undefined) {
+    db.query('UPDATE apps SET status = ? WHERE name = ?').run(String(spec.status), appName);
+  }
+
+  // Increment current_version
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
 }
 
-export function commitApp(root: string, appName: string, message?: string): void {
-  gitExec(root, ['add', `apps/${appName}/`]);
-  gitExec(root, ['commit', '-m', message ?? `commit ${appName}`]);
-}
-
-// ---- File mutation helpers ----
-
-export function addMigration(root: string, appName: string, filename: string, sql: string): void {
-  const migrationsDir = join(root, 'apps', appName, 'migrations');
-  mkdirSync(migrationsDir, { recursive: true });
-  writeFileSync(join(migrationsDir, filename), sql, 'utf-8');
-}
-
-export function addFunction(root: string, appName: string, filename: string, code: string): void {
-  const functionsDir = join(root, 'apps', appName, 'functions');
-  mkdirSync(functionsDir, { recursive: true });
-  writeFileSync(join(functionsDir, filename), code, 'utf-8');
-}
-
-export function modifyMigration(root: string, appName: string, filename: string, newSql: string): void {
-  writeFileSync(join(root, 'apps', appName, 'migrations', filename), newSql, 'utf-8');
-}
-
-export function setAppSpec(root: string, appName: string, spec: Record<string, unknown>): void {
-  writeFileSync(
-    join(root, 'apps', appName, 'app.yaml'),
-    stringifyYAML(spec),
-    'utf-8',
-  );
+/** Read a file's content from app_files DB */
+export function readAppFile(handle: TestWorkspaceHandle, appName: string, path: string): string | null {
+  const db = handle.workspace.getPlatformDb();
+  const record = db.query(
+    'SELECT content FROM app_files WHERE app_name = ? AND path = ?',
+  ).get(appName, path) as { content: string } | null;
+  return record?.content ?? null;
 }
 
 // ---- Database helpers ----
@@ -160,8 +192,10 @@ export function openStableDb(root: string, appName: string): Database {
   return new Database(join(root, 'data', 'apps', appName, 'db.sqlite'));
 }
 
-/** Create a stable DB with migrations already applied (simulating a prior publish) */
-export function createStableDb(root: string, appName: string, migrationSqls: string[], versions: number[]): void {
+/** Create a stable DB with migrations already applied (simulating a prior publish).
+ *  Also marks migrations as immutable and sets published_version in platform DB. */
+export function createStableDb(handle: TestWorkspaceHandle, appName: string, migrationSqls: string[], versions: number[]): void {
+  const root = handle.root;
   const stableDir = join(root, 'data', 'apps', appName);
   mkdirSync(stableDir, { recursive: true });
   const db = new Database(join(stableDir, 'db.sqlite'));
@@ -186,6 +220,15 @@ export function createStableDb(root: string, appName: string, migrationSqls: str
   }
 
   db.close();
+
+  // Mark migrations as immutable and update published_version in platform DB
+  const platformDb = handle.workspace.getPlatformDb();
+  for (const v of versions) {
+    const versionPrefix = String(v).padStart(3, '0');
+    platformDb.query('UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?')
+      .run(appName, `migrations/${versionPrefix}_%`);
+  }
+  platformDb.query('UPDATE apps SET published_version = current_version WHERE name = ?').run(appName);
 }
 
 // ---- Standard test fixtures ----

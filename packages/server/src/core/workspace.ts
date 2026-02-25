@@ -1,51 +1,43 @@
 import { Database } from 'bun:sqlite';
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 import { z } from 'zod';
 import { AppContext } from './app-context';
 
 // --- YAML Schema Definitions ---
 
-const AppSpecSchema = z.object({
-  description: z.string().optional(),
-  status: z.enum(['deleted']).optional(),
-}).passthrough();
-
 const WorkspaceConfigSchema = z.object({
   name: z.string(),
   version: z.number().int().positive(),
 });
 
-export type AppSpec = z.infer<typeof AppSpecSchema>;
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 
 // --- App State ---
 
 export type AppState = 'draft_only' | 'stable' | 'stable_draft' | 'deleted';
 
-// --- App Discovery Result ---
+// --- App Definition (DB-backed) ---
 
 export interface AppDefinition {
   name: string;
-  dir: string;
-  spec: AppSpec;
-  migrations: string[];   // migration file paths (sorted)
-  seeds: string[];         // seed file paths (sorted)
-  functions: string[];     // function names (file stems)
+  description: string;
+  status: string;
+  current_version: number;
+  published_version: number;
 }
 
 // --- Constants ---
 
 const SUPPORTED_VERSION = 1;
-const APP_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates');
 
 // --- Workspace ---
 
 export class Workspace {
   readonly root: string;
-  readonly appsDir: string;
+  readonly appsDir: string; // Kept for backward compat (old modules read from here during transition)
   readonly dataDir: string;
   readonly draftDir: string;
 
@@ -68,9 +60,8 @@ export class Workspace {
     return existsSync(join(this.root, 'workspace.yaml'));
   }
 
-  /** Initialize a new workspace: directories, config, git, example app */
+  /** Initialize a new workspace: directories, config, template apps to DB */
   init(): void {
-    mkdirSync(this.appsDir, { recursive: true });
     mkdirSync(this.dataDir, { recursive: true });
     mkdirSync(this.draftDir, { recursive: true });
 
@@ -82,33 +73,9 @@ export class Workspace {
       'utf-8',
     );
 
-    // Write .gitignore
-    writeFileSync(
-      join(this.root, '.gitignore'),
-      ['data/', 'draft/', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', ''].join('\n'),
-      'utf-8',
-    );
-
-    // Copy template apps to workspace
-    if (existsSync(TEMPLATES_DIR)) {
-      const entries = readdirSync(TEMPLATES_DIR, { withFileTypes: true });
-      const templates = entries.filter((e) => e.isDirectory());
-      if (templates.length === 0) {
-        console.warn('[workspace] No template apps found in templates directory');
-      }
-      for (const entry of templates) {
-        const src = join(TEMPLATES_DIR, entry.name);
-        const dest = join(this.appsDir, entry.name);
-        cpSync(src, dest, { recursive: true });
-      }
-    } else {
-      console.warn('[workspace] Templates directory not found, skipping template app creation');
-    }
-
-    // Git init + initial commit (best effort)
-    this.gitExec(['init']);
-    this.gitExec(['add', '.']);
-    this.gitExec(['commit', '-m', 'init workspace']);
+    // Initialize platform DB and load template apps
+    this.getPlatformDb();
+    this.loadTemplateApps();
   }
 
   /** Load workspace configuration and initialize platform DB */
@@ -126,6 +93,9 @@ export class Workspace {
 
     // Eagerly initialize platform DB
     this.getPlatformDb();
+
+    // Migrate old filesystem-based workspace if needed
+    this.migrateOldWorkspace();
 
     // Initialize app state cache
     this.refreshAllAppStates();
@@ -195,7 +165,27 @@ export class Workspace {
         expires_at TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS app_files (
+        app_name TEXT NOT NULL REFERENCES apps(name) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        content TEXT NOT NULL,
+        immutable INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (app_name, path)
+      );
     `);
+
+    // Extend apps table with version fields (conditional ALTER)
+    const columns = db.query("PRAGMA table_info(apps)").all() as { name: string }[];
+    const columnNames = new Set(columns.map(c => c.name));
+
+    if (!columnNames.has('current_version')) {
+      db.exec("ALTER TABLE apps ADD COLUMN current_version INTEGER DEFAULT 0");
+    }
+    if (!columnNames.has('published_version')) {
+      db.exec("ALTER TABLE apps ADD COLUMN published_version INTEGER DEFAULT 0");
+    }
   }
 
   // --- App State ---
@@ -205,101 +195,55 @@ export class Workspace {
     return this._appStates.get(name);
   }
 
-  /** Refresh the state cache for a specific app */
+  /** Refresh the state cache for a specific app (DB-based) */
   refreshAppState(name: string): AppState | undefined {
-    const appDir = join(this.appsDir, name);
-    const appYamlPath = join(appDir, 'app.yaml');
+    const db = this.getPlatformDb();
+    const row = db.query(
+      'SELECT status, current_version, published_version FROM apps WHERE name = ?',
+    ).get(name) as { status: string; current_version: number; published_version: number } | null;
 
-    if (!existsSync(appYamlPath)) {
+    if (!row) {
       this._appStates.delete(name);
       return undefined;
     }
 
-    // Check for deleted status
-    try {
-      const content = readFileSync(appYamlPath, 'utf-8').trim();
-      if (content) {
-        const parsed = parseYAML(content);
-        if (parsed?.status === 'deleted') {
-          this._appStates.set(name, 'deleted');
-          return 'deleted';
-        }
-      }
-    } catch {
-      // Ignore parse errors for state detection
+    if (row.status === 'deleted') {
+      this._appStates.set(name, 'deleted');
+      return 'deleted';
     }
 
-    const stableDbPath = join(this.dataDir, 'apps', name, 'db.sqlite');
-    const stableExists = existsSync(stableDbPath);
-    const hasUnstaged = this.hasUnstagedChanges(name);
-
     let state: AppState;
-    if (stableExists && hasUnstaged) {
-      state = 'stable_draft';
-    } else if (stableExists && !hasUnstaged) {
+    if (row.published_version === 0) {
+      state = 'draft_only';
+    } else if (row.current_version === row.published_version) {
       state = 'stable';
-    } else if (!stableExists && hasUnstaged) {
-      state = 'draft_only';
     } else {
-      // No stable DB — app exists but has never been published
-      state = 'draft_only';
+      state = 'stable_draft';
     }
 
     this._appStates.set(name, state);
     return state;
   }
 
-  /** Refresh state cache for all apps */
+  /** Refresh state cache for all apps (DB-based) */
   refreshAllAppStates(): void {
     this._appStates.clear();
 
-    if (!existsSync(this.appsDir)) return;
-
-    const entries = readdirSync(this.appsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (!APP_NAME_PATTERN.test(entry.name)) continue;
-      if (entry.name.startsWith('.')) continue;
-
-      const appYamlPath = join(this.appsDir, entry.name, 'app.yaml');
-      if (!existsSync(appYamlPath)) continue;
-
-      this.refreshAppState(entry.name);
+    const db = this.getPlatformDb();
+    const rows = db.query('SELECT name FROM apps WHERE status != ?').all('deleted') as { name: string }[];
+    for (const row of rows) {
+      this.refreshAppState(row.name);
     }
-  }
-
-  /** Check if an app has unstaged changes via git status */
-  private hasUnstagedChanges(name: string): boolean {
-    const status = this.gitExec(['status', '--porcelain', `apps/${name}/`]);
-    return !!status && status.trim() !== '';
   }
 
   // --- App Management ---
 
-  /** Scan apps/ directory and return all app definitions */
+  /** Query all apps from the platform DB */
   scanApps(): AppDefinition[] {
-    if (!existsSync(this.appsDir)) {
-      return [];
-    }
-
-    const entries = readdirSync(this.appsDir, { withFileTypes: true });
-    const apps: AppDefinition[] = [];
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (!APP_NAME_PATTERN.test(entry.name)) continue;
-      if (entry.name.startsWith('.')) continue;
-
-      const appDir = join(this.appsDir, entry.name);
-      const appYamlPath = join(appDir, 'app.yaml');
-
-      if (!existsSync(appYamlPath)) continue;
-
-      const app = this.loadAppDefinition(entry.name, appDir);
-      if (app) apps.push(app);
-    }
-
-    return apps;
+    const db = this.getPlatformDb();
+    return db.query(
+      'SELECT name, description, status, current_version, published_version FROM apps ORDER BY name',
+    ).all() as AppDefinition[];
   }
 
   /** Get a cached AppContext by name (returns undefined if not cached) */
@@ -317,124 +261,177 @@ export class Workspace {
     this._appStates.delete(name);
   }
 
-  /** Get or create an AppContext (Hybrid: cached or lazy-loaded) */
+  /** Get or create an AppContext (DB-backed check) */
   getOrCreateApp(name: string): AppContext | null {
     const cached = this._apps.get(name);
     if (cached) return cached;
 
-    // Check if app.yaml exists
-    const appDir = join(this.appsDir, name);
-    const appYamlPath = join(appDir, 'app.yaml');
-    if (!existsSync(appYamlPath)) {
-      return null;
-    }
+    // Check if app exists in DB
+    const db = this.getPlatformDb();
+    const row = db.query('SELECT name FROM apps WHERE name = ?').get(name);
+    if (!row) return null;
 
-    // Load definition and create AppContext
-    const definition = this.loadAppDefinition(name, appDir);
-    if (!definition) return null;
-
-    const ctx = new AppContext(name, definition, this.appsDir, this.dataDir, this.draftDir);
+    const ctx = new AppContext(name, this.dataDir, this.draftDir);
     this._apps.set(name, ctx);
     return ctx;
   }
 
-  // --- Git ---
+  // --- Template Loading ---
 
-  /** Commit changes for a specific app */
-  commitApp(appName: string, message: string): void {
-    const status = this.gitExec(['status', '--porcelain', `apps/${appName}/`]);
-    if (!status || status.trim() === '') {
-      return; // Nothing to commit
+  /** Load template apps from templates/ directory into the platform DB */
+  loadTemplateApps(): void {
+    if (!existsSync(TEMPLATES_DIR)) {
+      console.warn('[workspace] Templates directory not found, skipping template app creation');
+      return;
     }
 
-    this.gitExec(['add', `apps/${appName}/`]);
-    this.gitExec(['commit', '-m', message]);
-  }
+    const entries = readdirSync(TEMPLATES_DIR, { withFileTypes: true });
+    const templates = entries.filter((e) => e.isDirectory());
+    if (templates.length === 0) {
+      console.warn('[workspace] No template apps found in templates directory');
+      return;
+    }
 
-  /** Get the committed version of a file (for immutability checks) */
-  getCommittedFileContent(relativePath: string): string | null {
-    return this.gitExec(['show', `HEAD:${relativePath}`]);
-  }
-
-  /** Check if a file is tracked by git (committed) */
-  isFileCommitted(relativePath: string): boolean {
-    const result = this.gitExec(['ls-files', relativePath]);
-    return !!result && result.trim() !== '';
-  }
-
-  // --- Internal helpers ---
-
-  /** Execute a git command in the workspace root (best effort, returns stdout or null) */
-  gitExec(args: string[]): string | null {
-    try {
-      const result = Bun.spawnSync(['git', ...args], {
-        cwd: this.root,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      if (result.exitCode !== 0) {
-        const stderr = result.stderr.toString().trim();
-        if (stderr && !stderr.includes('does not exist in')) {
-          console.warn(`[git] ${args.join(' ')}: ${stderr}`);
-        }
-        return null;
-      }
-
-      return result.stdout.toString();
-    } catch {
-      console.warn(`[git] Command failed: git ${args.join(' ')} (git may not be installed)`);
-      return null;
+    for (const entry of templates) {
+      const src = join(TEMPLATES_DIR, entry.name);
+      this.importAppFromDir(entry.name, src);
     }
   }
 
-  /** Load a single app's full definition from its directory */
-  loadAppDefinition(name: string, dir: string): AppDefinition | null {
+  /** Import an app from a filesystem directory into the platform DB */
+  importAppFromDir(appName: string, dir: string): void {
+    const db = this.getPlatformDb();
+
+    // Parse description from app.yaml if it exists
+    let description = '';
     const appYamlPath = join(dir, 'app.yaml');
+    if (existsSync(appYamlPath)) {
+      try {
+        const content = readFileSync(appYamlPath, 'utf-8').trim();
+        if (content) {
+          const parsed = parseYAML(content);
+          description = parsed?.description ?? '';
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
 
-    // Parse app.yaml (can be empty)
-    let spec: AppSpec = {};
+    // Check if app already exists
+    const existing = db.query('SELECT name FROM apps WHERE name = ?').get(appName);
+    if (existing) return;
+
+    // Create app record
+    db.query(
+      'INSERT INTO apps (name, description, current_version, published_version) VALUES (?, ?, 1, 0)',
+    ).run(appName, description);
+
+    // Recursively collect files and write to app_files
+    const files = this.collectFiles(dir, '');
+    for (const file of files) {
+      db.query(
+        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+      ).run(appName, file.path, file.content);
+    }
+  }
+
+  /** Recursively collect all files from a directory */
+  private collectFiles(baseDir: string, prefix: string): { path: string; content: string }[] {
+    const result: { path: string; content: string }[] = [];
+    const entries = readdirSync(baseDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue; // Skip hidden files
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const fullPath = join(baseDir, entry.name);
+
+      if (entry.isDirectory()) {
+        result.push(...this.collectFiles(fullPath, relativePath));
+      } else if (entry.isFile()) {
+        const content = readFileSync(fullPath, 'utf-8');
+        result.push({ path: relativePath, content });
+      }
+    }
+
+    return result;
+  }
+
+  // --- Old Workspace Migration ---
+
+  /** Detect and migrate old filesystem-based workspaces to DB */
+  private migrateOldWorkspace(): void {
+    // Detection: apps/ directory exists AND app_files table is empty
+    if (!existsSync(this.appsDir)) return;
+
+    const db = this.getPlatformDb();
+    const count = db.query('SELECT COUNT(*) as cnt FROM app_files').get() as { cnt: number };
+    if (count.cnt > 0) return; // Already has data in DB
+
+    const entries = readdirSync(this.appsDir, { withFileTypes: true });
+    const appDirs = entries.filter(
+      (e) => e.isDirectory() && !e.name.startsWith('.') && /^[a-zA-Z0-9_-]+$/.test(e.name),
+    );
+
+    if (appDirs.length === 0) return;
+
+    console.log('[workspace] Detected old filesystem-based workspace, migrating to DB...');
+
+    for (const entry of appDirs) {
+      const appDir = join(this.appsDir, entry.name);
+      const appYamlPath = join(appDir, 'app.yaml');
+      if (!existsSync(appYamlPath)) continue;
+
+      console.log(`[workspace]   Migrating app: ${entry.name}`);
+      this.importAppFromDir(entry.name, appDir);
+
+      // Check if this app has a stable DB with executed migrations
+      const stableDbPath = join(this.dataDir, 'apps', entry.name, 'db.sqlite');
+      if (existsSync(stableDbPath)) {
+        this.migrateAppVersionInfo(entry.name, stableDbPath);
+      }
+    }
+
+    console.log('[workspace] Migration complete.');
+  }
+
+  /** Migrate version and immutability info for a single app */
+  private migrateAppVersionInfo(appName: string, stableDbPath: string): void {
+    const platformDb = this.getPlatformDb();
+
     try {
-      const content = readFileSync(appYamlPath, 'utf-8').trim();
-      if (content) {
-        const parsed = parseYAML(content);
-        spec = AppSpecSchema.parse(parsed ?? {});
+      const stableDb = new Database(stableDbPath, { readonly: true });
+
+      try {
+        // Check if _migrations table exists and get executed versions
+        const executedMigrations = stableDb.query(
+          'SELECT version FROM _migrations ORDER BY version',
+        ).all() as { version: number }[];
+
+        if (executedMigrations.length > 0) {
+          // Mark executed migration files as immutable
+          for (const { version } of executedMigrations) {
+            const versionPrefix = String(version).padStart(3, '0');
+            platformDb.query(
+              "UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?",
+            ).run(appName, `migrations/${versionPrefix}_%`);
+          }
+
+          console.log(`[workspace]   ${appName}: marked ${executedMigrations.length} migration(s) immutable`);
+        }
+      } catch {
+        // _migrations table might not exist (app published without migrations)
+      } finally {
+        stableDb.close();
       }
+
+      // Stable DB exists → set published_version = current_version regardless of migration count
+      platformDb.query(
+        "UPDATE apps SET published_version = current_version WHERE name = ?",
+      ).run(appName);
+
+      console.log(`[workspace]   ${appName}: set published`);
     } catch (err: any) {
-      console.error(`[${name}] Failed to parse app.yaml: ${err.message}`);
-      return null;
+      console.warn(`[workspace]   ${appName}: failed to read stable DB: ${err.message}`);
     }
-
-    // Discover migrations
-    const migrations: string[] = [];
-    const migrationsDir = join(dir, 'migrations');
-    if (existsSync(migrationsDir)) {
-      const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
-      for (const file of files) {
-        migrations.push(join(migrationsDir, file));
-      }
-    }
-
-    // Discover seeds
-    const seeds: string[] = [];
-    const seedsDir = join(dir, 'seeds');
-    if (existsSync(seedsDir)) {
-      const files = readdirSync(seedsDir).filter((f) => f.endsWith('.sql') || f.endsWith('.json')).sort();
-      for (const file of files) {
-        seeds.push(join(seedsDir, file));
-      }
-    }
-
-    // Discover functions
-    const functions: string[] = [];
-    const functionsDir = join(dir, 'functions');
-    if (existsSync(functionsDir)) {
-      const files = readdirSync(functionsDir).filter((f) => f.endsWith('.ts'));
-      for (const file of files) {
-        functions.push(basename(file, '.ts'));
-      }
-    }
-
-    return { name, dir, spec, migrations, seeds, functions };
   }
 }

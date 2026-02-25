@@ -3,28 +3,17 @@ import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { AppContext } from '../../src/core/app-context';
-import type { AppDefinition } from '../../src/core/workspace';
 
 describe('AppContext', () => {
   let tempDir: string;
   let ctx: AppContext;
 
-  const mockDefinition: AppDefinition = {
-    name: 'testapp',
-    dir: '',
-    spec: { description: 'test' },
-    migrations: [],
-    seeds: [],
-    functions: [],
-  };
-
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'ac-test-'));
-    const appsDir = join(tempDir, 'apps');
     const dataDir = join(tempDir, 'data');
     const draftDir = join(tempDir, 'draft');
 
-    ctx = new AppContext('testapp', mockDefinition, appsDir, dataDir, draftDir);
+    ctx = new AppContext('testapp', dataDir, draftDir);
   });
 
   afterEach(() => {

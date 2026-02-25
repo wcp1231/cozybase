@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { join } from 'path';
-import { readFileSync, readdirSync, existsSync, unlinkSync, copyFileSync, mkdirSync } from 'fs';
+import { existsSync, unlinkSync, copyFileSync, mkdirSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { BadRequestError } from './errors';
@@ -43,7 +43,7 @@ export class Verifier {
       throw new BadRequestError(`App '${appName}' not found`);
     }
 
-    // 1. Check committed migration immutability
+    // 1. Check migration immutability (DB-based)
     const immutabilityError = this.checkMigrationImmutability(appName);
     if (immutabilityError) {
       return {
@@ -53,9 +53,13 @@ export class Verifier {
       };
     }
 
-    // 2. Scan all migrations and determine pending ones
-    const migrationsDir = join(this.workspace.appsDir, appName, 'migrations');
-    const allMigrations = this.migrationRunner.scanMigrations(migrationsDir);
+    // 2. Query all migrations from app_files and determine pending ones
+    const platformDb = this.workspace.getPlatformDb();
+    const migrationRecords = platformDb.query(
+      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+    ).all(appName) as { path: string; content: string }[];
+
+    const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
 
     // Read executed versions from stable DB
     const executedVersions = this.migrationRunner.getExecutedVersions(appContext.stableDb);
@@ -122,31 +126,29 @@ export class Verifier {
     }
   }
 
-  /** Check that no committed migration files have been modified */
+  /** Check that already-executed migrations have not been modified (DB-based immutability) */
   private checkMigrationImmutability(appName: string): string | null {
-    const migrationsDir = join(this.workspace.appsDir, appName, 'migrations');
-    if (!existsSync(migrationsDir)) return null;
+    const platformDb = this.workspace.getPlatformDb();
+    const appContext = this.workspace.getOrCreateApp(appName);
+    if (!appContext) return null;
 
-    const files = readdirSync(migrationsDir).filter((f: string) => f.endsWith('.sql')).sort();
+    // Get executed migration versions from stable DB
+    const executedVersions = this.migrationRunner.getExecutedVersions(appContext.stableDb);
+    if (executedVersions.length === 0) return null;
 
-    for (const filename of files) {
-      const relativePath = `apps/${appName}/migrations/${filename}`;
+    // For each executed version, check that the corresponding app_files record exists and is immutable
+    for (const version of executedVersions) {
+      const versionPrefix = String(version).padStart(3, '0');
+      const record = platformDb.query(
+        "SELECT path, immutable FROM app_files WHERE app_name = ? AND path LIKE ? LIMIT 1",
+      ).get(appName, `migrations/${versionPrefix}_%`) as { path: string; immutable: number } | null;
 
-      // Check if this file is tracked by git
-      if (!this.workspace.isFileCommitted(relativePath)) {
-        continue; // New file, not committed yet — that's fine
+      if (!record) {
+        return `Migration version ${versionPrefix} was previously executed but its file is missing from app_files. This is a data integrity issue.`;
       }
 
-      // Get committed version
-      const committedContent = this.workspace.getCommittedFileContent(relativePath);
-      if (committedContent === null) {
-        continue; // Not in HEAD (should not happen if isFileCommitted is true)
-      }
-
-      // Compare with working copy
-      const workingContent = readFileSync(join(migrationsDir, filename), 'utf-8');
-      if (committedContent !== workingContent) {
-        return `Migration ${filename} has been modified after commit. Already-published migrations are immutable. Please create a new migration to make changes.`;
+      if (!record.immutable) {
+        return `Migration ${record.path.replace('migrations/', '')} has been executed but is not marked as immutable. Already-published migrations must not be modified.`;
       }
     }
 

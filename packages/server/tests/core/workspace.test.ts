@@ -1,13 +1,9 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { mkdirSync, existsSync, writeFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
-import { Workspace } from '../../src/core/workspace';
 import {
   createTestWorkspace,
   createTestApp,
-  commitAll,
-  commitApp,
-  gitExec,
   addMigration,
   createStableDb,
   setAppSpec,
@@ -26,19 +22,13 @@ describe('Workspace', () => {
   // --- init and load ---
 
   describe('init and load', () => {
-    test('createTestWorkspace creates proper directory structure and git repo', () => {
+    test('createTestWorkspace creates proper directory structure', () => {
       handle = createTestWorkspace();
-      const { root, workspace } = handle;
+      const { root } = handle;
 
-      expect(existsSync(join(root, 'apps'))).toBe(true);
       expect(existsSync(join(root, 'data'))).toBe(true);
       expect(existsSync(join(root, 'draft'))).toBe(true);
       expect(existsSync(join(root, 'workspace.yaml'))).toBe(true);
-      expect(existsSync(join(root, '.gitignore'))).toBe(true);
-
-      // Verify git repo
-      const log = gitExec(root, ['log', '--oneline']);
-      expect(log).toContain('init workspace');
     });
 
     test('load parses workspace config and initializes platform DB', () => {
@@ -57,15 +47,16 @@ describe('Workspace', () => {
       expect(tableNames).toContain('apps');
       expect(tableNames).toContain('platform_users');
       expect(tableNames).toContain('api_keys');
+      expect(tableNames).toContain('app_files');
     });
   });
 
   // --- scanApps ---
 
   describe('scanApps', () => {
-    test('discovers app with migrations', () => {
+    test('discovers app from DB', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
 
@@ -73,34 +64,24 @@ describe('Workspace', () => {
 
       expect(apps).toHaveLength(1);
       expect(apps[0].name).toBe('myapp');
-      expect(apps[0].migrations).toHaveLength(1);
+      expect(apps[0].current_version).toBe(1);
+      expect(apps[0].published_version).toBe(0);
     });
 
-    test('discovers seeds directory', () => {
+    test('discovers app with description', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
         seeds: { '01_data.sql': "INSERT INTO todos (id, title) VALUES (1, 'test');" },
       });
 
       const apps = handle.workspace.scanApps();
 
-      expect(apps[0].seeds).toHaveLength(1);
+      expect(apps[0].description).toBe('Test app: myapp');
     });
 
-    test('skips directories without app.yaml', () => {
+    test('returns empty when no apps exist', () => {
       handle = createTestWorkspace();
-      mkdirSync(join(handle.root, 'apps', 'noapp'), { recursive: true });
-
-      const apps = handle.workspace.scanApps();
-      expect(apps).toHaveLength(0);
-    });
-
-    test('skips dot-prefixed directories', () => {
-      handle = createTestWorkspace();
-      const hiddenDir = join(handle.root, 'apps', '.hidden');
-      mkdirSync(hiddenDir, { recursive: true });
-      writeFileSync(join(hiddenDir, 'app.yaml'), 'description: hidden');
 
       const apps = handle.workspace.scanApps();
       expect(apps).toHaveLength(0);
@@ -110,9 +91,9 @@ describe('Workspace', () => {
   // --- getAppState ---
 
   describe('getAppState', () => {
-    test('returns draft_only for new uncommitted app', () => {
+    test('returns draft_only for new app (published_version = 0)', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
 
@@ -120,36 +101,34 @@ describe('Workspace', () => {
       expect(state).toBe('draft_only');
     });
 
-    test('returns stable for committed app with stable DB', () => {
+    test('returns stable when published_version = current_version', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
-      commitAll(handle.root, 'add app');
-      createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
       const state = handle.workspace.refreshAppState('myapp');
       expect(state).toBe('stable');
     });
 
-    test('returns stable_draft for committed app with unstaged changes and stable DB', () => {
+    test('returns stable_draft when current_version > published_version', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
-      commitAll(handle.root, 'add app');
-      createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-      // Add uncommitted change
-      addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+      // Add new migration — increments current_version
+      addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
 
       const state = handle.workspace.refreshAppState('myapp');
       expect(state).toBe('stable_draft');
     });
 
-    test('returns deleted when app.yaml has status: deleted', () => {
+    test('returns deleted when status is deleted', () => {
       handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
+      createTestApp(handle, 'myapp', {
         spec: { description: 'to delete', status: 'deleted' },
       });
 
@@ -162,69 +141,6 @@ describe('Workspace', () => {
 
       const state = handle.workspace.getAppState('nonexistent');
       expect(state).toBeUndefined();
-    });
-  });
-
-  // --- git operations ---
-
-  describe('git operations', () => {
-    test('commitApp stages and commits app files', () => {
-      handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
-        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
-      });
-
-      handle.workspace.commitApp('myapp', 'test: add myapp');
-
-      const log = gitExec(handle.root, ['log', '--oneline']);
-      expect(log).toContain('test: add myapp');
-
-      // Working tree should be clean for myapp
-      const status = gitExec(handle.root, ['status', '--porcelain', 'apps/myapp/']);
-      expect(status.trim()).toBe('');
-    });
-
-    test('getCommittedFileContent returns file content from HEAD', () => {
-      handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
-        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
-      });
-      commitAll(handle.root, 'add app');
-
-      const content = handle.workspace.getCommittedFileContent('apps/myapp/migrations/001_init.sql');
-      expect(content).toContain('CREATE TABLE todos');
-    });
-
-    test('isFileCommitted returns true for committed files, false for new files', () => {
-      handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
-        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
-      });
-      commitAll(handle.root, 'add app');
-
-      expect(handle.workspace.isFileCommitted('apps/myapp/migrations/001_init.sql')).toBe(true);
-
-      // Add a new uncommitted file
-      addMigration(handle.root, 'myapp', '002_new.sql', MIGRATION_ADD_PRIORITY);
-      expect(handle.workspace.isFileCommitted('apps/myapp/migrations/002_new.sql')).toBe(false);
-    });
-
-    test('commitApp is a no-op when nothing to commit', () => {
-      handle = createTestWorkspace();
-      createTestApp(handle.root, 'myapp', {
-        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
-      });
-      commitAll(handle.root, 'add app');
-
-      const logBefore = gitExec(handle.root, ['log', '--oneline']);
-      const commitCountBefore = logBefore.trim().split('\n').length;
-
-      handle.workspace.commitApp('myapp', 'should not appear');
-
-      const logAfter = gitExec(handle.root, ['log', '--oneline']);
-      const commitCountAfter = logAfter.trim().split('\n').length;
-
-      expect(commitCountAfter).toBe(commitCountBefore);
     });
   });
 });

@@ -1,10 +1,4 @@
-# Workspace Management
-
-## Purpose
-
-Manage workspace lifecycle including directory structure, initialization, Platform DB schema, app definition loading from DB, and legacy workspace migration. The `apps/` directory is removed; Platform DB `app_files` is the source of truth for all app definitions.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Workspace 目录结构
 
@@ -194,3 +188,17 @@ interface AppDefinition {
 
 - **WHEN** `app_files` 表中已有记录
 - **THEN** 系统 SHALL 跳过迁移逻辑，即使 `apps/` 目录仍存在
+
+## REMOVED Requirements
+
+### Requirement: App 声明扫描
+
+**Reason**: APP 定义不再存储在文件系统 `apps/` 目录中，改为从 Platform DB 的 `app_files` 表加载。文件系统扫描不再需要。
+
+**Migration**: 通过"旧 Workspace 自动迁移"将 `apps/` 目录下的文件一次性导入 DB。导入后 `apps/` 目录可删除。
+
+### Requirement: Git 自动提交
+
+**Reason**: 系统不再依赖 Git 进行版本控制和变更追踪。版本控制通过 `apps.current_version` 和 `apps.published_version` 字段实现，不可变校验通过 `app_files.immutable` 字段实现。
+
+**Migration**: 移除所有 Git 相关代码（`execGit`、`isGitRepo`、`git init`、`git add`、`git commit`、`git status`、`git show`）。移除 `.gitignore` 生成逻辑。用户仍可选择对 workspace 目录使用 git 进行备份，但这是可选的外部行为。

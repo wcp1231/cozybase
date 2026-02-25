@@ -1,19 +1,15 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { existsSync } from 'fs';
 import { DraftReconciler } from '../../src/core/draft-reconciler';
 import {
   createTestWorkspace,
   createTestApp,
-  commitAll,
   addMigration,
   createStableDb,
-  setAppSpec,
   openDraftDb,
   MIGRATION_CREATE_TODOS,
   MIGRATION_ADD_PRIORITY,
   MIGRATION_BAD_SQL,
   SEED_TODOS_SQL,
-  SEED_TODOS_JSON,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -26,7 +22,7 @@ describe('DraftReconciler', () => {
 
   test('builds draft DB from migrations and seeds for draft_only app', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       seeds: { '01_seed.sql': SEED_TODOS_SQL },
     });
@@ -49,7 +45,7 @@ describe('DraftReconciler', () => {
 
   test('re-reconcile after migration change rebuilds DB from scratch', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       seeds: { '01_seed.sql': SEED_TODOS_SQL },
     });
@@ -66,8 +62,8 @@ describe('DraftReconciler', () => {
     const extraRow = appContext.draftDb.query('SELECT * FROM todos WHERE id = 999').get();
     expect(extraRow).toBeDefined();
 
-    // Add a new migration
-    addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+    // Add a new migration (via DB)
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
 
     // Second reconcile — should rebuild from scratch
     const result2 = await reconciler.reconcile('myapp');
@@ -93,14 +89,13 @@ describe('DraftReconciler', () => {
 
   test('works for stable_draft app', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    // Add new migration (not committed)
-    addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+    // Add new migration (increments current_version, state becomes stable_draft)
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
     expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
 
@@ -114,7 +109,7 @@ describe('DraftReconciler', () => {
 
   test('throws BadRequestError for deleted app', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       spec: { description: 'test', status: 'deleted' },
     });
     handle.workspace.refreshAppState('myapp');
@@ -125,11 +120,10 @@ describe('DraftReconciler', () => {
 
   test('throws BadRequestError for stable app with no draft changes', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
     handle.workspace.refreshAppState('myapp');
     expect(handle.workspace.getAppState('myapp')).toBe('stable');
 
@@ -139,7 +133,7 @@ describe('DraftReconciler', () => {
 
   test('returns error when migration SQL fails', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_bad.sql': MIGRATION_BAD_SQL },
     });
     handle.workspace.refreshAppState('myapp');
@@ -153,7 +147,7 @@ describe('DraftReconciler', () => {
 
   test('returns error when seed loading fails', async () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       seeds: { '01_bad.sql': "INSERT INTO nonexistent_table (id) VALUES (1);" },
     });

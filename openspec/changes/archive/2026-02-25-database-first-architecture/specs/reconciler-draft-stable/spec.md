@@ -1,10 +1,4 @@
-# Reconciler Draft-Stable
-
-## Purpose
-
-Manage the Draft-Stable reconciliation lifecycle for apps, including migration execution, seed loading, function validation, verify, publish, and state management. All app definition data is sourced from Platform DB (`app_files` table) rather than the filesystem.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Migration 文件格式与排序
 

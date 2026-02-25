@@ -5,7 +5,6 @@ import { Verifier } from '../../src/core/verifier';
 import {
   createTestWorkspace,
   createTestApp,
-  commitAll,
   addMigration,
   modifyMigration,
   createStableDb,
@@ -25,14 +24,13 @@ describe('Verifier', () => {
 
   test('passes when new migration can be applied to stable copy', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    // Add new migration (not committed)
-    addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+    // Add new migration (not published)
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
 
     const verifier = new Verifier(handle.workspace);
@@ -43,18 +41,17 @@ describe('Verifier', () => {
     expect(result.detail).toContain('002_add_col.sql');
   });
 
-  test('detects modified committed migration (immutability violation)', () => {
+  test('detects tampered migration (immutable flag cleared)', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    // Modify committed migration
-    modifyMigration(handle.root, 'myapp', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
+    // Modify a published migration (clears immutable flag in test helper)
+    modifyMigration(handle, 'myapp', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
     // Also add a new migration so state becomes stable_draft
-    addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
 
     const verifier = new Verifier(handle.workspace);
@@ -67,13 +64,12 @@ describe('Verifier', () => {
 
   test('cleans up temp database file after verification', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
 
     const verifier = new Verifier(handle.workspace);
@@ -87,7 +83,7 @@ describe('Verifier', () => {
 
   test('throws BadRequestError for draft_only app', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
     handle.workspace.refreshAppState('myapp');
@@ -98,11 +94,10 @@ describe('Verifier', () => {
 
   test('throws BadRequestError for stable app with no draft changes', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
     handle.workspace.refreshAppState('myapp');
 
     const verifier = new Verifier(handle.workspace);
@@ -111,13 +106,12 @@ describe('Verifier', () => {
 
   test('returns failure when pending migration SQL is invalid', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    addMigration(handle.root, 'myapp', '002_bad.sql', MIGRATION_BAD_SQL);
+    addMigration(handle, 'myapp', '002_bad.sql', MIGRATION_BAD_SQL);
     handle.workspace.refreshAppState('myapp');
 
     const verifier = new Verifier(handle.workspace);
@@ -129,14 +123,13 @@ describe('Verifier', () => {
 
   test('reports no new migrations when all are already executed', () => {
     handle = createTestWorkspace();
-    createTestApp(handle.root, 'myapp', {
+    createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
-    commitAll(handle.root, 'add app');
-    createStableDb(handle.root, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    // Add a non-migration file to trigger stable_draft state
-    setAppSpec(handle.root, 'myapp', { description: 'updated description' });
+    // Update app spec to trigger stable_draft state
+    setAppSpec(handle, 'myapp', { description: 'updated description' });
     handle.workspace.refreshAppState('myapp');
     expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
 
