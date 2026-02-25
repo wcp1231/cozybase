@@ -7,7 +7,7 @@
     "start": "bun run src/index.ts",
     "test": "bun test tests/",
     "test:unit": "bun test tests/core/migration-runner.test.ts tests/core/seed-loader.test.ts tests/core/app-context.test.ts",
-    "test:integration": "bun test tests/core/workspace.test.ts tests/core/draft-reconciler.test.ts tests/core/verifier.test.ts tests/core/publisher.test.ts",
+    "test:integration": "bun test tests/core/workspace.test.ts tests/core/draft-reconciler.test.ts tests/core/verifier.test.ts tests/core/publisher.test.ts tests/modules/functions.test.ts",
     "test:e2e": "bun test tests/scenarios/"
   },
   "dependencies": {

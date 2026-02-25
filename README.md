@@ -16,12 +16,14 @@ Workspace (~/.cozybase)
 │ │   ├── migrations/            ├── todo-app/             │
 │ │   │   ├── 001_init.sql       │   └── db.sqlite  ← Stable DB
 │ │   │   └── 002_add_tags.sql   └── blog-app/            │
-│ │   └── seeds/                     └── db.sqlite         │
-│ │       └── todos.sql                                    │
-│ └── blog-app/              draft/ (git-ignored)          │
-│     ├── app.yaml           └── apps/                     │
-│     └── migrations/            └── todo-app/             │
-│         └── 001_init.sql           └── db.sqlite  ← Draft DB
+│ │   ├── seeds/                     └── db.sqlite         │
+│ │   │   └── todos.sql                                    │
+│ │   └── functions/         draft/ (git-ignored)          │
+│ │       └── health.ts      └── apps/                     │
+│ └── blog-app/                  └── todo-app/             │
+│     ├── app.yaml                   └── db.sqlite  ← Draft DB
+│     └── migrations/                                      │
+│         └── 001_init.sql                                 │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
    Declarations (source of truth)   Runtime state
@@ -182,6 +184,87 @@ curl -X POST http://localhost:3000/stable/apps/todo-app/db/sql \
 
 Use `/draft/` prefix instead to operate on the Draft database during development.
 
+## Functions
+
+Cozybase supports TypeScript functions as HTTP endpoints. Functions are defined as `.ts` files in `apps/{name}/functions/` and use **Next.js Route Handler-style** named exports:
+
+### Defining a Function
+
+```typescript
+// apps/todo-app/functions/health.ts
+export async function GET(ctx) {
+  return { status: "ok", app: ctx.app.name, mode: ctx.mode };
+}
+```
+
+Each named export handles one HTTP method. Use `export default` as a catch-all:
+
+```typescript
+// apps/todo-app/functions/items.ts
+export async function GET(ctx) {
+  const items = ctx.db.query("SELECT * FROM todos");
+  return items;
+}
+
+export async function POST(ctx) {
+  const body = await ctx.req.json();
+  ctx.db.run("INSERT INTO todos (title) VALUES (?)", [body.title]);
+  return { created: true };
+}
+
+export default async function (ctx) {
+  return new Response("Method not implemented", { status: 501 });
+}
+```
+
+### FunctionContext
+
+Every handler receives a `ctx` object with:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ctx.req` | `Request` | Standard Web Request object |
+| `ctx.db` | `DatabaseClient` | SQLite client for the current mode (`query`, `run`, `exec`) |
+| `ctx.env` | `Record<string, string>` | Environment variables |
+| `ctx.app` | `{ name: string }` | App metadata |
+| `ctx.mode` | `'stable' \| 'draft'` | Current execution mode |
+| `ctx.log` | `Logger` | Structured logger (`info`, `warn`, `error`, `debug`) |
+| `ctx.fetch` | `fetch` | HTTP client |
+
+### Return Values
+
+| Return type | HTTP response |
+|-------------|---------------|
+| `Response` object | Passed through directly |
+| Object / Array | `200` with `application/json` |
+| `null` / `undefined` | `204 No Content` |
+| Thrown error | `500` with error details (stack trace in Draft mode) |
+
+### Calling Functions
+
+```bash
+# Draft mode (hot-reloads on every request)
+curl http://localhost:3000/draft/apps/todo-app/functions/health
+# {"status":"ok","app":"todo-app","mode":"draft"}
+
+# Stable mode (cached modules, reloaded on publish)
+curl http://localhost:3000/stable/apps/todo-app/functions/health
+# {"status":"ok","app":"todo-app","mode":"stable"}
+
+# POST to a function
+curl -X POST http://localhost:3000/draft/apps/todo-app/functions/items \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "New item"}'
+```
+
+### Function Conventions
+
+- File names map to route names: `health.ts` -> `/functions/health`
+- Files prefixed with `_` (e.g. `_utils.ts`) are not exposed as endpoints
+- Draft mode: functions are re-imported on every request (hot-reload)
+- Stable mode: modules are cached; cache is refreshed on Publish
+- During Draft Reconcile, functions are validated (valid exports checked) with warnings in the result
+
 ### Query Parameters
 
 | Parameter | Example | Description |
@@ -242,6 +325,13 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 | POST | `/draft/apps/:appName/verify` | Verify new migrations against stable DB copy |
 | POST | `/draft/apps/:appName/publish` | Apply to stable, git commit, clean draft |
 
+### Functions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| * | `/stable/apps/:appName/functions/:name` | Execute stable function |
+| * | `/draft/apps/:appName/functions/:name` | Execute draft function (hot-reload) |
+
 ## Workspace Structure
 
 ```
@@ -256,8 +346,8 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 │   │   │   └── 002_add_priority.sql
 │   │   ├── seeds/                      # Test data (.sql or .json)
 │   │   │   └── todos.sql
-│   │   └── functions/                  # (planned)
-│   │       └── hello.ts
+│   │   └── functions/                  # TypeScript HTTP handlers
+│   │       └── health.ts
 │   └── blog-app/
 │       ├── app.yaml
 │       └── migrations/
@@ -315,7 +405,8 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request.
 - **DraftReconciler**: Destroys and rebuilds the draft database from all migrations + seeds. Used during iterative development.
 - **Verifier**: Checks that committed migrations haven't been modified, then tests new migrations against a copy of the stable database.
-- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, git commits, and cleans up draft.
+- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, reloads function cache, git commits, and cleans up draft.
+- **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
 - **App States**: Dynamically derived from git status and filesystem — `draft_only`, `stable`, `stable_draft`, `deleted`.
 - **Git Integration**: After successful Publish, `apps/` changes are auto-committed to the workspace git repo.
 
@@ -353,10 +444,18 @@ cozybase/
 │   │   │           ├── query-builder.ts  # URL → SQL
 │   │   │           ├── schema.ts         # Schema introspection
 │   │   │           └── sql.ts            # Raw SQL execution
+│   │   │       └── functions/
+│   │   │           ├── types.ts          # FunctionRuntime, FunctionContext interfaces
+│   │   │           ├── direct-runtime.ts # Module loading + execution
+│   │   │           ├── context.ts        # FunctionContext builder
+│   │   │           ├── database-client.ts # SQLite wrapper for functions
+│   │   │           ├── logger.ts         # Structured function logger
+│   │   │           └── routes.ts         # Function HTTP routes
 │   │   └── tests/                  # Automated tests (Bun test runner)
 │   │       ├── helpers/
 │   │       │   └── test-workspace.ts
 │   │       ├── core/               # Unit + integration tests
+│   │       ├── modules/            # Module integration tests (functions, etc.)
 │   │       └── scenarios/          # End-to-end tests
 │   ├── sdk/                    # TypeScript SDK (planned)
 │   └── admin/                  # React Admin UI (planned)
@@ -373,7 +472,7 @@ bun test tests/
 
 # Run by category
 bun run test:unit          # MigrationRunner, SeedLoader, AppContext
-bun run test:integration   # Workspace, DraftReconciler, Verifier, Publisher
+bun run test:integration   # Workspace, DraftReconciler, Verifier, Publisher, Functions
 bun run test:e2e           # Full workflow scenarios
 ```
 
@@ -399,8 +498,9 @@ bun run test:e2e           # Full workflow scenarios
 - [x] Seed data loading (SQL + JSON)
 - [x] Stable database backup and rollback
 - [x] Automated test suite
+- [x] Functions module (TypeScript HTTP handlers with hot-reload)
 - [ ] Storage module (file uploads + buckets)
-- [ ] Functions module (Bun Worker execution)
+- [ ] Worker runtime (per-app Bun Worker isolation)
 - [ ] Cron scheduler
 - [ ] Realtime (WebSocket + change events)
 - [ ] Auth module

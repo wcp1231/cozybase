@@ -10,6 +10,8 @@ import { logger } from './middleware/logger';
 import { appResolver } from './middleware/app-resolver';
 import { createAppRoutes } from './modules/apps/routes';
 import { createDbRoutes } from './modules/db/routes';
+import { createFunctionRoutes } from './modules/functions/routes';
+import { DirectRuntime } from './modules/functions/direct-runtime';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -29,6 +31,8 @@ export function createServer(config: Config) {
   const draftReconciler = new DraftReconciler(workspace);
   const verifier = new Verifier(workspace);
   const publisher = new Publisher(workspace);
+  const functionRuntime = new DirectRuntime();
+  publisher.setFunctionRuntime(functionRuntime);
 
   // --- Global middleware ---
   app.use('*', cors());
@@ -67,6 +71,18 @@ export function createServer(config: Config) {
   draftDb.route('/', createDbRoutes());
   app.route('/draft/apps/:appName/db', draftDb);
 
+  // --- Stable Function routes: /stable/apps/:appName/functions/:name ---
+  const stableFn = new Hono();
+  stableFn.use('*', appResolver(workspace, 'stable'));
+  stableFn.route('/', createFunctionRoutes(functionRuntime));
+  app.route('/stable/apps/:appName/functions', stableFn);
+
+  // --- Draft Function routes: /draft/apps/:appName/functions/:name ---
+  const draftFn = new Hono();
+  draftFn.use('*', appResolver(workspace, 'draft'));
+  draftFn.route('/', createFunctionRoutes(functionRuntime));
+  app.route('/draft/apps/:appName/functions', draftFn);
+
   // --- Draft management routes: /draft/apps/:appName/(reconcile|verify|publish) ---
   const draftMgmt = new Hono();
 
@@ -87,9 +103,9 @@ export function createServer(config: Config) {
     await next();
   });
 
-  draftMgmt.post('/reconcile', (c) => {
+  draftMgmt.post('/reconcile', async (c) => {
     const appName = c.req.param('appName')!;
-    const result = draftReconciler.reconcile(appName);
+    const result = await draftReconciler.reconcile(appName);
     return c.json({ data: result });
   });
 
@@ -107,5 +123,5 @@ export function createServer(config: Config) {
 
   app.route('/draft/apps/:appName', draftMgmt);
 
-  return { app, workspace };
+  return { app, workspace, functionRuntime };
 }

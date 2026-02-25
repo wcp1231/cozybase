@@ -10,6 +10,7 @@ import { Workspace } from '../../src/core/workspace';
 export interface TestAppSpec {
   migrations?: Record<string, string>;
   seeds?: Record<string, string>;
+  functions?: Record<string, string>;
   spec?: Record<string, unknown>;
 }
 
@@ -88,6 +89,14 @@ export function createTestApp(
       writeFileSync(join(seedsDir, filename), content, 'utf-8');
     }
   }
+
+  if (opts.functions) {
+    const functionsDir = join(appDir, 'functions');
+    mkdirSync(functionsDir, { recursive: true });
+    for (const [filename, code] of Object.entries(opts.functions)) {
+      writeFileSync(join(functionsDir, filename), code, 'utf-8');
+    }
+  }
 }
 
 // ---- Git helpers ----
@@ -121,6 +130,12 @@ export function addMigration(root: string, appName: string, filename: string, sq
   const migrationsDir = join(root, 'apps', appName, 'migrations');
   mkdirSync(migrationsDir, { recursive: true });
   writeFileSync(join(migrationsDir, filename), sql, 'utf-8');
+}
+
+export function addFunction(root: string, appName: string, filename: string, code: string): void {
+  const functionsDir = join(root, 'apps', appName, 'functions');
+  mkdirSync(functionsDir, { recursive: true });
+  writeFileSync(join(functionsDir, filename), code, 'utf-8');
 }
 
 export function modifyMigration(root: string, appName: string, filename: string, newSql: string): void {

@@ -3,6 +3,7 @@
         "openspec": true,
         "npx openspec": true,
         "bunx": true,
-        "bun": true
+        "bun": true,
+        "npx tsc": true
     }
 }

@@ -1,8 +1,9 @@
 import { join } from 'path';
-import { existsSync, copyFileSync, unlinkSync } from 'fs';
+import { existsSync, copyFileSync, unlinkSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { BadRequestError } from './errors';
+import type { FunctionRuntime } from '../modules/functions/types';
 
 // --- Types ---
 
@@ -16,8 +17,14 @@ export interface PublishResult {
 
 export class Publisher {
   private migrationRunner = new MigrationRunner();
+  private functionRuntime: FunctionRuntime | null = null;
 
   constructor(private workspace: Workspace) {}
+
+  /** Set the function runtime for reload notifications */
+  setFunctionRuntime(runtime: FunctionRuntime): void {
+    this.functionRuntime = runtime;
+  }
 
   /** Publish draft changes to stable */
   publish(appName: string): PublishResult {
@@ -65,6 +72,8 @@ export class Publisher {
 
       if (pendingMigrations.length === 0 && !isNewApp) {
         // No migrations to apply — still commit file changes (functions, seeds, etc.)
+        this.copyFunctionsToStable(appName);
+        this.reloadFunctions(appName);
         this.commitChanges(appName, 'no new migrations');
         this.cleanup(appContext);
         this.workspace.refreshAppState(appName);
@@ -90,7 +99,13 @@ export class Publisher {
         this.migrationRunner.recordMigration(db, migration);
       }
 
-      // 7. Git commit
+      // 7. Copy function files to stable data dir
+      this.copyFunctionsToStable(appName);
+
+      // 8. Reload functions
+      this.reloadFunctions(appName);
+
+      // 8. Git commit
       const summary = pendingMigrations.map((m) => m.filename).join(', ');
       this.commitChanges(appName, summary);
 
@@ -120,6 +135,38 @@ export class Publisher {
       this.workspace.commitApp(appName, `publish: ${appName} - ${summary}`);
     } catch (err: any) {
       console.warn(`[publisher] Git commit failed: ${err.message}`);
+    }
+  }
+
+  /** Notify FunctionRuntime to reload cached modules for this app */
+  private reloadFunctions(appName: string): void {
+    if (this.functionRuntime) {
+      this.functionRuntime.reload(appName).catch((err) => {
+        console.warn(`[publisher] Function reload failed for '${appName}': ${err.message}`);
+      });
+    }
+  }
+
+  /** Copy function files from workspace to stable data dir (published snapshot) */
+  private copyFunctionsToStable(appName: string): void {
+    const srcDir = join(this.workspace.appsDir, appName, 'functions');
+    const appContext = this.workspace.getOrCreateApp(appName);
+    if (!appContext) return;
+
+    const destDir = join(appContext.stableDataDir, 'functions');
+
+    // Clean destination
+    if (existsSync(destDir)) {
+      rmSync(destDir, { recursive: true, force: true });
+    }
+
+    // Copy if source exists
+    if (existsSync(srcDir)) {
+      mkdirSync(destDir, { recursive: true });
+      const files = readdirSync(srcDir);
+      for (const file of files) {
+        copyFileSync(join(srcDir, file), join(destDir, file));
+      }
     }
   }
 

@@ -91,7 +91,9 @@ export class Workspace {
     // Create example app with migration format
     const helloDir = join(this.appsDir, 'hello');
     const helloMigrationsDir = join(helloDir, 'migrations');
+    const helloFunctionsDir = join(helloDir, 'functions');
     mkdirSync(helloMigrationsDir, { recursive: true });
+    mkdirSync(helloFunctionsDir, { recursive: true });
     writeFileSync(
       join(helloDir, 'app.yaml'),
       stringifyYAML({ description: 'Hello World' }),
@@ -100,6 +102,11 @@ export class Workspace {
     writeFileSync(
       join(helloMigrationsDir, '001_init.sql'),
       'CREATE TABLE IF NOT EXISTS greetings (\n  id INTEGER PRIMARY KEY,\n  message TEXT NOT NULL,\n  created_at TEXT DEFAULT (datetime(\'now\'))\n);\n',
+      'utf-8',
+    );
+    writeFileSync(
+      join(helloFunctionsDir, 'health.ts'),
+      'export async function GET(ctx) {\n  return { status: "ok", app: ctx.app.name, mode: ctx.mode };\n}\n',
       'utf-8',
     );
 

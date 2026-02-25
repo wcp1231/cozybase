@@ -24,7 +24,7 @@ describe('DraftReconciler', () => {
     if (handle) handle.cleanup();
   });
 
-  test('builds draft DB from migrations and seeds for draft_only app', () => {
+  test('builds draft DB from migrations and seeds for draft_only app', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -33,7 +33,7 @@ describe('DraftReconciler', () => {
     handle.workspace.refreshAppState('myapp');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    const result = reconciler.reconcile('myapp');
+    const result = await reconciler.reconcile('myapp');
 
     expect(result.success).toBe(true);
     expect(result.migrations).toContain('001_init.sql');
@@ -47,7 +47,7 @@ describe('DraftReconciler', () => {
     db.close();
   });
 
-  test('re-reconcile after migration change rebuilds DB from scratch', () => {
+  test('re-reconcile after migration change rebuilds DB from scratch', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -58,7 +58,7 @@ describe('DraftReconciler', () => {
     const reconciler = new DraftReconciler(handle.workspace);
 
     // First reconcile
-    reconciler.reconcile('myapp');
+    await reconciler.reconcile('myapp');
 
     // Insert an extra row directly into draft DB
     const appContext = handle.workspace.getOrCreateApp('myapp')!;
@@ -70,7 +70,7 @@ describe('DraftReconciler', () => {
     addMigration(handle.root, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
 
     // Second reconcile — should rebuild from scratch
-    const result2 = reconciler.reconcile('myapp');
+    const result2 = await reconciler.reconcile('myapp');
 
     expect(result2.success).toBe(true);
     expect(result2.migrations).toContain('001_init.sql');
@@ -91,7 +91,7 @@ describe('DraftReconciler', () => {
     db.close();
   });
 
-  test('works for stable_draft app', () => {
+  test('works for stable_draft app', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -105,14 +105,14 @@ describe('DraftReconciler', () => {
     expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    const result = reconciler.reconcile('myapp');
+    const result = await reconciler.reconcile('myapp');
 
     expect(result.success).toBe(true);
     expect(result.migrations).toContain('001_init.sql');
     expect(result.migrations).toContain('002_add_col.sql');
   });
 
-  test('throws BadRequestError for deleted app', () => {
+  test('throws BadRequestError for deleted app', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       spec: { description: 'test', status: 'deleted' },
@@ -120,10 +120,10 @@ describe('DraftReconciler', () => {
     handle.workspace.refreshAppState('myapp');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    expect(() => reconciler.reconcile('myapp')).toThrow(/deleted/);
+    expect(reconciler.reconcile('myapp')).rejects.toThrow(/deleted/);
   });
 
-  test('throws BadRequestError for stable app with no draft changes', () => {
+  test('throws BadRequestError for stable app with no draft changes', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -134,10 +134,10 @@ describe('DraftReconciler', () => {
     expect(handle.workspace.getAppState('myapp')).toBe('stable');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    expect(() => reconciler.reconcile('myapp')).toThrow(/no draft changes/);
+    expect(reconciler.reconcile('myapp')).rejects.toThrow(/no draft changes/);
   });
 
-  test('returns error when migration SQL fails', () => {
+  test('returns error when migration SQL fails', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_bad.sql': MIGRATION_BAD_SQL },
@@ -145,13 +145,13 @@ describe('DraftReconciler', () => {
     handle.workspace.refreshAppState('myapp');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    const result = reconciler.reconcile('myapp');
+    const result = await reconciler.reconcile('myapp');
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('001_bad.sql');
   });
 
-  test('returns error when seed loading fails', () => {
+  test('returns error when seed loading fails', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -160,7 +160,7 @@ describe('DraftReconciler', () => {
     handle.workspace.refreshAppState('myapp');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    const result = reconciler.reconcile('myapp');
+    const result = await reconciler.reconcile('myapp');
 
     expect(result.success).toBe(false);
     expect(result.migrations).toContain('001_init.sql');

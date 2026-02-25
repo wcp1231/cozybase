@@ -32,7 +32,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.1 ---
   describe('9.1: New App -> DraftReconcile -> query -> modify -> re-reconcile', () => {
-    test('full draft development cycle', () => {
+    test('full draft development cycle', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with migration + seed (uncommitted)
@@ -47,7 +47,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 3: Draft reconcile
       const reconciler = new DraftReconciler(handle.workspace);
-      const result1 = reconciler.reconcile('todos');
+      const result1 = await reconciler.reconcile('todos');
       expect(result1.success).toBe(true);
 
       // Step 4: Query draft DB — seed data present
@@ -62,7 +62,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       addMigration(handle.root, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
 
       // Step 6: Re-reconcile
-      const result2 = reconciler.reconcile('todos');
+      const result2 = await reconciler.reconcile('todos');
       expect(result2.success).toBe(true);
       expect(result2.migrations).toContain('001_init.sql');
       expect(result2.migrations).toContain('002_add_priority.sql');
@@ -128,7 +128,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.3 ---
   describe('9.3: Stable + new migration -> DraftReconcile -> Verify -> Publish', () => {
-    test('incremental development after initial publish', () => {
+    test('incremental development after initial publish', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app and publish (establish stable)
@@ -148,7 +148,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 4: Draft reconcile — draft DB has both migrations
       const reconciler = new DraftReconciler(handle.workspace);
-      const reconcileResult = reconciler.reconcile('todos');
+      const reconcileResult = await reconciler.reconcile('todos');
       expect(reconcileResult.success).toBe(true);
       expect(reconcileResult.migrations).toContain('002_add_priority.sql');
 
@@ -213,7 +213,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.5 ---
   describe('9.5: status: deleted -> state detection and operation rejection', () => {
-    test('deleted app detected and all operations rejected', () => {
+    test('deleted app detected and all operations rejected', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app marked as deleted
@@ -228,7 +228,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 3: All operations should be rejected
       const reconciler = new DraftReconciler(handle.workspace);
-      expect(() => reconciler.reconcile('todos')).toThrow(/deleted/);
+      expect(reconciler.reconcile('todos')).rejects.toThrow(/deleted/);
 
       const publisher = new Publisher(handle.workspace);
       expect(() => publisher.publish('todos')).toThrow(/deleted/);
