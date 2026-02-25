@@ -45,9 +45,9 @@ export class AppManager {
       throw new ConflictError(`App with name '${name}' already exists`);
     }
 
-    // Create app directory + app.yaml
+    // Create app directory + app.yaml + migrations/
     const appDir = join(this.workspace.appsDir, name);
-    mkdirSync(appDir, { recursive: true });
+    mkdirSync(join(appDir, 'migrations'), { recursive: true });
     writeFileSync(
       join(appDir, 'app.yaml'),
       stringifyYAML({ description }),
@@ -59,11 +59,8 @@ export class AppManager {
       'INSERT INTO apps (name, description) VALUES (?, ?)',
     ).run(name, description);
 
-    // Initialize the app database via AppContext (lazy creates on access)
-    const appContext = this.workspace.getOrCreateApp(name);
-    if (appContext) {
-      appContext.db; // trigger lazy initialization
-    }
+    // Refresh app state cache
+    this.workspace.refreshAppState(name);
 
     // Generate a default service API key
     const rawKey = `cb_${nanoid(32)}`;
@@ -79,11 +76,8 @@ export class AppManager {
   delete(name: string): void {
     this.get(name); // throws if not found
 
-    // Close app context (closes database connection)
-    const appContext = this.workspace.getApp(name);
-    if (appContext) {
-      appContext.close();
-    }
+    // Remove from workspace caches (also closes DB connections)
+    this.workspace.removeApp(name);
 
     // Remove app spec directory
     const appDir = join(this.workspace.appsDir, name);
@@ -97,10 +91,15 @@ export class AppManager {
       rmSync(appDataDir, { recursive: true, force: true });
     }
 
+    // Remove draft data directory
+    const draftDataDir = join(this.workspace.draftDir, 'apps', name);
+    if (existsSync(draftDataDir)) {
+      rmSync(draftDataDir, { recursive: true, force: true });
+    }
+
     // Remove platform records
     const db = this.workspace.getPlatformDb();
     db.query('DELETE FROM api_keys WHERE app_name = ?').run(name);
-    db.query('DELETE FROM resource_state WHERE app_name = ?').run(name);
     db.query('DELETE FROM apps WHERE name = ?').run(name);
   }
 

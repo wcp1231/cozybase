@@ -1,30 +1,22 @@
 import { Hono } from 'hono';
 import type { Workspace } from '../../core/workspace';
-import type { Reconciler } from '../../core/reconciler';
 
-export function createAppRoutes(workspace: Workspace, reconciler: Reconciler) {
+export function createAppRoutes(workspace: Workspace) {
   const app = new Hono();
 
-  // GET /status - Platform status + all apps
-  app.get('/status', (c) => {
+  // GET /apps - List all apps with derived states
+  app.get('/apps', (c) => {
     const apps = workspace.scanApps();
-    const platformDb = workspace.getPlatformDb();
 
-    const appStatuses = apps.map((a) => {
-      const tables = [...a.tables.keys()];
-      const functions = a.functions;
-
-      // Get resource state from DB
-      const resources = platformDb.query(
-        'SELECT resource_type, resource_name, applied_at FROM resource_state WHERE app_name = ?',
-      ).all(a.name) as { resource_type: string; resource_name: string; applied_at: string }[];
-
+    const appList = apps.map((a) => {
+      const state = workspace.getAppState(a.name);
       return {
         name: a.name,
         description: a.spec.description ?? '',
-        tables,
-        functions,
-        resources,
+        state: state ?? 'unknown',
+        migrations: a.migrations.length,
+        seeds: a.seeds.length,
+        functions: a.functions,
       };
     });
 
@@ -32,14 +24,32 @@ export function createAppRoutes(workspace: Workspace, reconciler: Reconciler) {
       status: 'running',
       version: '0.1.0',
       workspace: workspace.root,
-      apps: appStatuses,
+      apps: appList,
     });
   });
 
-  // POST /reconcile - Manual full reconcile
-  app.post('/reconcile', (c) => {
-    const changes = reconciler.reconcileAll();
-    return c.json({ data: { changes } });
+  // GET /apps/:appName - Get single app status
+  app.get('/apps/:appName', (c) => {
+    const appName = c.req.param('appName')!;
+    const state = workspace.getAppState(appName);
+
+    if (!state) {
+      return c.json({ error: { code: 'NOT_FOUND', message: `App '${appName}' not found` } }, 404);
+    }
+
+    const apps = workspace.scanApps();
+    const appDef = apps.find((a) => a.name === appName);
+
+    return c.json({
+      data: {
+        name: appName,
+        description: appDef?.spec.description ?? '',
+        state,
+        migrations: appDef?.migrations.length ?? 0,
+        seeds: appDef?.seeds.length ?? 0,
+        functions: appDef?.functions ?? [],
+      },
+    });
   });
 
   return app;

@@ -15,7 +15,9 @@ export function createDbRoutes() {
   // GET /schema - Introspect all tables
   app.get('/schema', (c) => {
     const appContext = c.get('appContext');
-    const schema = introspectSchema(appContext.db);
+    const mode = c.get('appMode');
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
+    const schema = introspectSchema(db);
     return c.json({ data: schema });
   });
 
@@ -24,13 +26,15 @@ export function createDbRoutes() {
   // POST /sql - Execute raw SQL
   app.post('/sql', async (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     const body = await c.req.json();
 
     if (!body.sql || typeof body.sql !== 'string') {
       throw new BadRequestError('Missing "sql" field');
     }
 
-    const result = executeSql(appContext.db, body.sql, body.params);
+    const result = executeSql(db, body.sql, body.params);
     return c.json({ data: result });
   });
 
@@ -39,10 +43,11 @@ export function createDbRoutes() {
   // GET /:table - List records
   app.get('/:table', (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
     const table = c.req.param('table')!;
     validateTableName(table);
 
-    const db = appContext.db;
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     assertTableExists(db, table);
 
     const params: QueryParams = {
@@ -79,11 +84,12 @@ export function createDbRoutes() {
   // GET /:table/:id - Get single record
   app.get('/:table/:id', (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = appContext.db;
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);
@@ -99,10 +105,11 @@ export function createDbRoutes() {
   // POST /:table - Create record
   app.post('/:table', async (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
     const table = c.req.param('table')!;
     validateTableName(table);
 
-    const db = appContext.db;
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     assertTableExists(db, table);
 
     const body = await c.req.json();
@@ -139,11 +146,12 @@ export function createDbRoutes() {
   // PATCH /:table/:id - Update record
   app.patch('/:table/:id', async (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = appContext.db;
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);
@@ -182,11 +190,12 @@ export function createDbRoutes() {
   // DELETE /:table/:id - Delete record
   app.delete('/:table/:id', (c) => {
     const appContext = c.get('appContext');
+    const mode = c.get('appMode');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = appContext.db;
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);

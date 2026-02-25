@@ -1,55 +1,101 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import type { AppDefinition } from './workspace';
 
 export class AppContext {
   readonly name: string;
   readonly specDir: string;
-  readonly dataDir: string;
-  readonly dbPath: string;
+  readonly stableDataDir: string;
+  readonly stableDbPath: string;
+  readonly draftDataDir: string;
+  readonly draftDbPath: string;
 
   private _definition: AppDefinition;
-  private _db: Database | null = null;
+  private _stableDb: Database | null = null;
+  private _draftDb: Database | null = null;
 
   constructor(
     name: string,
     definition: AppDefinition,
     appsDir: string,
     dataRootDir: string,
+    draftRootDir: string,
   ) {
     this.name = name;
     this._definition = definition;
     this.specDir = join(appsDir, name);
-    this.dataDir = join(dataRootDir, 'apps', name);
-    this.dbPath = join(this.dataDir, 'db.sqlite');
+    this.stableDataDir = join(dataRootDir, 'apps', name);
+    this.stableDbPath = join(this.stableDataDir, 'db.sqlite');
+    this.draftDataDir = join(draftRootDir, 'apps', name);
+    this.draftDbPath = join(this.draftDataDir, 'db.sqlite');
   }
 
   get definition(): AppDefinition {
     return this._definition;
   }
 
-  /** Update the app definition (called during reconcile) */
-  reload(definition: AppDefinition): void {
-    this._definition = definition;
+  /** Get the app's Stable SQLite database connection (lazy initialized) */
+  get stableDb(): Database {
+    if (!this._stableDb) {
+      mkdirSync(dirname(this.stableDbPath), { recursive: true });
+      this._stableDb = new Database(this.stableDbPath);
+      this._stableDb.exec('PRAGMA journal_mode = WAL');
+      this._stableDb.exec('PRAGMA foreign_keys = ON');
+    }
+    return this._stableDb;
   }
 
-  /** Get the app's SQLite database connection (lazy initialized) */
-  get db(): Database {
-    if (!this._db) {
-      mkdirSync(dirname(this.dbPath), { recursive: true });
-      this._db = new Database(this.dbPath);
-      this._db.exec('PRAGMA journal_mode = WAL');
-      this._db.exec('PRAGMA foreign_keys = ON');
+  /** Get the app's Draft SQLite database connection (lazy initialized) */
+  get draftDb(): Database {
+    if (!this._draftDb) {
+      mkdirSync(dirname(this.draftDbPath), { recursive: true });
+      this._draftDb = new Database(this.draftDbPath);
+      this._draftDb.exec('PRAGMA journal_mode = WAL');
+      this._draftDb.exec('PRAGMA foreign_keys = ON');
     }
-    return this._db;
+    return this._draftDb;
+  }
+
+  /** Destroy and reset the draft database (for draft reconcile) */
+  resetDraft(): void {
+    // Close existing connection
+    if (this._draftDb) {
+      this._draftDb.close();
+      this._draftDb = null;
+    }
+
+    // Delete draft database files
+    if (existsSync(this.draftDbPath)) {
+      unlinkSync(this.draftDbPath);
+    }
+    const walPath = this.draftDbPath + '-wal';
+    if (existsSync(walPath)) {
+      unlinkSync(walPath);
+    }
+    const shmPath = this.draftDbPath + '-shm';
+    if (existsSync(shmPath)) {
+      unlinkSync(shmPath);
+    }
+  }
+
+  /** Close the stable database connection */
+  closeStable(): void {
+    if (this._stableDb) {
+      this._stableDb.close();
+      this._stableDb = null;
+    }
   }
 
   /** Close all resources held by this AppContext */
   close(): void {
-    if (this._db) {
-      this._db.close();
-      this._db = null;
+    if (this._stableDb) {
+      this._stableDb.close();
+      this._stableDb = null;
+    }
+    if (this._draftDb) {
+      this._draftDb.close();
+      this._draftDb = null;
     }
   }
 }

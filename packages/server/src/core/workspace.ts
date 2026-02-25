@@ -7,29 +7,9 @@ import { AppContext } from './app-context';
 
 // --- YAML Schema Definitions ---
 
-const ColumnSchema = z.object({
-  name: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
-  type: z.enum(['text', 'integer', 'real', 'blob', 'numeric']),
-  primary_key: z.boolean().optional(),
-  required: z.boolean().optional(),   // maps to NOT NULL
-  unique: z.boolean().optional(),
-  default: z.string().optional(),
-  references: z.string().optional(),   // e.g. "users(id)"
-});
-
-const IndexSchema = z.object({
-  columns: z.array(z.string()).min(1),
-  unique: z.boolean().optional(),
-  name: z.string().optional(),
-});
-
-const TableSpecSchema = z.object({
-  columns: z.array(ColumnSchema).min(1),
-  indexes: z.array(IndexSchema).optional(),
-});
-
 const AppSpecSchema = z.object({
   description: z.string().optional(),
+  status: z.enum(['deleted']).optional(),
 }).passthrough();
 
 const WorkspaceConfigSchema = z.object({
@@ -37,11 +17,12 @@ const WorkspaceConfigSchema = z.object({
   version: z.number().int().positive(),
 });
 
-export type ColumnSpec = z.infer<typeof ColumnSchema>;
-export type IndexSpec = z.infer<typeof IndexSchema>;
-export type TableSpec = z.infer<typeof TableSpecSchema>;
 export type AppSpec = z.infer<typeof AppSpecSchema>;
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
+
+// --- App State ---
+
+export type AppState = 'draft_only' | 'stable' | 'stable_draft' | 'deleted';
 
 // --- App Discovery Result ---
 
@@ -49,8 +30,9 @@ export interface AppDefinition {
   name: string;
   dir: string;
   spec: AppSpec;
-  tables: Map<string, { spec: TableSpec; content: string }>;
-  functions: string[];    // function names (file stems)
+  migrations: string[];   // migration file paths (sorted)
+  seeds: string[];         // seed file paths (sorted)
+  functions: string[];     // function names (file stems)
 }
 
 // --- Constants ---
@@ -64,15 +46,18 @@ export class Workspace {
   readonly root: string;
   readonly appsDir: string;
   readonly dataDir: string;
+  readonly draftDir: string;
 
   private _config: WorkspaceConfig | null = null;
   private _platformDb: Database | null = null;
   private _apps = new Map<string, AppContext>();
+  private _appStates = new Map<string, AppState>();
 
   constructor(root: string) {
     this.root = root;
     this.appsDir = join(root, 'apps');
     this.dataDir = join(root, 'data');
+    this.draftDir = join(root, 'draft');
   }
 
   // --- Lifecycle ---
@@ -86,6 +71,7 @@ export class Workspace {
   init(): void {
     mkdirSync(this.appsDir, { recursive: true });
     mkdirSync(this.dataDir, { recursive: true });
+    mkdirSync(this.draftDir, { recursive: true });
 
     // Write workspace.yaml
     const config: WorkspaceConfig = { name: 'cozybase', version: SUPPORTED_VERSION };
@@ -98,16 +84,22 @@ export class Workspace {
     // Write .gitignore
     writeFileSync(
       join(this.root, '.gitignore'),
-      ['data/', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', ''].join('\n'),
+      ['data/', 'draft/', '*.sqlite', '*.sqlite-wal', '*.sqlite-shm', ''].join('\n'),
       'utf-8',
     );
 
-    // Create example app
+    // Create example app with migration format
     const helloDir = join(this.appsDir, 'hello');
-    mkdirSync(helloDir, { recursive: true });
+    const helloMigrationsDir = join(helloDir, 'migrations');
+    mkdirSync(helloMigrationsDir, { recursive: true });
     writeFileSync(
       join(helloDir, 'app.yaml'),
       stringifyYAML({ description: 'Hello World' }),
+      'utf-8',
+    );
+    writeFileSync(
+      join(helloMigrationsDir, '001_init.sql'),
+      'CREATE TABLE IF NOT EXISTS greetings (\n  id INTEGER PRIMARY KEY,\n  message TEXT NOT NULL,\n  created_at TEXT DEFAULT (datetime(\'now\'))\n);\n',
       'utf-8',
     );
 
@@ -132,6 +124,9 @@ export class Workspace {
 
     // Eagerly initialize platform DB
     this.getPlatformDb();
+
+    // Initialize app state cache
+    this.refreshAllAppStates();
   }
 
   /** Close all resources */
@@ -198,16 +193,83 @@ export class Workspace {
         expires_at TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       );
-
-      CREATE TABLE IF NOT EXISTS resource_state (
-        app_name TEXT NOT NULL,
-        resource_type TEXT NOT NULL,
-        resource_name TEXT NOT NULL,
-        spec_hash TEXT NOT NULL,
-        applied_at TEXT DEFAULT (datetime('now')),
-        PRIMARY KEY (app_name, resource_type, resource_name)
-      );
     `);
+  }
+
+  // --- App State ---
+
+  /** Get the current state of an app (uses cache) */
+  getAppState(name: string): AppState | undefined {
+    return this._appStates.get(name);
+  }
+
+  /** Refresh the state cache for a specific app */
+  refreshAppState(name: string): AppState | undefined {
+    const appDir = join(this.appsDir, name);
+    const appYamlPath = join(appDir, 'app.yaml');
+
+    if (!existsSync(appYamlPath)) {
+      this._appStates.delete(name);
+      return undefined;
+    }
+
+    // Check for deleted status
+    try {
+      const content = readFileSync(appYamlPath, 'utf-8').trim();
+      if (content) {
+        const parsed = parseYAML(content);
+        if (parsed?.status === 'deleted') {
+          this._appStates.set(name, 'deleted');
+          return 'deleted';
+        }
+      }
+    } catch {
+      // Ignore parse errors for state detection
+    }
+
+    const stableDbPath = join(this.dataDir, 'apps', name, 'db.sqlite');
+    const stableExists = existsSync(stableDbPath);
+    const hasUnstaged = this.hasUnstagedChanges(name);
+
+    let state: AppState;
+    if (stableExists && hasUnstaged) {
+      state = 'stable_draft';
+    } else if (stableExists && !hasUnstaged) {
+      state = 'stable';
+    } else if (!stableExists && hasUnstaged) {
+      state = 'draft_only';
+    } else {
+      // No stable DB and no unstaged changes — treat as stable (committed but not yet reconciled)
+      state = 'stable';
+    }
+
+    this._appStates.set(name, state);
+    return state;
+  }
+
+  /** Refresh state cache for all apps */
+  refreshAllAppStates(): void {
+    this._appStates.clear();
+
+    if (!existsSync(this.appsDir)) return;
+
+    const entries = readdirSync(this.appsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (!APP_NAME_PATTERN.test(entry.name)) continue;
+      if (entry.name.startsWith('.')) continue;
+
+      const appYamlPath = join(this.appsDir, entry.name, 'app.yaml');
+      if (!existsSync(appYamlPath)) continue;
+
+      this.refreshAppState(entry.name);
+    }
+  }
+
+  /** Check if an app has unstaged changes via git status */
+  private hasUnstagedChanges(name: string): boolean {
+    const status = this.gitExec(['status', '--porcelain', `apps/${name}/`]);
+    return !!status && status.trim() !== '';
   }
 
   // --- App Management ---
@@ -243,6 +305,16 @@ export class Workspace {
     return this._apps.get(name);
   }
 
+  /** Remove an app from all caches (also closes DB connections) */
+  removeApp(name: string): void {
+    const cached = this._apps.get(name);
+    if (cached) {
+      cached.close();
+      this._apps.delete(name);
+    }
+    this._appStates.delete(name);
+  }
+
   /** Get or create an AppContext (Hybrid: cached or lazy-loaded) */
   getOrCreateApp(name: string): AppContext | null {
     const cached = this._apps.get(name);
@@ -259,26 +331,60 @@ export class Workspace {
     const definition = this.loadAppDefinition(name, appDir);
     if (!definition) return null;
 
-    const ctx = new AppContext(name, definition, this.appsDir, this.dataDir);
+    const ctx = new AppContext(name, definition, this.appsDir, this.dataDir, this.draftDir);
     this._apps.set(name, ctx);
     return ctx;
   }
 
   // --- Git ---
 
-  /** Auto-commit apps/ directory changes */
-  commit(message: string): void {
-    // Check if there are changes to commit
-    const status = this.gitExec(['status', '--porcelain', 'apps/']);
+  /** Commit changes for a specific app */
+  commitApp(appName: string, message: string): void {
+    const status = this.gitExec(['status', '--porcelain', `apps/${appName}/`]);
     if (!status || status.trim() === '') {
       return; // Nothing to commit
     }
 
-    this.gitExec(['add', 'apps/']);
+    this.gitExec(['add', `apps/${appName}/`]);
     this.gitExec(['commit', '-m', message]);
   }
 
+  /** Get the committed version of a file (for immutability checks) */
+  getCommittedFileContent(relativePath: string): string | null {
+    return this.gitExec(['show', `HEAD:${relativePath}`]);
+  }
+
+  /** Check if a file is tracked by git (committed) */
+  isFileCommitted(relativePath: string): boolean {
+    const result = this.gitExec(['ls-files', relativePath]);
+    return !!result && result.trim() !== '';
+  }
+
   // --- Internal helpers ---
+
+  /** Execute a git command in the workspace root (best effort, returns stdout or null) */
+  gitExec(args: string[]): string | null {
+    try {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd: this.root,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      if (result.exitCode !== 0) {
+        const stderr = result.stderr.toString().trim();
+        if (stderr && !stderr.includes('does not exist in')) {
+          console.warn(`[git] ${args.join(' ')}: ${stderr}`);
+        }
+        return null;
+      }
+
+      return result.stdout.toString();
+    } catch {
+      console.warn(`[git] Command failed: git ${args.join(' ')} (git may not be installed)`);
+      return null;
+    }
+  }
 
   /** Load a single app's full definition from its directory */
   loadAppDefinition(name: string, dir: string): AppDefinition | null {
@@ -297,21 +403,23 @@ export class Workspace {
       return null;
     }
 
-    // Load tables
-    const tables = new Map<string, { spec: TableSpec; content: string }>();
-    const tablesDir = join(dir, 'tables');
-    if (existsSync(tablesDir)) {
-      const files = readdirSync(tablesDir).filter((f) => f.endsWith('.yaml'));
+    // Discover migrations
+    const migrations: string[] = [];
+    const migrationsDir = join(dir, 'migrations');
+    if (existsSync(migrationsDir)) {
+      const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
       for (const file of files) {
-        const tableName = basename(file, '.yaml');
-        try {
-          const content = readFileSync(join(tablesDir, file), 'utf-8');
-          const parsed = parseYAML(content);
-          const tableSpec = TableSpecSchema.parse(parsed);
-          tables.set(tableName, { spec: tableSpec, content });
-        } catch (err: any) {
-          console.error(`[${name}] Failed to parse tables/${file}: ${err.message}`);
-        }
+        migrations.push(join(migrationsDir, file));
+      }
+    }
+
+    // Discover seeds
+    const seeds: string[] = [];
+    const seedsDir = join(dir, 'seeds');
+    if (existsSync(seedsDir)) {
+      const files = readdirSync(seedsDir).filter((f) => f.endsWith('.sql') || f.endsWith('.json')).sort();
+      for (const file of files) {
+        seeds.push(join(seedsDir, file));
       }
     }
 
@@ -325,39 +433,6 @@ export class Workspace {
       }
     }
 
-    return { name, dir, spec, tables, functions };
+    return { name, dir, spec, migrations, seeds, functions };
   }
-
-  /** Execute a git command in the workspace root (best effort, returns stdout or null) */
-  private gitExec(args: string[]): string | null {
-    try {
-      const result = Bun.spawnSync(['git', ...args], {
-        cwd: this.root,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
-      if (result.exitCode !== 0) {
-        const stderr = result.stderr.toString().trim();
-        if (stderr) {
-          console.warn(`[git] ${args.join(' ')}: ${stderr}`);
-        }
-        return null;
-      }
-
-      return result.stdout.toString();
-    } catch {
-      console.warn(`[git] Command failed: git ${args.join(' ')} (git may not be installed)`);
-      return null;
-    }
-  }
-}
-
-// --- Utility ---
-
-/** Compute SHA256 hash of a string */
-export function hashContent(content: string): string {
-  const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(content);
-  return hasher.digest('hex');
 }

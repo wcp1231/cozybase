@@ -22,9 +22,13 @@ console.log(`
 
   API:
     GET  /health
-    GET  /api/v1/status
-    POST /api/v1/reconcile
-    *    /api/v1/app/:appName/db/*
+    GET  /api/v1/apps
+    GET  /api/v1/apps/:appName
+    *    /stable/apps/:appName/db/*
+    *    /draft/apps/:appName/db/*
+    POST /draft/apps/:appName/reconcile
+    POST /draft/apps/:appName/verify
+    POST /draft/apps/:appName/publish
 `);
 
 // Graceful shutdown
