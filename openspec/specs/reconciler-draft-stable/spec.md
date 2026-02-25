@@ -65,7 +65,7 @@ Seed 文件 SHALL 在所有 migration 执行完成后加载。JSON 格式的 see
 
 状态推导规则（按优先级排列）：
 1. 若 `app.yaml` 中包含 `status: deleted` → App 状态为 **Deleted**
-2. 若 `data/apps/{appName}/db.sqlite`（stable DB）不存在 且 `apps/{appName}/` 下有 unstaged changes → 状态为 **Draft only**
+2. 若 `data/apps/{appName}/db.sqlite`（stable DB）不存在 → 状态为 **Draft only**（无论是否有 unstaged changes）
 3. 若 stable DB 存在 且 `apps/{appName}/` 下无 unstaged changes → 状态为 **Stable**
 4. 若 stable DB 存在 且 `apps/{appName}/` 下有 unstaged changes → 状态为 **Stable + Draft**
 
@@ -91,6 +91,13 @@ Seed 文件 SHALL 在所有 migration 执行完成后加载。JSON 格式的 see
 - **WHEN** `apps/todo-app/app.yaml` 中包含 `status: deleted`
 - **THEN** 系统 SHALL 推导该 App 状态为 **Deleted**，无论其他条件如何
 
+#### Scenario: 无 Stable DB 且无 unstaged changes 的 App（Draft only）
+
+- **WHEN** `apps/{appName}/` 下所有文件已 committed（无 unstaged changes），但 `data/apps/{appName}/db.sqlite` 不存在
+- **THEN** 系统 SHALL 推导该 App 状态为 **Draft only**，而非 Stable
+
+> 此场景覆盖 init 后模板 App 已 git commit 但尚未 Publish 的情况。
+
 ### Requirement: Draft Reconcile（开发流程）
 
 系统 SHALL 提供 Draft Reconcile 功能，用于 AI Agent 在开发环境中迭代测试 schema 变更。
@@ -101,8 +108,16 @@ Draft Reconcile 流程（销毁重建策略）：
 3. 创建新的空 SQLite 数据库，启用 WAL 模式和 foreign keys
 4. 按顺序执行 `apps/{appName}/migrations/` 下所有 `.sql` 文件
 5. 加载 `apps/{appName}/seeds/` 下所有 seed 文件
-6. 验证 `apps/{appName}/functions/` 下所有 `.ts` 文件（可选步骤，失败不阻塞 Reconcile）
-7. 返回执行结果（成功/失败 + 已执行的 migration 列表 + 函数验证结果）
+6. 复制 `apps/{appName}/functions/` 下所有文件到 `draft/apps/{appName}/functions/`（先清空目标目录再全量复制）
+7. 验证 `draft/apps/{appName}/functions/` 下所有 `.ts` 文件（从 draft 目录验证，而非源码目录）
+8. 返回执行结果（成功/失败 + 已执行的 migration 列表 + 函数验证结果）
+
+函数复制逻辑：
+- 若目标目录 `draft/apps/{appName}/functions/` 已存在，SHALL 先删除再重新创建
+- 使用逐文件复制（`copyFileSync`），仅复制 `functions/` 下的直接文件
+- 若源目录 `apps/{appName}/functions/` 不存在或为空，SHALL 跳过复制步骤，不报错
+
+函数验证步骤 SHALL 从 `draft/apps/{appName}/functions/` 目录读取文件进行验证，确保验证的是复制后的副本。
 
 函数验证步骤 SHALL 检查：
 - 文件能否被 Bun `import()` 成功（无语法错误）
@@ -147,7 +162,22 @@ App 状态 MUST 为 **Draft only** 或 **Stable + Draft** 才能执行 Draft Rec
 #### Scenario: 无函数文件
 
 - **WHEN** `apps/{appName}/functions/` 目录为空或不存在
-- **THEN** 系统 SHALL 跳过函数验证步骤，不报错
+- **THEN** 系统 SHALL 跳过函数复制和验证步骤，不报错
+
+#### Scenario: Reconcile 复制函数文件到 draft 目录
+
+- **WHEN** Agent 调用 `POST /draft/apps/todo-app/reconcile`，`apps/todo-app/functions/` 下有 `orders.ts` 和 `users.ts`
+- **THEN** 系统 SHALL 在执行 migration 和 seed 之后，将 `orders.ts` 和 `users.ts` 复制到 `draft/apps/todo-app/functions/`，然后从 draft 目录验证函数
+
+#### Scenario: Reconcile 时源 functions 目录不存在
+
+- **WHEN** Agent 调用 Reconcile，但 `apps/{appName}/functions/` 目录不存在
+- **THEN** 系统 SHALL 跳过函数复制和验证步骤，不报错
+
+#### Scenario: 重复 Reconcile 清理旧函数副本
+
+- **WHEN** Agent 连续两次调用 Reconcile，第一次时有 `orders.ts`，第二次时 `orders.ts` 被删除
+- **THEN** 第二次 Reconcile SHALL 先清空 `draft/apps/{appName}/functions/` 目录再复制，确保不残留已删除的函数文件
 
 ### Requirement: Verify 流程
 

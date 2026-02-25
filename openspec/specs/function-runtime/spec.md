@@ -80,13 +80,25 @@ Handler 解析优先级：
 系统 SHALL 提供 `DirectRuntime` 作为 `FunctionRuntime` 的 MVP 实现，在主进程内通过 Bun 的 `import()` 动态加载并执行 TypeScript 函数文件。
 
 加载与缓存策略：
-- **Draft 模式**：每次请求 SHALL 重新 `import()` 函数文件（通过 query string cache bust 绕过模块缓存），实现热重载
-- **Stable 模式**：首次 `import()` 后 SHALL 缓存模块引用，后续请求复用缓存。调用 `reload()` SHALL 清除指定 APP 的模块缓存
+- **Draft 模式**：每次请求 SHALL 从 `draft/apps/{appName}/functions/` 目录加载函数文件（通过 query string cache bust 绕过模块缓存）。函数文件由 Reconcile 流程复制到该目录，修改源码后需 Reconcile 才生效。
+- **Stable 模式**：首次 `import()` 后 SHALL 缓存模块引用，后续请求复用缓存。从 `data/apps/{appName}/functions/` 目录加载。调用 `reload()` SHALL 清除指定 APP 的模块缓存
 
-#### Scenario: Draft 模式热重载
+> Draft Functions 的生命周期与 Draft DB 一致：编辑源码 → Reconcile → Draft 可用 → Publish → Stable 可用。
 
-- **WHEN** Draft 模式下连续两次请求同一函数，且两次请求之间函数文件内容发生变化
-- **THEN** 系统 SHALL 加载最新版本的函数文件，两次请求 SHALL 执行不同版本的代码
+#### Scenario: Draft 模式从 draft 目录加载函数
+
+- **WHEN** Draft 模式下请求执行函数 `orders`
+- **THEN** 系统 SHALL 从 `draft/apps/{appName}/functions/orders.ts` 加载函数文件，而非从 `apps/{appName}/functions/orders.ts`
+
+#### Scenario: Draft 函数修改需 Reconcile 生效
+
+- **WHEN** 开发者修改了 `apps/{appName}/functions/orders.ts` 的源码，但未执行 Reconcile
+- **THEN** Draft 模式下请求该函数 SHALL 仍执行旧版本代码（来自 `draft/apps/{appName}/functions/orders.ts` 的副本）
+
+#### Scenario: Reconcile 后 Draft 函数更新
+
+- **WHEN** 开发者修改源码后执行 Reconcile
+- **THEN** Reconcile 将新版本函数复制到 draft 目录，后续 Draft 模式请求 SHALL 执行新版本代码
 
 #### Scenario: Stable 模式缓存
 

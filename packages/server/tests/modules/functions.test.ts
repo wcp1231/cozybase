@@ -1,4 +1,8 @@
 import { describe, test, expect, afterEach } from 'bun:test';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { createServer } from '../../src/server';
 import type { Config } from '../../src/config';
 import {
@@ -137,7 +141,7 @@ describe('Function Runtime (HTTP integration)', () => {
     expect(body.mode).toBe('stable');
   });
 
-  test('draft hot-reload picks up file changes', async () => {
+  test('draft function requires reconcile to pick up file changes', async () => {
     handle = createTestWorkspace();
     createTestApp(handle.root, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -152,13 +156,21 @@ describe('Function Runtime (HTTP integration)', () => {
     const body1 = await jsonBody(res1);
     expect(body1.version).toBeUndefined();
 
-    // Modify function on disk
+    // Modify function on disk (source only)
     addFunction(handle.root, 'myapp', 'health.ts', FN_HEALTH_V2);
 
-    // Second call — should see updated code (hot-reload)
+    // Second call — draft still sees old code (loads from draft dir, not source)
     const res2 = await app.request('/draft/apps/myapp/functions/health');
     const body2 = await jsonBody(res2);
-    expect(body2.version).toBe(2);
+    expect(body2.version).toBeUndefined();
+
+    // Reconcile to copy updated function to draft dir
+    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+    // Third call — now sees updated code
+    const res3 = await app.request('/draft/apps/myapp/functions/health');
+    const body3 = await jsonBody(res3);
+    expect(body3.version).toBe(2);
   });
 
   test('404 for nonexistent function', async () => {
@@ -306,7 +318,7 @@ describe('Function Runtime (HTTP integration)', () => {
     const body2 = await jsonBody(res2);
     expect(body2.version).toBeUndefined();
 
-    // Draft sees v2 via hot-reload
+    // Draft sees v2 after reconcile
     await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
     const draftRes = await app.request('/draft/apps/myapp/functions/health');
     expect(draftRes.status).toBe(200);
@@ -382,5 +394,72 @@ describe('Function Runtime (HTTP integration)', () => {
     // After shutdown, a new call should still work (cache rebuilt on demand)
     const res = await app.request('/stable/apps/myapp/functions/health');
     expect(res.status).toBe(200);
+  });
+});
+
+describe('createServer() first-init auto-publish', () => {
+  let tmpRoot: string;
+
+  afterEach(() => {
+    if (tmpRoot) {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('createServer on fresh directory auto-publishes template apps to stable', async () => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'cozybase-init-'));
+
+    // createServer triggers workspace.init() + auto-publish on a fresh directory
+    const { app, workspace } = createServer({
+      port: 0,
+      host: '127.0.0.1',
+      workspaceDir: tmpRoot,
+      jwtSecret: 'test-secret',
+    });
+
+    // After createServer, welcome app should be auto-published and stable
+    const state = workspace.getAppState('welcome');
+    expect(state).toBe('stable');
+
+    // Stable DB should exist
+    const stableDbPath = join(tmpRoot, 'data', 'apps', 'welcome', 'db.sqlite');
+    expect(existsSync(stableDbPath)).toBe(true);
+
+    // Stable function route should work
+    const res = await app.request('/stable/apps/welcome/functions/todos');
+    expect(res.status).toBe(200);
+
+    workspace.close();
+  });
+
+  test('createServer on existing workspace does not auto-publish', async () => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'cozybase-init-'));
+
+    // First boot — triggers init + auto-publish
+    const { workspace: ws1 } = createServer({
+      port: 0,
+      host: '127.0.0.1',
+      workspaceDir: tmpRoot,
+      jwtSecret: 'test-secret',
+    });
+    ws1.close();
+
+    // Delete the stable DB to simulate a "draft_only" state
+    const stableDir = join(tmpRoot, 'data', 'apps', 'welcome');
+    rmSync(stableDir, { recursive: true, force: true });
+
+    // Second boot — should NOT auto-publish (workspace already initialized)
+    const { workspace: ws2 } = createServer({
+      port: 0,
+      host: '127.0.0.1',
+      workspaceDir: tmpRoot,
+      jwtSecret: 'test-secret',
+    });
+
+    // State should be draft_only — auto-publish did NOT run
+    const state = ws2.getAppState('welcome');
+    expect(state).toBe('draft_only');
+
+    ws2.close();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { Database } from 'bun:sqlite';
 import { DraftReconciler } from '../../src/core/draft-reconciler';
@@ -10,6 +10,7 @@ import {
   createTestApp,
   commitAll,
   addMigration,
+  addFunction,
   modifyMigration,
   setAppSpec,
   openDraftDb,
@@ -280,6 +281,155 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 8: No new git commit
       const commitsAfter = gitExec(handle.root, ['log', '--oneline']).trim().split('\n').length;
       expect(commitsAfter).toBe(commitsBefore);
+    });
+  });
+
+  // --- Scenario 9.7: Init -> auto-publish -> stable accessible ---
+  describe('9.7: Init auto-publishes template apps to stable', () => {
+    test('after init + publish, template app is stable with DB and functions', () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with migration + function (simulating template copy)
+      const fnCode = 'export async function GET(ctx) { return ctx.db.query("SELECT 1"); }';
+      createTestApp(handle.root, 'welcome', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        seeds: { '01_seed.sql': SEED_TODOS_SQL },
+        functions: { 'todos.ts': fnCode },
+      });
+
+      // Step 2: Commit (simulating what workspace.init() does after template copy)
+      commitAll(handle.root, 'init workspace');
+
+      // Step 3: State is draft_only (no stable DB, no unstaged changes)
+      handle.workspace.refreshAppState('welcome');
+      expect(handle.workspace.getAppState('welcome')).toBe('draft_only');
+
+      // Step 4: Auto-publish (simulating what server.ts does after init)
+      const publisher = new Publisher(handle.workspace);
+      const result = publisher.publish('welcome');
+      expect(result.success).toBe(true);
+
+      // Step 5: Stable DB now exists
+      const stableDbPath = join(handle.root, 'data', 'apps', 'welcome', 'db.sqlite');
+      expect(existsSync(stableDbPath)).toBe(true);
+
+      // Step 6: Stable functions directory exists with todos.ts
+      const stableFnDir = join(handle.root, 'data', 'apps', 'welcome', 'functions');
+      expect(existsSync(stableFnDir)).toBe(true);
+      expect(existsSync(join(stableFnDir, 'todos.ts'))).toBe(true);
+
+      // Step 7: State is now stable
+      handle.workspace.refreshAppState('welcome');
+      expect(handle.workspace.getAppState('welcome')).toBe('stable');
+    });
+  });
+
+  // --- Scenario 9.8: Reconcile copies functions to draft dir ---
+  describe('9.8: Draft Reconcile copies functions to draft directory', () => {
+    test('reconcile copies function files to draft/apps/{name}/functions/', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with migration + function (uncommitted)
+      const fnCode = 'export async function GET(ctx) { return []; }';
+      createTestApp(handle.root, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
+      });
+
+      // Step 2: State is draft_only
+      handle.workspace.refreshAppState('myapp');
+      expect(handle.workspace.getAppState('myapp')).toBe('draft_only');
+
+      // Step 3: Before reconcile, draft functions dir does not exist
+      const draftFnDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
+      expect(existsSync(draftFnDir)).toBe(false);
+
+      // Step 4: Reconcile
+      const reconciler = new DraftReconciler(handle.workspace);
+      const result = await reconciler.reconcile('myapp');
+      expect(result.success).toBe(true);
+
+      // Step 5: Draft functions dir now exists with both files
+      expect(existsSync(draftFnDir)).toBe(true);
+      const files = readdirSync(draftFnDir).sort();
+      expect(files).toEqual(['orders.ts', 'users.ts']);
+
+      // Step 6: Content matches source
+      const srcContent = readFileSync(join(handle.root, 'apps', 'myapp', 'functions', 'orders.ts'), 'utf-8');
+      const draftContent = readFileSync(join(draftFnDir, 'orders.ts'), 'utf-8');
+      expect(draftContent).toBe(srcContent);
+    });
+  });
+
+  // --- Scenario 9.9: Draft functions isolation — source changes don't affect draft until reconcile ---
+  describe('9.9: Draft functions require reconcile after source modification', () => {
+    test('modifying source function does not update draft until reconcile', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with function
+      const fnCodeV1 = 'export async function GET(ctx) { return { version: 1 }; }';
+      createTestApp(handle.root, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: { 'handler.ts': fnCodeV1 },
+      });
+
+      // Step 2: First reconcile — copies v1 to draft
+      handle.workspace.refreshAppState('myapp');
+      const reconciler = new DraftReconciler(handle.workspace);
+      const result1 = await reconciler.reconcile('myapp');
+      expect(result1.success).toBe(true);
+
+      const draftFnPath = join(handle.root, 'draft', 'apps', 'myapp', 'functions', 'handler.ts');
+      expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
+
+      // Step 3: Modify source function (v2)
+      const fnCodeV2 = 'export async function GET(ctx) { return { version: 2 }; }';
+      addFunction(handle.root, 'myapp', 'handler.ts', fnCodeV2);
+
+      // Step 4: Draft still has v1 (no reconcile yet)
+      expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
+
+      // Step 5: Source has v2
+      const srcFnPath = join(handle.root, 'apps', 'myapp', 'functions', 'handler.ts');
+      expect(readFileSync(srcFnPath, 'utf-8')).toContain('version: 2');
+
+      // Step 6: Reconcile again — draft now has v2
+      const result2 = await reconciler.reconcile('myapp');
+      expect(result2.success).toBe(true);
+      expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 2');
+    });
+  });
+
+  // --- Scenario 9.10: Deleted function cleaned on re-reconcile ---
+  describe('9.10: Re-reconcile cleans up deleted function from draft directory', () => {
+    test('removing a source function then reconciling clears it from draft', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with two functions
+      const fnCode = 'export async function GET(ctx) { return []; }';
+      createTestApp(handle.root, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
+      });
+
+      // Step 2: First reconcile — both copied to draft
+      handle.workspace.refreshAppState('myapp');
+      const reconciler = new DraftReconciler(handle.workspace);
+      const result1 = await reconciler.reconcile('myapp');
+      expect(result1.success).toBe(true);
+
+      const draftFnDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
+      expect(readdirSync(draftFnDir).sort()).toEqual(['orders.ts', 'users.ts']);
+
+      // Step 3: Delete orders.ts from source
+      unlinkSync(join(handle.root, 'apps', 'myapp', 'functions', 'orders.ts'));
+
+      // Step 4: Re-reconcile — draft should only have users.ts
+      const result2 = await reconciler.reconcile('myapp');
+      expect(result2.success).toBe(true);
+
+      expect(readdirSync(draftFnDir).sort()).toEqual(['users.ts']);
+      expect(existsSync(join(draftFnDir, 'orders.ts'))).toBe(false);
     });
   });
 });

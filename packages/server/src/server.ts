@@ -19,10 +19,12 @@ export function createServer(config: Config) {
   // --- Initialize workspace ---
   const workspace = new Workspace(config.workspaceDir);
 
+  let justInitialized = false;
   if (!workspace.isInitialized()) {
     console.log('Initializing new workspace...');
     workspace.init();
     console.log(`  Workspace created at ${workspace.root}`);
+    justInitialized = true;
   }
 
   workspace.load();
@@ -33,6 +35,20 @@ export function createServer(config: Config) {
   const publisher = new Publisher(workspace);
   const functionRuntime = new DirectRuntime();
   publisher.setFunctionRuntime(functionRuntime);
+
+  // --- Auto-publish template apps after first init ---
+  if (justInitialized) {
+    for (const appDef of workspace.scanApps()) {
+      const state = workspace.getAppState(appDef.name);
+      if (state === 'draft_only') {
+        console.log(`  Auto-publishing template app: ${appDef.name}`);
+        const result = publisher.publish(appDef.name);
+        if (!result.success) {
+          console.error(`  Failed to auto-publish '${appDef.name}': ${result.error}`);
+        }
+      }
+    }
+  }
 
   // --- Global middleware ---
   app.use('*', cors());

@@ -24,9 +24,9 @@ export class DirectRuntime implements FunctionRuntime {
     }
 
     // Resolve file path based on mode:
-    //   Draft  → workspace source: apps/{name}/functions/
+    //   Draft  → reconciled snapshot: draft/apps/{name}/functions/
     //   Stable → published snapshot: data/apps/{name}/functions/
-    const baseDir = mode === 'draft' ? app.specDir : app.stableDataDir;
+    const baseDir = mode === 'draft' ? app.draftDataDir : app.stableDataDir;
     const filePath = join(baseDir, 'functions', `${functionName}.ts`);
     if (!existsSync(filePath)) {
       throw new NotFoundError(`Function '${functionName}' not found`);

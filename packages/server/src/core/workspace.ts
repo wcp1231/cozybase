@@ -241,8 +241,8 @@ export class Workspace {
     } else if (!stableExists && hasUnstaged) {
       state = 'draft_only';
     } else {
-      // No stable DB and no unstaged changes — treat as stable (committed but not yet reconciled)
-      state = 'stable';
+      // No stable DB — app exists but has never been published
+      state = 'draft_only';
     }
 
     this._appStates.set(name, state);

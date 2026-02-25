@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, copyFileSync, mkdirSync, rmSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
@@ -86,7 +86,10 @@ export class DraftReconciler {
       };
     }
 
-    // 5. Validate functions (optional, non-blocking)
+    // 5. Copy functions to draft directory
+    this.copyFunctionsToDraft(appName);
+
+    // 6. Validate functions (optional, non-blocking)
     const functionsResult = await this.validateFunctions(appName);
 
     return {
@@ -97,9 +100,9 @@ export class DraftReconciler {
     };
   }
 
-  /** Validate all function files for an app (non-blocking) */
+  /** Validate all function files for an app (non-blocking, reads from draft dir) */
   private async validateFunctions(appName: string): Promise<DraftReconcileResult['functions']> {
-    const functionsDir = join(this.workspace.appsDir, appName, 'functions');
+    const functionsDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
     if (!existsSync(functionsDir)) {
       return undefined;
     }
@@ -144,5 +147,28 @@ export class DraftReconciler {
     }
 
     return { validated, warnings };
+  }
+
+  /** Copy function files from source to draft directory */
+  private copyFunctionsToDraft(appName: string): void {
+    const srcDir = join(this.workspace.appsDir, appName, 'functions');
+    const destDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
+
+    // Clean destination
+    if (existsSync(destDir)) {
+      rmSync(destDir, { recursive: true, force: true });
+    }
+
+    // Copy if source exists
+    if (existsSync(srcDir)) {
+      const entries = readdirSync(srcDir, { withFileTypes: true });
+      const files = entries.filter((e) => e.isFile());
+      if (files.length > 0) {
+        mkdirSync(destDir, { recursive: true });
+        for (const entry of files) {
+          copyFileSync(join(srcDir, entry.name), join(destDir, entry.name));
+        }
+      }
+    }
   }
 }
