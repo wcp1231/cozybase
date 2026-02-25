@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 import { z } from 'zod';
@@ -39,6 +39,7 @@ export interface AppDefinition {
 
 const SUPPORTED_VERSION = 1;
 const APP_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates');
 
 // --- Workspace ---
 
@@ -88,27 +89,21 @@ export class Workspace {
       'utf-8',
     );
 
-    // Create example app with migration format
-    const helloDir = join(this.appsDir, 'hello');
-    const helloMigrationsDir = join(helloDir, 'migrations');
-    const helloFunctionsDir = join(helloDir, 'functions');
-    mkdirSync(helloMigrationsDir, { recursive: true });
-    mkdirSync(helloFunctionsDir, { recursive: true });
-    writeFileSync(
-      join(helloDir, 'app.yaml'),
-      stringifyYAML({ description: 'Hello World' }),
-      'utf-8',
-    );
-    writeFileSync(
-      join(helloMigrationsDir, '001_init.sql'),
-      'CREATE TABLE IF NOT EXISTS greetings (\n  id INTEGER PRIMARY KEY,\n  message TEXT NOT NULL,\n  created_at TEXT DEFAULT (datetime(\'now\'))\n);\n',
-      'utf-8',
-    );
-    writeFileSync(
-      join(helloFunctionsDir, 'health.ts'),
-      'export async function GET(ctx) {\n  return { status: "ok", app: ctx.app.name, mode: ctx.mode };\n}\n',
-      'utf-8',
-    );
+    // Copy template apps to workspace
+    if (existsSync(TEMPLATES_DIR)) {
+      const entries = readdirSync(TEMPLATES_DIR, { withFileTypes: true });
+      const templates = entries.filter((e) => e.isDirectory());
+      if (templates.length === 0) {
+        console.warn('[workspace] No template apps found in templates directory');
+      }
+      for (const entry of templates) {
+        const src = join(TEMPLATES_DIR, entry.name);
+        const dest = join(this.appsDir, entry.name);
+        cpSync(src, dest, { recursive: true });
+      }
+    } else {
+      console.warn('[workspace] Templates directory not found, skipping template app creation');
+    }
 
     // Git init + initial commit (best effort)
     this.gitExec(['init']);

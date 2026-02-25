@@ -4,6 +4,7 @@
         "npx openspec": true,
         "bunx": true,
         "bun": true,
-        "npx tsc": true
+        "npx tsc": true,
+        "mkdir": true
     }
 }
