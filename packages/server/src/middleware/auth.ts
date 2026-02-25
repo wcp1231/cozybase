@@ -2,21 +2,21 @@ import { createMiddleware } from 'hono/factory';
 import { verifyToken, verifyApiKey, type JwtPayload } from '../core/auth';
 import { UnauthorizedError } from '../core/errors';
 import type { Config } from '../config';
-import type { DbPool } from '../core/db-pool';
+import type { Workspace } from '../core/workspace';
 
 export type AuthEnv = {
   Variables: {
-    auth: JwtPayload | { role: string; appId: string; type: 'apikey' };
+    auth: JwtPayload | { role: string; appName: string; type: 'apikey' };
   };
 };
 
 /** Authenticate via Bearer JWT or X-API-Key header */
-export function authMiddleware(config: Config, dbPool: DbPool) {
+export function authMiddleware(config: Config, workspace: Workspace) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     // Try API key first
     const apiKey = c.req.header('X-API-Key') ?? c.req.header('apikey');
     if (apiKey) {
-      const result = verifyApiKey(apiKey, dbPool);
+      const result = verifyApiKey(apiKey, workspace.getPlatformDb());
       if (!result) {
         throw new UnauthorizedError('Invalid API key');
       }
@@ -42,11 +42,11 @@ export function authMiddleware(config: Config, dbPool: DbPool) {
 }
 
 /** Optional auth - doesn't throw if no credentials provided */
-export function optionalAuth(config: Config, dbPool: DbPool) {
+export function optionalAuth(config: Config, workspace: Workspace) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const apiKey = c.req.header('X-API-Key') ?? c.req.header('apikey');
     if (apiKey) {
-      const result = verifyApiKey(apiKey, dbPool);
+      const result = verifyApiKey(apiKey, workspace.getPlatformDb());
       if (result) {
         c.set('auth', { ...result, type: 'apikey' as const });
       }

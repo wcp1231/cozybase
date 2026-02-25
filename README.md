@@ -2,20 +2,35 @@
 
 Local BaaS (Backend as a Service) platform for AI Agents. Built with TypeScript, Bun, and SQLite.
 
-Cozybase runs as a daemon process, binds to a workspace directory, and auto-discovers apps defined as YAML specs. Schema changes are reconciled automatically — no migrations to run manually.
+Cozybase runs as a daemon process, manages a self-contained workspace, and auto-discovers apps defined as YAML specs. Schema changes are reconciled on demand — no migrations to run manually.
 
 ```
-Workspace (git-managed)          cozybase daemon              Data Directory
-┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
-│ todo-app/        │        │ Reconciler       │        │ cozybase.sqlite  │
-│   app.yaml       │───────>│ Watcher          │───────>│ apps/            │
-│   tables/        │ watch  │ HTTP Server      │ apply  │   todo-app/      │
-│     todos.yaml   │        │ Event Bus        │        │     db.sqlite    │
-│ blog-app/        │        │                  │        │   blog-app/      │
-│   app.yaml       │        │                  │        │     db.sqlite    │
-│   tables/...     │        │                  │        │                  │
-└──────────────────┘        └──────────────────┘        └──────────────────┘
-   Source of truth              Engine                    Runtime state
+Workspace (~/.cozybase)
+┌─────────────────────────────────────────────────┐
+│ workspace.yaml          ← config (name+version) │
+│ .gitignore                                      │
+│                                                 │
+│ apps/ (git-tracked)     data/ (git-ignored)     │
+│ ├── todo-app/           ├── platform.sqlite     │
+│ │   ├── app.yaml        └── apps/               │
+│ │   ├── tables/             ├── todo-app/       │
+│ │   │   └── todos.yaml      │   └── db.sqlite   │
+│ │   └── functions/          └── blog-app/       │
+│ │       └── hello.ts            └── db.sqlite   │
+│ └── blog-app/                                   │
+│     ├── app.yaml                                │
+│     └── tables/                                 │
+│         └── posts.yaml                          │
+└─────────────────────────────────────────────────┘
+   Declarations (source of truth)  Runtime state
+         │                              ▲
+         ▼                              │
+   ┌──────────────────────────────────┐ │
+   │ cozybase daemon                  │ │
+   │  Workspace → Reconciler → SQLite │─┘
+   │  AppContext (per-app isolation)   │
+   │  HTTP Server + Event Bus         │
+   └──────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -24,14 +39,38 @@ Workspace (git-managed)          cozybase daemon              Data Directory
 # Install dependencies
 bun install
 
-# Create a workspace with an app
-mkdir -p my-workspace/todo-app/tables
+# Start the daemon (workspace auto-initializes at ~/.cozybase)
+bun run packages/server/src/index.ts
+```
 
-cat > my-workspace/todo-app/app.yaml << 'EOF'
+On first run, Cozybase auto-creates the workspace with an example `hello` app:
+
+```
+Initializing new workspace...
+  Workspace created at /Users/you/.cozybase
+Reconciling workspace...
+  ✓ [hello] create_app: hello
+
+  ╔═══════════════════════════════════════╗
+  ║           cozybase v0.1.0            ║
+  ║  Local BaaS Platform for AI Agents   ║
+  ╚═══════════════════════════════════════╝
+
+  Server:    http://0.0.0.0:3000
+  Workspace: /Users/you/.cozybase
+```
+
+### Create an App
+
+```bash
+# Create an app with a table
+mkdir -p ~/.cozybase/apps/todo-app/tables
+
+cat > ~/.cozybase/apps/todo-app/app.yaml << 'EOF'
 description: "A simple todo application"
 EOF
 
-cat > my-workspace/todo-app/tables/todos.yaml << 'EOF'
+cat > ~/.cozybase/apps/todo-app/tables/todos.yaml << 'EOF'
 columns:
   - name: id
     type: text
@@ -50,24 +89,9 @@ indexes:
   - columns: [completed]
 EOF
 
-# Start the daemon
-bun run packages/server/src/index.ts --workspace ./my-workspace
-```
-
-Output:
-
-```
-Reconciling workspace...
-  ✓ [todo-app] create_app: todo-app
-  ✓ [todo-app] create_table: todos (4 columns)
-
-  ╔═══════════════════════════════════════╗
-  ║           cozybase v0.1.0            ║
-  ║  Local BaaS Platform for AI Agents   ║
-  ╚═══════════════════════════════════════╝
-
-  Server:    http://0.0.0.0:3000
-  Workspace: ./my-workspace
+# Trigger reconcile to create the table
+curl -X POST http://localhost:3000/api/v1/reconcile
+# {"data":{"changes":[{"app":"todo-app","type":"create_table","resource":"todos","detail":"4 columns"}]}}
 ```
 
 ## Usage
@@ -112,14 +136,17 @@ curl -X POST http://localhost:3000/api/v1/app/todo-app/db/sql \
 
 **Where operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`
 
-### Live Schema Changes
+### Schema Changes
 
-Edit YAML files while the server is running — changes are auto-reconciled:
+Edit YAML files then trigger reconcile — Cozybase diffs and applies changes:
 
 ```bash
-# Add a column to todos.yaml, the daemon auto-runs ALTER TABLE
-# Console output: ✓ [todo-app] alter_table: todos (+column: priority)
+# Add a column to todos.yaml, then reconcile
+curl -X POST http://localhost:3000/api/v1/reconcile
+# ✓ [todo-app] alter_table: todos (+column: priority)
 ```
+
+After a successful reconcile, changes in `apps/` are auto-committed to git.
 
 ## CLI Options
 
@@ -127,12 +154,11 @@ Edit YAML files while the server is running — changes are auto-reconciled:
 bun run packages/server/src/index.ts [options]
 
 Options:
-  --workspace <path>   Workspace directory (default: ./workspace)
+  --workspace <path>   Workspace directory (default: ~/.cozybase)
   --port <number>      Server port (default: 3000)
-  --data <path>        Data directory (default: ./data)
 ```
 
-Environment variables `COZYBASE_WORKSPACE_DIR`, `COZYBASE_PORT`, `COZYBASE_DATA_DIR` are also supported.
+Environment variables `COZYBASE_WORKSPACE`, `COZYBASE_PORT` are also supported.
 
 ## API Reference
 
@@ -158,22 +184,31 @@ All paths prefixed with `/api/v1/app/:appName/db`
 | PATCH | `/:table/:id` | Update record |
 | DELETE | `/:table/:id` | Delete record |
 
-## Workspace Convention
+## Workspace Structure
 
 ```
-my-workspace/
-├── todo-app/                  # Directory name = app name
-│   ├── app.yaml               # Required: marks this as an app
-│   ├── tables/                # Each .yaml = one table
-│   │   ├── todos.yaml
-│   │   └── users.yaml
-│   ├── functions/             # Each .ts = one function (planned)
-│   ├── crons.yaml             # Cron jobs (planned)
-│   └── storage.yaml           # Storage buckets (planned)
-└── blog-app/
-    ├── app.yaml
-    └── tables/
-        └── posts.yaml
+~/.cozybase/                      # Workspace root
+├── workspace.yaml                # Config: name + schema version
+├── .gitignore                    # Ignores data/, *.sqlite*
+├── apps/                         # Declarations (git-tracked)
+│   ├── todo-app/                 # Directory name = app name
+│   │   ├── app.yaml              # Required: marks this as an app
+│   │   ├── tables/               # Each .yaml = one table
+│   │   │   ├── todos.yaml
+│   │   │   └── users.yaml
+│   │   └── functions/            # Each .ts = one function
+│   │       └── hello.ts
+│   └── blog-app/
+│       ├── app.yaml
+│       └── tables/
+│           └── posts.yaml
+└── data/                         # Runtime state (git-ignored)
+    ├── platform.sqlite           # Platform DB (apps, api_keys, etc.)
+    └── apps/
+        ├── todo-app/
+        │   └── db.sqlite         # Per-app database
+        └── blog-app/
+            └── db.sqlite
 ```
 
 ### Table YAML Format
@@ -192,7 +227,7 @@ columns:
     default: "0"         # Default value
   - name: user_id
     type: text
-    references: users(id)  # Foreign key (planned)
+    references: users(id)  # Foreign key
 
 indexes:
   - columns: [email]
@@ -200,7 +235,16 @@ indexes:
   - columns: [score, created_at]
 ```
 
-## Project Structure
+## Architecture
+
+### Core Concepts
+
+- **Workspace**: Self-contained directory (`~/.cozybase`) with `apps/` (git-tracked declarations) and `data/` (git-ignored runtime). Auto-initializes on first startup.
+- **AppContext**: Per-app resource container. Each app owns its own SQLite database, paths, and definition. Created lazily on first request or during reconcile.
+- **Reconciler**: Diffs YAML declarations against actual SQLite state and applies changes (CREATE TABLE, ALTER TABLE ADD COLUMN, CREATE/DROP INDEX). Triggered explicitly via API.
+- **Git Integration**: After successful reconcile, `apps/` changes are auto-committed to the workspace git repo.
+
+### Project Structure
 
 ```
 cozybase/
@@ -211,19 +255,20 @@ cozybase/
 │   │       ├── server.ts          # Hono app factory
 │   │       ├── config.ts          # Configuration
 │   │       ├── core/
-│   │       │   ├── db-pool.ts     # SQLite connection pool
-│   │       │   ├── workspace.ts   # Workspace scanner + YAML parser
+│   │       │   ├── workspace.ts   # Workspace class + YAML schemas
+│   │       │   ├── app-context.ts # Per-app resource container
 │   │       │   ├── reconciler.ts  # Diff + apply engine
-│   │       │   ├── watcher.ts     # fs.watch + debounce
 │   │       │   ├── event-bus.ts   # Pub/sub for DB changes
 │   │       │   ├── auth.ts        # JWT + API key auth
 │   │       │   └── errors.ts      # Error hierarchy
 │   │       ├── middleware/
-│   │       │   ├── app-resolver.ts
+│   │       │   ├── app-resolver.ts # Resolves AppContext per request
 │   │       │   ├── auth.ts
 │   │       │   └── logger.ts
 │   │       └── modules/
-│   │           ├── apps/routes.ts   # Platform status API
+│   │           ├── apps/
+│   │           │   ├── routes.ts    # Platform status API
+│   │           │   └── manager.ts   # App CRUD operations
 │   │           └── db/
 │   │               ├── routes.ts        # Auto CRUD
 │   │               ├── query-builder.ts # URL → SQL
@@ -231,25 +276,25 @@ cozybase/
 │   │               └── sql.ts           # Raw SQL execution
 │   ├── sdk/                 # TypeScript SDK (planned)
 │   └── admin/               # React Admin UI (planned)
-├── my-workspace/            # Sample workspace
-└── data/                    # Runtime data (gitignored)
+└── openspec/                # Design specs and change tracking
 ```
 
 ## Tech Stack
 
 - **Runtime**: [Bun](https://bun.sh)
 - **HTTP**: [Hono](https://hono.dev)
-- **Database**: SQLite via `bun:sqlite` (WAL mode)
+- **Database**: SQLite via `bun:sqlite` (WAL mode, per-app isolation)
 - **Validation**: [Zod](https://zod.dev)
 - **Auth**: [jose](https://github.com/panva/jose) (JWT)
 - **YAML**: [yaml](https://eemeli.org/yaml/)
-- **Cron**: [croner](https://github.com/Hexagon/croner) (planned)
 
 ## Roadmap
 
-- [x] Declarative workspace + YAML specs
+- [x] Self-contained workspace with auto-initialization
+- [x] Declarative YAML specs for apps and tables
+- [x] Per-app isolation via AppContext
 - [x] Reconciler engine (diff + auto-migrate)
-- [x] File watcher with live reconciliation
+- [x] Git auto-commit after reconcile
 - [x] Auto CRUD REST API
 - [x] Raw SQL execution
 - [x] Query builder (filter, sort, paginate)

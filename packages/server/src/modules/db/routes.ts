@@ -1,22 +1,21 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
-import type { DbPool } from '../../core/db-pool';
+import type { AppEnv } from '../../middleware/app-resolver';
 import { eventBus, type ChangeEvent } from '../../core/event-bus';
 import { BadRequestError, NotFoundError } from '../../core/errors';
 import { buildQuery, type QueryParams } from './query-builder';
 import { introspectSchema } from './schema';
 import { executeSql } from './sql';
 
-export function createDbRoutes(dbPool: DbPool) {
-  const app = new Hono();
+export function createDbRoutes() {
+  const app = new Hono<AppEnv>();
 
   // --- Schema endpoint (read-only) ---
 
   // GET /schema - Introspect all tables
   app.get('/schema', (c) => {
-    const appName = c.req.param('appName')!;
-    const db = dbPool.getAppDb(appName);
-    const schema = introspectSchema(db);
+    const appContext = c.get('appContext');
+    const schema = introspectSchema(appContext.db);
     return c.json({ data: schema });
   });
 
@@ -24,15 +23,14 @@ export function createDbRoutes(dbPool: DbPool) {
 
   // POST /sql - Execute raw SQL
   app.post('/sql', async (c) => {
-    const appName = c.req.param('appName')!;
-    const db = dbPool.getAppDb(appName);
+    const appContext = c.get('appContext');
     const body = await c.req.json();
 
     if (!body.sql || typeof body.sql !== 'string') {
       throw new BadRequestError('Missing "sql" field');
     }
 
-    const result = executeSql(db, body.sql, body.params);
+    const result = executeSql(appContext.db, body.sql, body.params);
     return c.json({ data: result });
   });
 
@@ -40,11 +38,11 @@ export function createDbRoutes(dbPool: DbPool) {
 
   // GET /:table - List records
   app.get('/:table', (c) => {
-    const appName = c.req.param('appName')!;
+    const appContext = c.get('appContext');
     const table = c.req.param('table')!;
     validateTableName(table);
 
-    const db = dbPool.getAppDb(appName);
+    const db = appContext.db;
     assertTableExists(db, table);
 
     const params: QueryParams = {
@@ -80,12 +78,12 @@ export function createDbRoutes(dbPool: DbPool) {
 
   // GET /:table/:id - Get single record
   app.get('/:table/:id', (c) => {
-    const appName = c.req.param('appName')!;
+    const appContext = c.get('appContext');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = dbPool.getAppDb(appName);
+    const db = appContext.db;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);
@@ -100,11 +98,11 @@ export function createDbRoutes(dbPool: DbPool) {
 
   // POST /:table - Create record
   app.post('/:table', async (c) => {
-    const appName = c.req.param('appName')!;
+    const appContext = c.get('appContext');
     const table = c.req.param('table')!;
     validateTableName(table);
 
-    const db = dbPool.getAppDb(appName);
+    const db = appContext.db;
     assertTableExists(db, table);
 
     const body = await c.req.json();
@@ -133,19 +131,19 @@ export function createDbRoutes(dbPool: DbPool) {
     // Read back the inserted record
     const record = db.query(`SELECT * FROM "${table}" WHERE "${pk}" = ?`).get(body[pk]) as Record<string, unknown>;
 
-    emitChange(appName, table, 'INSERT', record);
+    emitChange(appContext.name, table, 'INSERT', record);
 
     return c.json({ data: record }, 201);
   });
 
   // PATCH /:table/:id - Update record
   app.patch('/:table/:id', async (c) => {
-    const appName = c.req.param('appName')!;
+    const appContext = c.get('appContext');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = dbPool.getAppDb(appName);
+    const db = appContext.db;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);
@@ -176,19 +174,19 @@ export function createDbRoutes(dbPool: DbPool) {
 
     const record = db.query(`SELECT * FROM "${table}" WHERE "${pk}" = ?`).get(id) as Record<string, unknown>;
 
-    emitChange(appName, table, 'UPDATE', record, oldRecord);
+    emitChange(appContext.name, table, 'UPDATE', record, oldRecord);
 
     return c.json({ data: record });
   });
 
   // DELETE /:table/:id - Delete record
   app.delete('/:table/:id', (c) => {
-    const appName = c.req.param('appName')!;
+    const appContext = c.get('appContext');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
     validateTableName(table);
 
-    const db = dbPool.getAppDb(appName);
+    const db = appContext.db;
     assertTableExists(db, table);
 
     const pk = getPrimaryKey(db, table);
@@ -200,7 +198,7 @@ export function createDbRoutes(dbPool: DbPool) {
 
     db.query(`DELETE FROM "${table}" WHERE "${pk}" = ?`).run(id);
 
-    emitChange(appName, table, 'DELETE', oldRecord, oldRecord);
+    emitChange(appContext.name, table, 'DELETE', oldRecord, oldRecord);
 
     return c.json({ success: true });
   });

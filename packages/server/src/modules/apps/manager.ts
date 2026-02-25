@@ -1,13 +1,12 @@
 import { nanoid } from 'nanoid';
-import { mkdirSync, rmSync, existsSync } from 'fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import type { DbPool } from '../../core/db-pool';
-import type { Config } from '../../config';
+import { stringify as stringifyYAML } from 'yaml';
+import type { Workspace } from '../../core/workspace';
 import { hashApiKey } from '../../core/auth';
 import { ConflictError, NotFoundError } from '../../core/errors';
 
 export interface App {
-  id: string;
   name: string;
   description: string;
   status: string;
@@ -22,86 +21,96 @@ export interface CreateAppResult {
 
 export class AppManager {
   constructor(
-    private dbPool: DbPool,
-    private config: Config,
+    private workspace: Workspace,
   ) {}
 
   list(): App[] {
-    const db = this.dbPool.getPlatformDb();
+    const db = this.workspace.getPlatformDb();
     return db.query('SELECT * FROM apps ORDER BY created_at DESC').all() as App[];
   }
 
-  get(appId: string): App {
-    const db = this.dbPool.getPlatformDb();
-    const app = db.query('SELECT * FROM apps WHERE id = ?').get(appId) as App | null;
-    if (!app) throw new NotFoundError(`App '${appId}' not found`);
+  get(name: string): App {
+    const db = this.workspace.getPlatformDb();
+    const app = db.query('SELECT * FROM apps WHERE name = ?').get(name) as App | null;
+    if (!app) throw new NotFoundError(`App '${name}' not found`);
     return app;
   }
 
   create(name: string, description = ''): CreateAppResult {
-    const db = this.dbPool.getPlatformDb();
+    const db = this.workspace.getPlatformDb();
 
     // Check name uniqueness
-    const existing = db.query('SELECT id FROM apps WHERE name = ?').get(name);
+    const existing = db.query('SELECT name FROM apps WHERE name = ?').get(name);
     if (existing) {
       throw new ConflictError(`App with name '${name}' already exists`);
     }
 
-    const appId = nanoid(12);
+    // Create app directory + app.yaml
+    const appDir = join(this.workspace.appsDir, name);
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'app.yaml'),
+      stringifyYAML({ description }),
+      'utf-8',
+    );
 
-    // Create app record
+    // Create platform DB record
     db.query(
-      'INSERT INTO apps (id, name, description) VALUES (?, ?, ?)',
-    ).run(appId, name, description);
+      'INSERT INTO apps (name, description) VALUES (?, ?)',
+    ).run(name, description);
 
-    // Create app data directories
-    const appDir = join(this.config.dataDir, 'apps', appId);
-    mkdirSync(join(appDir, 'storage'), { recursive: true });
-    mkdirSync(join(appDir, 'functions'), { recursive: true });
-
-    // Initialize the app database (creates the file)
-    this.dbPool.getAppDb(appId);
+    // Initialize the app database via AppContext (lazy creates on access)
+    const appContext = this.workspace.getOrCreateApp(name);
+    if (appContext) {
+      appContext.db; // trigger lazy initialization
+    }
 
     // Generate a default service API key
     const rawKey = `cb_${nanoid(32)}`;
     const keyId = nanoid(12);
     db.query(
-      'INSERT INTO api_keys (id, app_id, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
-    ).run(keyId, appId, hashApiKey(rawKey), 'Default Service Key', 'service');
+      'INSERT INTO api_keys (id, app_name, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
+    ).run(keyId, name, hashApiKey(rawKey), 'Default Service Key', 'service');
 
-    const app = this.get(appId);
+    const app = this.get(name);
     return { app, apiKey: rawKey };
   }
 
-  delete(appId: string): void {
-    const app = this.get(appId); // throws if not found
+  delete(name: string): void {
+    this.get(name); // throws if not found
 
-    // Close database connection
-    this.dbPool.closeAppDb(appId);
+    // Close app context (closes database connection)
+    const appContext = this.workspace.getApp(name);
+    if (appContext) {
+      appContext.close();
+    }
 
-    // Remove app data directory
-    const appDir = join(this.config.dataDir, 'apps', appId);
+    // Remove app spec directory
+    const appDir = join(this.workspace.appsDir, name);
     if (existsSync(appDir)) {
       rmSync(appDir, { recursive: true, force: true });
     }
 
+    // Remove app data directory
+    const appDataDir = join(this.workspace.dataDir, 'apps', name);
+    if (existsSync(appDataDir)) {
+      rmSync(appDataDir, { recursive: true, force: true });
+    }
+
     // Remove platform records
-    const db = this.dbPool.getPlatformDb();
-    db.query('DELETE FROM api_keys WHERE app_id = ?').run(appId);
-    db.query('DELETE FROM apps WHERE id = ?').run(appId);
+    const db = this.workspace.getPlatformDb();
+    db.query('DELETE FROM api_keys WHERE app_name = ?').run(name);
+    db.query('DELETE FROM resource_state WHERE app_name = ?').run(name);
+    db.query('DELETE FROM apps WHERE name = ?').run(name);
   }
 
-  update(appId: string, data: { name?: string; description?: string; status?: string }): App {
-    const app = this.get(appId);
-    const db = this.dbPool.getPlatformDb();
+  update(name: string, data: { description?: string; status?: string }): App {
+    const app = this.get(name);
+    const db = this.workspace.getPlatformDb();
 
     const fields: string[] = [];
     const values: any[] = [];
 
-    if (data.name !== undefined) {
-      fields.push('name = ?');
-      values.push(data.name);
-    }
     if (data.description !== undefined) {
       fields.push('description = ?');
       values.push(data.description);
@@ -114,9 +123,9 @@ export class AppManager {
     if (fields.length === 0) return app;
 
     fields.push("updated_at = datetime('now')");
-    values.push(appId);
+    values.push(name);
 
-    db.query(`UPDATE apps SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-    return this.get(appId);
+    db.query(`UPDATE apps SET ${fields.join(', ')} WHERE name = ?`).run(...values);
+    return this.get(name);
   }
 }

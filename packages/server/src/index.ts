@@ -2,7 +2,7 @@ import { loadConfig } from './config';
 import { createServer } from './server';
 
 const config = loadConfig();
-const { app, dbPool, watcher } = createServer(config);
+const { app, workspace } = createServer(config);
 
 const server = Bun.serve({
   port: config.port,
@@ -19,7 +19,6 @@ console.log(`
 
   Server:    http://${config.host}:${config.port}
   Workspace: ${config.workspaceDir}
-  Data:      ${config.dataDir}
 
   API:
     GET  /health
@@ -31,8 +30,7 @@ console.log(`
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
-  watcher.stop();
-  dbPool.closeAll();
+  workspace.close();
   server.stop();
   process.exit(0);
 });

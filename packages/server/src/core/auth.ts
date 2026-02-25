@@ -1,13 +1,13 @@
 import { SignJWT, jwtVerify } from 'jose';
 import type { Config } from '../config';
-import type { DbPool } from './db-pool';
+import type { Database } from 'bun:sqlite';
 
 export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
   type: 'platform' | 'app';
-  appId?: string;
+  appName?: string;
 }
 
 export async function createToken(
@@ -40,15 +40,14 @@ export function hashApiKey(key: string): string {
 
 export function verifyApiKey(
   key: string,
-  dbPool: DbPool,
-): { appId: string; role: string } | null {
+  platformDb: Database,
+): { appName: string; role: string } | null {
   const keyHash = hashApiKey(key);
-  const db = dbPool.getPlatformDb();
-  const row = db
+  const row = platformDb
     .query(
-      `SELECT app_id, role, expires_at FROM api_keys WHERE key_hash = ?`,
+      `SELECT app_name, role, expires_at FROM api_keys WHERE key_hash = ?`,
     )
-    .get(keyHash) as { app_id: string; role: string; expires_at: string | null } | null;
+    .get(keyHash) as { app_name: string; role: string; expires_at: string | null } | null;
 
   if (!row) return null;
 
@@ -56,5 +55,5 @@ export function verifyApiKey(
     return null;
   }
 
-  return { appId: row.app_id, role: row.role };
+  return { appName: row.app_name, role: row.role };
 }

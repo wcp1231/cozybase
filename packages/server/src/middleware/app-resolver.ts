@@ -1,30 +1,28 @@
 import { createMiddleware } from 'hono/factory';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import type { Config } from '../config';
+import type { Workspace } from '../core/workspace';
+import type { AppContext } from '../core/app-context';
 import { NotFoundError } from '../core/errors';
 
 export type AppEnv = {
   Variables: {
-    appName: string;
+    appContext: AppContext;
   };
 };
 
-/** Extract appName from URL params and verify the app exists in workspace */
-export function appResolver(config: Config) {
+/** Extract appName from URL params, resolve AppContext, and inject into context */
+export function appResolver(workspace: Workspace) {
   return createMiddleware<AppEnv>(async (c, next) => {
     const appName = c.req.param('appName');
     if (!appName) {
       throw new NotFoundError('App name is required');
     }
 
-    // Verify app exists in workspace (has app.yaml)
-    const appYaml = join(config.workspaceDir, appName, 'app.yaml');
-    if (!existsSync(appYaml)) {
+    const appContext = workspace.getOrCreateApp(appName);
+    if (!appContext) {
       throw new NotFoundError(`App '${appName}' not found in workspace`);
     }
 
-    c.set('appName', appName);
+    c.set('appContext', appContext);
     await next();
   });
 }

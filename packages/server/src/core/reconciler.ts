@@ -1,8 +1,8 @@
 import type { Database } from 'bun:sqlite';
-import type { DbPool } from './db-pool';
+import type { Workspace } from './workspace';
 import type { AppDefinition, TableSpec, ColumnSpec, IndexSpec } from './workspace';
-import { hashContent, scanWorkspace } from './workspace';
-import type { Config } from '../config';
+import { hashContent } from './workspace';
+import { readFileSync } from 'fs';
 
 // --- Change tracking ---
 
@@ -18,17 +18,16 @@ export interface ReconcileChange {
 
 export class Reconciler {
   constructor(
-    private dbPool: DbPool,
-    private config: Config,
+    private workspace: Workspace,
   ) {}
 
   /** Full reconcile: scan workspace and sync all apps */
   reconcileAll(): ReconcileChange[] {
-    const apps = scanWorkspace(this.config.workspaceDir);
+    const apps = this.workspace.scanApps();
     const changes: ReconcileChange[] = [];
 
     // Ensure all discovered apps exist in platform DB
-    const platformDb = this.dbPool.getPlatformDb();
+    const platformDb = this.workspace.getPlatformDb();
     const knownApps = new Set(
       (platformDb.query('SELECT name FROM apps').all() as { name: string }[]).map((a) => a.name),
     );
@@ -52,14 +51,32 @@ export class Reconciler {
       }
     }
 
+    // Git auto-commit after successful reconcile
+    const summary = changes
+      .filter((c) => !c.warning)
+      .map((c) => `${c.type}: ${c.resource}`)
+      .join(', ');
+    if (summary) {
+      this.workspace.commit(`reconcile: ${summary}`);
+    }
+
     return changes;
   }
 
   /** Reconcile a single app */
   reconcileApp(app: AppDefinition): ReconcileChange[] {
     const changes: ReconcileChange[] = [];
-    const db = this.dbPool.getAppDb(app.name);
-    const platformDb = this.dbPool.getPlatformDb();
+    const appContext = this.workspace.getOrCreateApp(app.name);
+    if (!appContext) {
+      console.error(`  [${app.name}] Failed to create app context`);
+      return changes;
+    }
+
+    // Update the AppContext definition
+    appContext.reload(app);
+
+    const db = appContext.db;
+    const platformDb = this.workspace.getPlatformDb();
 
     // --- Reconcile Tables ---
     for (const [tableName, { spec, content }] of app.tables) {
@@ -124,7 +141,7 @@ export class Reconciler {
     // --- Track functions (no deployment needed, loaded on-demand) ---
     for (const funcName of app.functions) {
       const funcPath = `${app.dir}/functions/${funcName}.ts`;
-      const content = require('fs').readFileSync(funcPath, 'utf-8');
+      const content = readFileSync(funcPath, 'utf-8');
       const hash = hashContent(content);
       platformDb.query(`
         INSERT OR REPLACE INTO resource_state (app_name, resource_type, resource_name, spec_hash, applied_at)

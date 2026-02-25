@@ -1,16 +1,14 @@
 import { Hono } from 'hono';
-import type { DbPool } from '../../core/db-pool';
-import type { Config } from '../../config';
+import type { Workspace } from '../../core/workspace';
 import type { Reconciler } from '../../core/reconciler';
-import { scanWorkspace } from '../../core/workspace';
 
-export function createAppRoutes(dbPool: DbPool, config: Config, reconciler: Reconciler) {
+export function createAppRoutes(workspace: Workspace, reconciler: Reconciler) {
   const app = new Hono();
 
   // GET /status - Platform status + all apps
   app.get('/status', (c) => {
-    const apps = scanWorkspace(config.workspaceDir);
-    const platformDb = dbPool.getPlatformDb();
+    const apps = workspace.scanApps();
+    const platformDb = workspace.getPlatformDb();
 
     const appStatuses = apps.map((a) => {
       const tables = [...a.tables.keys()];
@@ -33,7 +31,7 @@ export function createAppRoutes(dbPool: DbPool, config: Config, reconciler: Reco
     return c.json({
       status: 'running',
       version: '0.1.0',
-      workspace: config.workspaceDir,
+      workspace: workspace.root,
       apps: appStatuses,
     });
   });

@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Config } from './config';
-import { DbPool } from './core/db-pool';
+import { Workspace } from './core/workspace';
 import { Reconciler } from './core/reconciler';
-import { WorkspaceWatcher } from './core/watcher';
 import { AppError } from './core/errors';
 import { logger } from './middleware/logger';
 import { appResolver } from './middleware/app-resolver';
@@ -12,11 +11,19 @@ import { createDbRoutes } from './modules/db/routes';
 
 export function createServer(config: Config) {
   const app = new Hono();
-  const dbPool = new DbPool(config);
-  const reconciler = new Reconciler(dbPool, config);
 
-  // Initialize platform DB eagerly
-  dbPool.getPlatformDb();
+  // --- Initialize workspace ---
+  const workspace = new Workspace(config.workspaceDir);
+
+  if (!workspace.isInitialized()) {
+    console.log('Initializing new workspace...');
+    workspace.init();
+    console.log(`  Workspace created at ${workspace.root}`);
+  }
+
+  workspace.load();
+
+  const reconciler = new Reconciler(workspace);
 
   // --- Initial reconcile ---
   console.log('Reconciling workspace...');
@@ -28,10 +35,6 @@ export function createServer(config: Config) {
   if (changes.length === 0) {
     console.log('  No changes needed');
   }
-
-  // --- Start workspace watcher ---
-  const watcher = new WorkspaceWatcher(config.workspaceDir, reconciler);
-  watcher.start();
 
   // --- Global middleware ---
   app.use('*', cors());
@@ -56,19 +59,19 @@ export function createServer(config: Config) {
   app.get('/health', (c) => c.json({ status: 'ok', version: '0.1.0' }));
 
   // --- Platform API ---
-  app.route('/api/v1', createAppRoutes(dbPool, config, reconciler));
+  app.route('/api/v1', createAppRoutes(workspace, reconciler));
 
   // --- App-scoped API ---
   const appScoped = new Hono();
 
   // Resolve app from workspace
-  appScoped.use('*', appResolver(config));
+  appScoped.use('*', appResolver(workspace));
 
   // Mount DB module
-  appScoped.route('/db', createDbRoutes(dbPool));
+  appScoped.route('/db', createDbRoutes());
 
   // Mount app-scoped routes under /api/v1/app/:appName
   app.route('/api/v1/app/:appName', appScoped);
 
-  return { app, dbPool, watcher };
+  return { app, workspace };
 }
