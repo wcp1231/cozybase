@@ -1,5 +1,6 @@
 import { loadConfig } from './config';
 import { createServer } from './server';
+import { writePidFile, cleanupPidFile } from './daemon-ctl';
 
 const config = loadConfig();
 const { app, workspace, functionRuntime } = createServer(config);
@@ -10,11 +11,14 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
+// Write PID and port files for daemon management
+writePidFile(config.workspaceDir, process.pid, server.port);
+
 console.log(`
   ╔═══════════════════════════════════════╗
-  ║           cozybase v0.1.0            ║
+  ║           cozybase v0.1.0             ║
   ╠═══════════════════════════════════════╣
-  ║  Local BaaS Platform for AI Agents   ║
+  ║  Local BaaS Platform for AI Agents    ║
   ╚═══════════════════════════════════════╝
 
   Server:    http://${config.host}:${config.port}
@@ -34,10 +38,14 @@ console.log(`
 `);
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
+function shutdown() {
   console.log('\nShutting down...');
-  await functionRuntime.shutdown();
+  cleanupPidFile(config.workspaceDir);
+  functionRuntime.shutdown();
   workspace.close();
   server.stop();
   process.exit(0);
-});
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
