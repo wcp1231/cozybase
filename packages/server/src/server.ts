@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { resolve, join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
 import { DraftReconciler } from './core/draft-reconciler';
@@ -10,7 +10,7 @@ import { Verifier } from './core/verifier';
 import { Publisher } from './core/publisher';
 import { AppError, BadRequestError } from './core/errors';
 import { logger } from './middleware/logger';
-import { appResolver } from './middleware/app-resolver';
+import { appResolver, type AppEnv } from './middleware/app-resolver';
 import { createAppRoutes } from './modules/apps/routes';
 import { createDbRoutes } from './modules/db/routes';
 import { createFunctionRoutes } from './modules/functions/routes';
@@ -101,6 +101,34 @@ export function createServer(config: Config) {
   draftFn.use('*', appResolver(workspace, 'draft'));
   draftFn.route('/', createFunctionRoutes(functionRuntime));
   app.route('/draft/apps/:appName/functions', draftFn);
+
+  // --- Stable UI route: /stable/apps/:appName/ui ---
+  const stableUi = new Hono<AppEnv>();
+  stableUi.use('*', appResolver(workspace, 'stable'));
+  stableUi.get('/', (c) => {
+    const appContext = c.get('appContext');
+    const uiPath = join(appContext.stableDataDir, 'ui', 'pages.json');
+    if (!existsSync(uiPath)) {
+      return c.json({ error: 'UI definition not found' }, 404);
+    }
+    const content = readFileSync(uiPath, 'utf-8');
+    return c.json({ data: JSON.parse(content) });
+  });
+  app.route('/stable/apps/:appName/ui', stableUi);
+
+  // --- Draft UI route: /draft/apps/:appName/ui ---
+  const draftUi = new Hono<AppEnv>();
+  draftUi.use('*', appResolver(workspace, 'draft'));
+  draftUi.get('/', (c) => {
+    const appContext = c.get('appContext');
+    const uiPath = join(appContext.draftDataDir, 'ui', 'pages.json');
+    if (!existsSync(uiPath)) {
+      return c.json({ error: 'UI definition not found' }, 404);
+    }
+    const content = readFileSync(uiPath, 'utf-8');
+    return c.json({ data: JSON.parse(content) });
+  });
+  app.route('/draft/apps/:appName/ui', draftUi);
 
   // --- Draft management routes: /draft/apps/:appName/(reconcile|verify|publish) ---
   const draftMgmt = new Hono();

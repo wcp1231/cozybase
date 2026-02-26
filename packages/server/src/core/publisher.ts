@@ -1,8 +1,8 @@
 import { join } from 'path';
-import { existsSync, copyFileSync, unlinkSync } from 'fs';
+import { existsSync, copyFileSync, unlinkSync, rmSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
-import { exportFunctionsFromDb } from './file-export';
+import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
 import { BadRequestError } from './errors';
 import type { FunctionRuntime } from '../modules/functions/types';
 
@@ -11,6 +11,7 @@ import type { FunctionRuntime } from '../modules/functions/types';
 export interface PublishResult {
   success: boolean;
   migrationsApplied: string[];  // filenames of applied migrations
+  ui?: { exported: boolean };
   error?: string;
 }
 
@@ -77,13 +78,14 @@ export class Publisher {
       const pendingMigrations = this.migrationRunner.getPendingMigrations(allMigrations, executedVersions);
 
       if (pendingMigrations.length === 0 && !isNewApp) {
-        // No migrations to apply — still export functions and update versions
+        // No migrations to apply — still export functions, UI, and update versions
         this.exportFunctions(appName);
         this.reloadFunctions(appName);
+        const uiResult = this.exportUi(appName);
         this.markImmutableAndUpdateVersion(appName, allMigrations.map(m => m.version));
         this.cleanup(appContext);
         this.workspace.refreshAppState(appName);
-        return { success: true, migrationsApplied: [] };
+        return { success: true, migrationsApplied: [], ui: uiResult };
       }
 
       // 5. Execute pending migrations
@@ -111,17 +113,21 @@ export class Publisher {
       // 8. Reload functions
       this.reloadFunctions(appName);
 
-      // 9. Mark executed migrations immutable + update published_version
+      // 9. Export UI definition to stable data dir (non-blocking)
+      const uiResult = this.exportUi(appName);
+
+      // 10. Mark executed migrations immutable + update published_version
       const allExecutedVersions = [...executedVersions, ...pendingMigrations.map(m => m.version)];
       this.markImmutableAndUpdateVersion(appName, allExecutedVersions);
 
-      // 10. Cleanup
+      // 11. Cleanup
       this.cleanup(appContext);
       this.workspace.refreshAppState(appName);
 
       return {
         success: true,
         migrationsApplied: result.executed,
+        ui: uiResult,
       };
     } catch (err: any) {
       // Unexpected error: attempt rollback (don't update version or immutable)
@@ -163,6 +169,24 @@ export class Publisher {
     exportFunctionsFromDb(platformDb, appName, destDir);
   }
 
+  /** Export UI definition from DB to stable data dir (non-blocking) */
+  private exportUi(appName: string): PublishResult['ui'] {
+    const appContext = this.workspace.getOrCreateApp(appName);
+    if (!appContext) return undefined;
+
+    try {
+      const platformDb = this.workspace.getPlatformDb();
+      const exported = exportUiFromDb(platformDb, appName, appContext.stableDataDir);
+      if (exported) {
+        return { exported: true };
+      }
+      return undefined;
+    } catch (err: unknown) {
+      console.warn(`[publisher] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
+      return { exported: false };
+    }
+  }
+
   /** Notify FunctionRuntime to reload cached modules for this app */
   private reloadFunctions(appName: string): void {
     if (this.functionRuntime) {
@@ -195,10 +219,19 @@ export class Publisher {
     }
   }
 
-  /** Cleanup draft database and refresh state */
+  /** Cleanup draft database, draft UI files, and refresh state */
   private cleanup(appContext: ReturnType<Workspace['getOrCreateApp']> & {}): void {
     try {
       appContext.resetDraft();
+    } catch {
+      // Best effort cleanup
+    }
+    // Clean draft UI files (best-effort)
+    try {
+      const draftUiDir = join(appContext.draftDataDir, 'ui');
+      if (existsSync(draftUiDir)) {
+        rmSync(draftUiDir, { recursive: true, force: true });
+      }
     } catch {
       // Best effort cleanup
     }

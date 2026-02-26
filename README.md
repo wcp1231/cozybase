@@ -18,8 +18,10 @@ Workspace (~/.cozybase)
 │ ├── apps/                                                │
 │ │   ├── todo-app/                                        │
 │ │   │   ├── db.sqlite       ← Stable DB                  │
-│ │   │   └── functions/      ← Exported from DB           │
-│ │   │       └── health.ts                                │
+│ │   │   ├── functions/      ← Exported from DB           │
+│ │   │   │   └── health.ts                                │
+│ │   │   └── ui/             ← Exported from DB           │
+│ │   │       └── pages.json                               │
 │ │   └── blog-app/                                        │
 │ │       └── db.sqlite                                    │
 │ │                                                        │
@@ -27,8 +29,10 @@ Workspace (~/.cozybase)
 │ └── apps/                                                │
 │     └── todo-app/                                        │
 │         ├── db.sqlite       ← Draft DB                   │
-│         └── functions/      ← Exported from DB           │
-│             └── health.ts                                │
+│         ├── functions/      ← Exported from DB           │
+│         │   └── health.ts                                │
+│         └── ui/             ← Exported from DB           │
+│             └── pages.json                               │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
    Platform DB (source of truth)    Runtime state
@@ -366,14 +370,19 @@ API URLs in actions use app-relative paths (e.g. `/db/todo`, `/functions/hello`)
 | `/apps/:appName` | Redirect to first page of an app |
 | `/apps/:appName/:pageId` | Render a specific page |
 
-### UI-only Changes
+### UI Changes
 
-When only modifying `ui/pages.json`, the Reconcile / Verify / Publish workflow is not needed — UI files don't involve database schema changes. Just update the file directly:
+UI definitions (`ui/pages.json`) follow the same Reconcile / Publish lifecycle as other resources. After updating the UI file via the Management API, run Reconcile and Publish to make changes visible in the Admin:
 
 ```bash
+# Update UI definition
 curl -X PUT http://localhost:3000/api/v1/apps/todo-app/files/ui/pages.json \
   -H 'Content-Type: application/json' \
   -d '{"content": "{\"pages\": [...]}"}'
+
+# Reconcile + Publish to apply
+curl -X POST http://localhost:3000/draft/apps/todo-app/reconcile
+curl -X POST http://localhost:3000/draft/apps/todo-app/publish
 ```
 
 ## CLI Options
@@ -455,6 +464,13 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 | * | `/stable/apps/:appName/functions/:name` | Execute stable function |
 | * | `/draft/apps/:appName/functions/:name` | Execute draft function (hot-reload) |
 
+### UI
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/stable/apps/:appName/ui` | Get published UI definition |
+| GET | `/draft/apps/:appName/ui` | Get draft UI definition |
+
 ## Workspace Structure
 
 ```
@@ -466,8 +482,10 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 │       ├── todo-app/
 │       │   ├── db.sqlite               # Stable database
 │       │   ├── db.sqlite.bak           # Auto-backup before publish
-│       │   └── functions/              # Function files (exported from DB)
-│       │       └── health.ts
+│       │   ├── functions/              # Function files (exported from DB)
+│       │   │   └── health.ts
+│       │   └── ui/                     # UI definition (exported from DB)
+│       │       └── pages.json
 │       └── blog-app/
 │           ├── db.sqlite
 │           └── functions/
@@ -476,11 +494,13 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
     └── apps/
         └── todo-app/
             ├── db.sqlite               # Draft database (destroy+rebuild)
-            └── functions/              # Function files (exported from DB)
-                └── health.ts
+            ├── functions/              # Function files (exported from DB)
+            │   └── health.ts
+            └── ui/                     # UI definition (exported from DB)
+                └── pages.json
 ```
 
-App definitions (migrations, functions, seeds, UI, config) are stored in `platform.sqlite`'s `app_files` table — **not** on the filesystem. The `functions/` directories under `data/` and `draft/` are runtime exports: during Reconcile/Publish, function source code is written from the DB to disk so Bun can `import()` them.
+App definitions (migrations, functions, seeds, UI, config) are stored in `platform.sqlite`'s `app_files` table — **not** on the filesystem. The `functions/` and `ui/` directories under `data/` and `draft/` are runtime exports: during Reconcile/Publish, function source code and UI definitions are written from the DB to disk.
 
 ### Platform DB Schema
 
@@ -530,9 +550,9 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Workspace**: Self-contained directory (`~/.cozybase`) with `data/` (Platform DB + stable runtime) and `draft/` (draft runtime). Auto-initializes on first startup with template apps loaded into the Platform DB.
 - **Platform DB**: Central `platform.sqlite` stores all app definitions (`apps` + `app_files` tables). Acts as the single source of truth — Management API is the only entry point for modifications.
 - **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request.
-- **DraftReconciler**: Reads migrations, seeds, and functions from Platform DB, destroys and rebuilds the draft database. Exports function files to disk for Bun `import()`.
+- **DraftReconciler**: Reads migrations, seeds, functions, and UI definitions from Platform DB, destroys and rebuilds the draft database. Exports function and UI files to disk.
 - **Verifier**: Checks that published migrations are marked immutable, then tests new migrations against a copy of the stable database.
-- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, marks migration files as `immutable`, exports functions, reloads function cache, and cleans up draft.
+- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, marks migration files as `immutable`, exports functions and UI definitions, reloads function cache, and cleans up draft.
 - **Management API**: RESTful HTTP API (`/api/v1/apps/*`) for app CRUD and file management. Supports single-file updates and batch Checkout-Edit-Push with optimistic locking (`base_version`).
 - **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Uses a Backend Adapter pattern (`CozybaseBackend` interface) with two implementations: `EmbeddedBackend` (local, direct module calls) and `RemoteBackend` (HTTP client to a running daemon). Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
 - **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
@@ -555,6 +575,7 @@ cozybase/
 │   │   │   │   ├── app-context.ts    # Per-app resource container
 │   │   │   │   ├── migration-runner.ts # Scan, execute, track migrations
 │   │   │   │   ├── seed-loader.ts    # Load .sql/.json seed files
+│   │   │   │   ├── file-export.ts    # Export functions + UI from DB to disk
 │   │   │   │   ├── draft-reconciler.ts # Destroy+rebuild draft DB
 │   │   │   │   ├── verifier.ts       # Immutability check + test new migrations
 │   │   │   │   ├── publisher.ts      # Publish draft → stable + mark immutable

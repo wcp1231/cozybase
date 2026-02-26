@@ -11,6 +11,7 @@ export interface TestAppSpec {
   migrations?: Record<string, string>;
   seeds?: Record<string, string>;
   functions?: Record<string, string>;
+  ui?: string;  // ui/pages.json content
   spec?: Record<string, unknown>;
 }
 
@@ -95,6 +96,13 @@ export function createTestApp(
         'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
       ).run(appName, `functions/${filename}`, code);
     }
+  }
+
+  // Insert UI definition
+  if (opts.ui) {
+    db.query(
+      'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+    ).run(appName, 'ui/pages.json', opts.ui);
   }
 }
 
@@ -264,3 +272,13 @@ export const SEED_TODOS_JSON = JSON.stringify({
 });
 
 export { existsSync } from 'fs';
+
+export const TEST_UI_PAGES_JSON = JSON.stringify({
+  pages: [
+    {
+      id: 'todo-list',
+      title: 'Todo List',
+      body: [{ type: 'text', content: 'Hello World' }],
+    },
+  ],
+});

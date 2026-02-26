@@ -3,6 +3,35 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 
 /**
+ * Export ui/pages.json from Platform DB to a target directory.
+ * Used by both DraftReconciler (→ draft dir) and Publisher (→ stable dir).
+ * Returns true if exported, false if no UI file found.
+ */
+export function exportUiFromDb(
+  platformDb: Database,
+  appName: string,
+  targetDir: string,
+): boolean {
+  const record = platformDb.query(
+    "SELECT content FROM app_files WHERE app_name = ? AND path = 'ui/pages.json'",
+  ).get(appName) as { content: string } | null;
+
+  const uiFilePath = join(targetDir, 'ui', 'pages.json');
+
+  if (!record) {
+    // Clean up stale file if it exists (DB is source of truth)
+    if (existsSync(uiFilePath)) {
+      rmSync(uiFilePath, { force: true });
+    }
+    return false;
+  }
+
+  mkdirSync(join(targetDir, 'ui'), { recursive: true });
+  writeFileSync(uiFilePath, record.content, 'utf-8');
+  return true;
+}
+
+/**
  * Export function files from Platform DB to a target directory.
  * Used by both DraftReconciler (→ draft dir) and Publisher (→ stable dir).
  */

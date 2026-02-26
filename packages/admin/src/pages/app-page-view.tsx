@@ -23,7 +23,7 @@ export function AppPageView() {
   if (!page) {
     return (
       <div style={{ padding: 24, color: '#dc2626' }}>
-        Page not found: {pageId}
+        页面不存在
       </div>
     );
   }

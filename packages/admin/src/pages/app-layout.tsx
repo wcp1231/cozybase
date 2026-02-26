@@ -7,23 +7,16 @@ import {
 } from 'react-router-dom';
 import type { PagesJson } from '@cozybase/ui';
 
-interface AppFile {
-  path: string;
-  content: string;
-  immutable: boolean;
-}
-
-interface AppWithFiles {
+interface AppInfo {
   name: string;
   description: string;
   current_version: number;
   published_version: number;
   state: string;
-  files: AppFile[];
 }
 
 interface AppContextValue {
-  app: AppWithFiles;
+  app: AppInfo;
   pagesJson: PagesJson;
 }
 
@@ -37,7 +30,7 @@ export function useAppContext(): AppContextValue {
 
 export function AppLayout() {
   const { appName } = useParams<{ appName: string }>();
-  const [app, setApp] = useState<AppWithFiles | null>(null);
+  const [app, setApp] = useState<AppInfo | null>(null);
   const [pagesJson, setPagesJson] = useState<PagesJson | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,28 +39,35 @@ export function AppLayout() {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/v1/apps/${appName}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Fetch app metadata and UI definition in parallel
+    Promise.all([
+      fetch(`/api/v1/apps/${appName}`).then((res) => {
+        if (!res.ok) throw new Error(`Failed to load app: HTTP ${res.status}`);
         return res.json();
-      })
-      .then((json) => {
-        const appData: AppWithFiles = json.data;
-        setApp(appData);
+      }),
+      fetch(`/stable/apps/${appName}/ui`).then((res) => {
+        if (res.status === 404) {
+          return null; // UI not published yet
+        }
+        if (!res.ok) throw new Error('加载 UI 定义失败');
+        return res.json();
+      }),
+    ])
+      .then(([appJson, uiJson]) => {
+        const appData = appJson.data;
+        setApp({
+          name: appData.name,
+          description: appData.description,
+          current_version: appData.current_version,
+          published_version: appData.published_version,
+          state: appData.state,
+        });
 
-        const pagesFile = appData.files.find((f) => f.path === 'ui/pages.json');
-        if (!pagesFile) {
-          throw new Error('No ui/pages.json found in app files');
+        if (!uiJson) {
+          throw new Error('该 App 的 UI 尚未发布，请先执行 reconcile 和 publish');
         }
 
-        let parsed: PagesJson;
-        try {
-          parsed = JSON.parse(pagesFile.content);
-        } catch {
-          throw new Error('Failed to parse ui/pages.json');
-        }
-
-        setPagesJson(parsed);
+        setPagesJson(uiJson.data as PagesJson);
         setLoading(false);
       })
       .catch((err) => {

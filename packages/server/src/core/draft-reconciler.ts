@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
-import { exportFunctionsFromDb } from './file-export';
+import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
 import { BadRequestError } from './errors';
 import { HTTP_METHODS } from '../modules/functions/types';
 
@@ -23,6 +23,7 @@ export interface DraftReconcileResult {
     validated: string[];
     warnings: FunctionValidationResult[];
   };
+  ui?: { exported: boolean };
   error?: string;
 }
 
@@ -101,11 +102,25 @@ export class DraftReconciler {
     // 6. Validate functions (optional, non-blocking)
     const functionsResult = await this.validateFunctions(appName);
 
+    // 7. Export UI definition (non-blocking)
+    let uiResult: DraftReconcileResult['ui'];
+    try {
+      const draftAppDir = join(this.workspace.draftDir, 'apps', appName);
+      const exported = exportUiFromDb(platformDb, appName, draftAppDir);
+      if (exported) {
+        uiResult = { exported: true };
+      }
+    } catch (err: unknown) {
+      console.warn(`[reconciler] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
+      uiResult = { exported: false };
+    }
+
     return {
       success: true,
       migrations: migrationResult.executed,
       seeds: seedResult.loaded,
       functions: functionsResult,
+      ui: uiResult,
     };
   }
 

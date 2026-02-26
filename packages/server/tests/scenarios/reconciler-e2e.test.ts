@@ -20,6 +20,7 @@ import {
   MIGRATION_BAD_SQL,
   SEED_TODOS_SQL,
   SEED_TODOS_JSON,
+  TEST_UI_PAGES_JSON,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -423,6 +424,148 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       expect(readdirSync(draftFnDir).sort()).toEqual(['users.ts']);
       expect(existsSync(join(draftFnDir, 'orders.ts'))).toBe(false);
+    });
+  });
+
+  // --- Scenario 9.11: Draft Reconcile exports UI definition ---
+  describe('9.11: Draft Reconcile exports ui/pages.json to draft directory', () => {
+    test('reconcile copies UI definition to draft/apps/{name}/ui/pages.json', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with migration + UI
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        ui: TEST_UI_PAGES_JSON,
+      });
+
+      // Step 2: Reconcile
+      handle.workspace.refreshAppState('myapp');
+      const reconciler = new DraftReconciler(handle.workspace);
+      const result = await reconciler.reconcile('myapp');
+      expect(result.success).toBe(true);
+      expect(result.ui).toEqual({ exported: true });
+
+      // Step 3: UI file exists in draft directory
+      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
+      expect(existsSync(draftUiPath)).toBe(true);
+
+      // Step 4: Content matches
+      const content = readFileSync(draftUiPath, 'utf-8');
+      expect(JSON.parse(content)).toEqual(JSON.parse(TEST_UI_PAGES_JSON));
+    });
+  });
+
+  // --- Scenario 9.12: Publish exports UI definition to stable ---
+  describe('9.12: Publish exports ui/pages.json to stable directory', () => {
+    test('publish copies UI definition to data/apps/{name}/ui/pages.json', () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with migration + UI
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        ui: TEST_UI_PAGES_JSON,
+      });
+
+      // Step 2: Publish
+      handle.workspace.refreshAppState('myapp');
+      const publisher = new Publisher(handle.workspace);
+      const result = publisher.publish('myapp');
+      expect(result.success).toBe(true);
+      expect(result.ui).toEqual({ exported: true });
+
+      // Step 3: UI file exists in stable directory
+      const stableUiPath = join(handle.root, 'data', 'apps', 'myapp', 'ui', 'pages.json');
+      expect(existsSync(stableUiPath)).toBe(true);
+
+      // Step 4: Content matches
+      const content = readFileSync(stableUiPath, 'utf-8');
+      expect(JSON.parse(content)).toEqual(JSON.parse(TEST_UI_PAGES_JSON));
+
+      // Step 5: Draft UI cleaned up
+      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
+      expect(existsSync(draftUiPath)).toBe(false);
+    });
+  });
+
+  // --- Scenario 9.13: Reconcile/Publish without UI definition ---
+  describe('9.13: No UI definition — Reconcile and Publish succeed without ui field', () => {
+    test('reconcile and publish work fine without ui/pages.json', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app without UI
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+
+      // Step 2: Reconcile — no ui field in result
+      handle.workspace.refreshAppState('myapp');
+      const reconciler = new DraftReconciler(handle.workspace);
+      const reconcileResult = await reconciler.reconcile('myapp');
+      expect(reconcileResult.success).toBe(true);
+      expect(reconcileResult.ui).toBeUndefined();
+
+      // Step 3: Publish — no ui field in result
+      const publisher = new Publisher(handle.workspace);
+      const publishResult = publisher.publish('myapp');
+      expect(publishResult.success).toBe(true);
+      expect(publishResult.ui).toBeUndefined();
+
+      // Step 4: No UI files created
+      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
+      const stableUiPath = join(handle.root, 'data', 'apps', 'myapp', 'ui', 'pages.json');
+      expect(existsSync(draftUiPath)).toBe(false);
+      expect(existsSync(stableUiPath)).toBe(false);
+    });
+  });
+
+  // --- Scenario 9.14: GET /stable/apps/:appName/ui returns UI definition ---
+  describe('9.14: Stable UI API returns correct JSON after publish', () => {
+    test('GET /stable/apps/:appName/ui returns published UI definition', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app with UI and publish
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        ui: TEST_UI_PAGES_JSON,
+      });
+      handle.workspace.refreshAppState('myapp');
+      const publisher = new Publisher(handle.workspace);
+      publisher.publish('myapp');
+
+      // Step 2: Create server and make request
+      const { createServer } = await import('../../src/server');
+      const { app } = createServer({ workspaceDir: handle.root });
+
+      const res = await app.request('/stable/apps/myapp/ui');
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.data).toEqual(JSON.parse(TEST_UI_PAGES_JSON));
+    });
+  });
+
+  // --- Scenario 9.15: GET /stable/apps/:appName/ui returns 404 when not published ---
+  describe('9.15: Stable UI API returns 404 when UI not published', () => {
+    test('GET /stable/apps/:appName/ui returns 404 when no UI file exists', async () => {
+      handle = createTestWorkspace();
+
+      // Step 1: Create app without UI and publish (so it has stable state)
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      handle.workspace.refreshAppState('myapp');
+      const publisher = new Publisher(handle.workspace);
+      publisher.publish('myapp');
+
+      // Step 2: Create server and make request
+      const { createServer } = await import('../../src/server');
+      const { app } = createServer({ workspaceDir: handle.root });
+
+      const res = await app.request('/stable/apps/myapp/ui');
+      expect(res.status).toBe(404);
+
+      const json = await res.json();
+      expect(json.error).toBe('UI definition not found');
     });
   });
 });
