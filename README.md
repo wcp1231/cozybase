@@ -2,33 +2,36 @@
 
 Local BaaS (Backend as a Service) platform for AI Agents. Built with TypeScript, Bun, and SQLite.
 
-Cozybase runs as a daemon process, manages a self-contained workspace, and supports a migration-based development workflow with Stable/Draft dual-version model. AI Agents write SQL migrations, iterate in Draft mode, then publish to Stable.
+Cozybase runs as a daemon process, manages a self-contained workspace, and supports a migration-based development workflow with Stable/Draft dual-version model. All app definitions are stored in a central Platform DB and managed through a unified Management API — no Git dependency, no filesystem-as-source-of-truth.
 
 ```
 Workspace (~/.cozybase)
 ┌──────────────────────────────────────────────────────────┐
-│ workspace.yaml            ← config (name+version)        │
-│ .gitignore                                               │
+│ workspace.yaml              ← config (name+version)      │
 │                                                          │
-│ apps/ (git-tracked)        data/ (git-ignored)           │
-│ ├── todo-app/              ├── platform.sqlite           │
-│ │   ├── app.yaml           └── apps/                     │
-│ │   ├── migrations/            ├── todo-app/             │
-│ │   │   ├── 001_init.sql       │   └── db.sqlite  ← Stable DB
-│ │   │   └── 002_add_tags.sql   └── blog-app/            │
-│ │   ├── seeds/                     └── db.sqlite         │
-│ │   │   └── todos.sql                                    │
-│ │   ├── functions/         draft/ (git-ignored)          │
-│ │   │   └── health.ts      └── apps/                     │
-│ │   └── ui/                    └── todo-app/             │
-│ │       └── pages.json              └── db.sqlite ← Draft DB
-│ └── blog-app/                                            │
-│     ├── app.yaml                                         │
-│     └── migrations/                                      │
-│         └── 001_init.sql                                 │
+│ data/                                                    │
+│ ├── platform.sqlite         ← Source of Truth            │
+│ │   ├── apps table            (name, version, status)    │
+│ │   ├── app_files table       (migrations, functions,    │
+│ │   │                          seeds, ui, config)        │
+│ │   └── api_keys table                                   │
+│ ├── apps/                                                │
+│ │   ├── todo-app/                                        │
+│ │   │   ├── db.sqlite       ← Stable DB                  │
+│ │   │   └── functions/      ← Exported from DB           │
+│ │   │       └── health.ts                                │
+│ │   └── blog-app/                                        │
+│ │       └── db.sqlite                                    │
+│ │                                                        │
+│ draft/                                                   │
+│ └── apps/                                                │
+│     └── todo-app/                                        │
+│         ├── db.sqlite       ← Draft DB                   │
+│         └── functions/      ← Exported from DB           │
+│             └── health.ts                                │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
-   Declarations (source of truth)   Runtime state
+   Platform DB (source of truth)    Runtime state
          │                               ▲
          ▼                               │
    ┌───────────────────────────────────┐ │
@@ -36,7 +39,7 @@ Workspace (~/.cozybase)
    │  Workspace → AppContext (per-app) │ │
    │  DraftReconciler / Verifier /     │─┘
    │  Publisher → SQLite               │
-   │  HTTP Server + Admin UI           │
+   │  Management API + Admin UI        │
    └───────────────────────────────────┘
 ```
 
@@ -57,8 +60,8 @@ Initializing new workspace...
   Workspace created at /Users/you/.cozybase
 
   ╔═══════════════════════════════════════╗
-  ║           cozybase v0.1.0            ║
-  ║  Local BaaS Platform for AI Agents   ║
+  ║           cozybase v0.1.0             ║
+  ║  Local BaaS Platform for AI Agents    ║
   ╚═══════════════════════════════════════╝
 
   Server:    http://0.0.0.0:3000
@@ -67,30 +70,24 @@ Initializing new workspace...
 
 ### Create an App
 
+All app management is done via the Management API:
+
 ```bash
-# Create app directory with a migration
-mkdir -p ~/.cozybase/apps/todo-app/migrations
+# Create a new app
+curl -X POST http://localhost:3000/api/v1/apps \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "todo-app", "description": "A simple todo application"}'
+# Returns: app info with template files + API key
 
-cat > ~/.cozybase/apps/todo-app/app.yaml << 'EOF'
-description: "A simple todo application"
-EOF
-
-cat > ~/.cozybase/apps/todo-app/migrations/001_init.sql << 'EOF'
-CREATE TABLE todos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  completed INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_todos_completed ON todos(completed);
-EOF
+# Add a migration via the file API
+curl -X PUT http://localhost:3000/api/v1/apps/todo-app/files/migrations/001_init.sql \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "CREATE TABLE todos (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  title TEXT NOT NULL,\n  completed INTEGER DEFAULT 0,\n  created_at TEXT DEFAULT (datetime('\''now'\''))\n);\nCREATE INDEX idx_todos_completed ON todos(completed);"}'
 
 # (Optional) Add seed data for draft testing
-mkdir -p ~/.cozybase/apps/todo-app/seeds
-cat > ~/.cozybase/apps/todo-app/seeds/todos.sql << 'EOF'
-INSERT INTO todos (title, completed) VALUES ('Buy milk', 0);
-INSERT INTO todos (title, completed) VALUES ('Read docs', 1);
-EOF
+curl -X PUT http://localhost:3000/api/v1/apps/todo-app/files/seeds/todos.sql \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "INSERT INTO todos (title, completed) VALUES ('\''Buy milk'\'', 0);\nINSERT INTO todos (title, completed) VALUES ('\''Read docs'\'', 1);"}'
 
 # Reconcile draft — builds a fresh Draft database
 curl -X POST http://localhost:3000/draft/apps/todo-app/reconcile
@@ -101,6 +98,8 @@ curl http://localhost:3000/draft/apps/todo-app/db/todos
 # {"data":[{"id":1,"title":"Buy milk",...},{"id":2,"title":"Read docs",...}]}
 ```
 
+For batch file changes, use the **Checkout-Edit-Push** workflow: fetch the full app snapshot with `GET /api/v1/apps/todo-app`, edit files locally, then push all changes at once with `PUT /api/v1/apps/todo-app` (includes optimistic locking via `base_version`).
+
 ## Development Workflow
 
 Cozybase uses a **Stable/Draft dual-version model**:
@@ -110,15 +109,14 @@ Cozybase uses a **Stable/Draft dual-version model**:
 │ Write       │────▶│ Reconcile│────▶│ Verify │────▶│ Publish │
 │ Migrations  │     │ (Draft)  │     │        │     │         │
 └─────────────┘     └──────────┘     └────────┘     └─────────┘
-                    Destroy+rebuild   Test against    Apply to
-                    draft DB          stable copy     stable DB
-                                                     + git commit
+  via Management     Destroy+rebuild   Test against    Apply to
+  API                draft DB          stable copy     stable DB
 ```
 
-1. **Write migrations**: Create SQL files in `apps/{name}/migrations/` following `{NNN}_{description}.sql` naming
+1. **Write migrations**: Use the Management API to create/update migration files (stored in Platform DB)
 2. **Draft Reconcile**: `POST /draft/apps/:appName/reconcile` — destroys and rebuilds draft DB from all migrations + seeds
 3. **Verify** (for existing apps): `POST /draft/apps/:appName/verify` — tests new migrations against a copy of the stable DB
-4. **Publish**: `POST /draft/apps/:appName/publish` — applies migrations to stable DB, git commits, cleans draft
+4. **Publish**: `POST /draft/apps/:appName/publish` — applies migrations to stable DB, marks migrations as immutable, cleans draft
 
 ### App States
 
@@ -126,12 +124,12 @@ Cozybase uses a **Stable/Draft dual-version model**:
 |-------|---------|
 | `draft_only` | New app, not yet published |
 | `stable` | Published, no pending changes |
-| `stable_draft` | Published, with uncommitted migration changes |
-| `deleted` | Soft-deleted via `status: deleted` in `app.yaml` |
+| `stable_draft` | Published, with unpublished file changes |
+| `deleted` | Soft-deleted via Management API |
 
 ### Iterating on Migrations
 
-During development, you can freely edit migrations and re-reconcile — Draft Reconcile always destroys and rebuilds:
+During development, you can freely edit migrations via the API and re-reconcile — Draft Reconcile always destroys and rebuilds:
 
 ```bash
 # Edit a migration, then re-reconcile
@@ -141,12 +139,13 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/reconcile
 curl http://localhost:3000/draft/apps/todo-app/db/todos
 ```
 
-Once published, committed migrations become **immutable**. To make further schema changes, add a new migration:
+Once published, migrations become **immutable** (the API rejects modifications to published migration files). To make further schema changes, add a new migration:
 
 ```bash
-cat > ~/.cozybase/apps/todo-app/migrations/002_add_priority.sql << 'EOF'
-ALTER TABLE todos ADD COLUMN priority INTEGER DEFAULT 0;
-EOF
+# Add a new migration file via the API
+curl -X PUT http://localhost:3000/api/v1/apps/todo-app/files/migrations/002_add_priority.sql \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "ALTER TABLE todos ADD COLUMN priority INTEGER DEFAULT 0;"}'
 
 # Reconcile draft, verify, then publish
 curl -X POST http://localhost:3000/draft/apps/todo-app/reconcile
@@ -188,12 +187,12 @@ Use `/draft/` prefix instead to operate on the Draft database during development
 
 ## Functions
 
-Cozybase supports TypeScript functions as HTTP endpoints. Functions are defined as `.ts` files in `apps/{name}/functions/` and use **Next.js Route Handler-style** named exports:
+Cozybase supports TypeScript functions as HTTP endpoints. Functions are stored as `.ts` files in the Platform DB (under the `functions/` path prefix) and use **Next.js Route Handler-style** named exports:
 
 ### Defining a Function
 
 ```typescript
-// apps/todo-app/functions/health.ts
+// functions/health.ts
 export async function GET(ctx) {
   return { status: "ok", app: ctx.app.name, mode: ctx.mode };
 }
@@ -202,7 +201,7 @@ export async function GET(ctx) {
 Each named export handles one HTTP method. Use `export default` as a catch-all:
 
 ```typescript
-// apps/todo-app/functions/items.ts
+// functions/items.ts
 export async function GET(ctx) {
   const items = ctx.db.query("SELECT * FROM todos");
   return items;
@@ -261,8 +260,9 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/functions/items \
 
 ### Function Conventions
 
-- File names map to route names: `health.ts` -> `/functions/health`
-- Files prefixed with `_` (e.g. `_utils.ts`) are not exposed as endpoints
+- File paths map to route names: `functions/health.ts` -> `/functions/health`
+- Files prefixed with `_` (e.g. `functions/_utils.ts`) are not exposed as endpoints
+- Functions are stored in Platform DB and exported to the filesystem during Reconcile/Publish for Bun `import()`
 - Draft mode: functions are re-imported on every request (hot-reload)
 - Stable mode: modules are cached; cache is refreshed on Publish
 - During Draft Reconcile, functions are validated (valid exports checked) with warnings in the result
@@ -426,7 +426,7 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 |--------|------|-------------|
 | POST | `/draft/apps/:appName/reconcile` | Rebuild draft DB from all migrations + seeds |
 | POST | `/draft/apps/:appName/verify` | Verify new migrations against stable DB copy |
-| POST | `/draft/apps/:appName/publish` | Apply to stable, git commit, clean draft |
+| POST | `/draft/apps/:appName/publish` | Apply to stable, mark immutable, clean draft |
 
 ### Functions
 
@@ -440,40 +440,41 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 ```
 ~/.cozybase/                            # Workspace root
 ├── workspace.yaml                      # Config: name + schema version
-├── .gitignore                          # Ignores data/, draft/, *.sqlite*
-├── apps/                               # Declarations (git-tracked)
-│   ├── todo-app/
-│   │   ├── app.yaml                    # Required: marks this as an app
-│   │   ├── migrations/                 # SQL migrations ({NNN}_{name}.sql)
-│   │   │   ├── 001_init.sql
-│   │   │   └── 002_add_priority.sql
-│   │   ├── seeds/                      # Test data (.sql or .json)
-│   │   │   └── todos.sql
-│   │   ├── functions/                  # TypeScript HTTP handlers
-│   │   │   └── health.ts
-│   │   └── ui/                         # UI definitions (JSON)
-│   │       └── pages.json
-│   └── blog-app/
-│       ├── app.yaml
-│       └── migrations/
-│           └── 001_init.sql
-├── data/                               # Stable runtime state (git-ignored)
-│   ├── platform.sqlite                 # Platform DB (apps, api_keys)
+├── data/                               # Persistent state
+│   ├── platform.sqlite                 # Source of Truth (apps, app_files, api_keys)
 │   └── apps/
 │       ├── todo-app/
 │       │   ├── db.sqlite               # Stable database
-│       │   └── db.sqlite.bak           # Auto-backup before publish
+│       │   ├── db.sqlite.bak           # Auto-backup before publish
+│       │   └── functions/              # Function files (exported from DB)
+│       │       └── health.ts
 │       └── blog-app/
-│           └── db.sqlite
-└── draft/                              # Draft runtime state (git-ignored)
+│           ├── db.sqlite
+│           └── functions/
+│               └── posts.ts
+└── draft/                              # Draft runtime state
     └── apps/
         └── todo-app/
-            └── db.sqlite               # Draft database (destroy+rebuild)
+            ├── db.sqlite               # Draft database (destroy+rebuild)
+            └── functions/              # Function files (exported from DB)
+                └── health.ts
 ```
+
+App definitions (migrations, functions, seeds, UI, config) are stored in `platform.sqlite`'s `app_files` table — **not** on the filesystem. The `functions/` directories under `data/` and `draft/` are runtime exports: during Reconcile/Publish, function source code is written from the DB to disk so Bun can `import()` them.
+
+### Platform DB Schema
+
+The `platform.sqlite` database contains:
+
+| Table | Purpose |
+|-------|---------|
+| `apps` | App registry (name, description, status, `current_version`, `published_version`) |
+| `app_files` | All app files: migrations, functions, seeds, UI, config. Keyed by `(app_name, path)`. Published migrations marked `immutable = 1` |
+| `api_keys` | Per-app API key hashes |
 
 ### Migration File Format
 
-SQL files in `migrations/`, named `{NNN}_{description}.sql`:
+Migration files are stored in the `app_files` table under paths like `migrations/{NNN}_{description}.sql`:
 
 ```sql
 -- 001_init.sql
@@ -490,7 +491,7 @@ ALTER TABLE todos ADD COLUMN priority INTEGER DEFAULT 0;
 
 ### Seed File Format
 
-Seeds are loaded during Draft Reconcile only (not during Publish). Supports `.sql` and `.json`:
+Seeds are loaded during Draft Reconcile only (not during Publish). Stored under `seeds/` paths, supports `.sql` and `.json`:
 
 ```sql
 -- seeds/todos.sql
@@ -506,16 +507,17 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 
 ### Core Concepts
 
-- **Workspace**: Self-contained directory (`~/.cozybase`) with `apps/` (git-tracked declarations), `data/` (stable runtime), and `draft/` (draft runtime). Auto-initializes on first startup.
+- **Workspace**: Self-contained directory (`~/.cozybase`) with `data/` (Platform DB + stable runtime) and `draft/` (draft runtime). Auto-initializes on first startup with template apps loaded into the Platform DB.
+- **Platform DB**: Central `platform.sqlite` stores all app definitions (`apps` + `app_files` tables). Acts as the single source of truth — Management API is the only entry point for modifications.
 - **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request.
-- **DraftReconciler**: Destroys and rebuilds the draft database from all migrations + seeds. Used during iterative development.
-- **Verifier**: Checks that committed migrations haven't been modified, then tests new migrations against a copy of the stable database.
-- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, reloads function cache, git commits, and cleans up draft.
+- **DraftReconciler**: Reads migrations, seeds, and functions from Platform DB, destroys and rebuilds the draft database. Exports function files to disk for Bun `import()`.
+- **Verifier**: Checks that published migrations are marked immutable, then tests new migrations against a copy of the stable database.
+- **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, marks migration files as `immutable`, exports functions, reloads function cache, and cleans up draft.
+- **Management API**: RESTful HTTP API (`/api/v1/apps/*`) for app CRUD and file management. Supports single-file updates and batch Checkout-Edit-Push with optimistic locking (`base_version`).
 - **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
 - **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the server. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
-- **App States**: Dynamically derived from git status and filesystem — `draft_only`, `stable`, `stable_draft`, `deleted`.
-- **Git Integration**: After successful Publish, `apps/` changes are auto-committed to the workspace git repo.
+- **App States**: Derived from DB fields — `published_version = 0` → `draft_only`, `current_version = published_version` → `stable`, `current_version > published_version` → `stable_draft`, `status = deleted` → `deleted`.
 
 ### Project Structure
 
@@ -528,13 +530,13 @@ cozybase/
 │   │   │   ├── server.ts             # Hono app factory + static file serving
 │   │   │   ├── config.ts             # Configuration
 │   │   │   ├── core/
-│   │   │   │   ├── workspace.ts      # Workspace + app discovery + git
+│   │   │   │   ├── workspace.ts      # Workspace + Platform DB + app state
 │   │   │   │   ├── app-context.ts    # Per-app resource container
 │   │   │   │   ├── migration-runner.ts # Scan, execute, track migrations
 │   │   │   │   ├── seed-loader.ts    # Load .sql/.json seed files
 │   │   │   │   ├── draft-reconciler.ts # Destroy+rebuild draft DB
-│   │   │   │   ├── verifier.ts       # Immutability check + test migrations
-│   │   │   │   ├── publisher.ts      # Publish draft → stable
+│   │   │   │   ├── verifier.ts       # Immutability check + test new migrations
+│   │   │   │   ├── publisher.ts      # Publish draft → stable + mark immutable
 │   │   │   │   ├── event-bus.ts      # Pub/sub for DB changes
 │   │   │   │   ├── auth.ts           # JWT + API key auth
 │   │   │   │   └── errors.ts         # Error hierarchy
@@ -544,8 +546,8 @@ cozybase/
 │   │   │   │   └── logger.ts
 │   │   │   └── modules/
 │   │   │       ├── apps/
-│   │   │       │   ├── routes.ts     # App CRUD + file management API
-│   │   │       │   ├── manager.ts    # App CRUD operations
+│   │   │       │   ├── routes.ts     # Management API routes (CRUD + files)
+│   │   │       │   ├── manager.ts    # App CRUD + file management operations
 │   │   │       │   └── mcp-types.ts  # MCP tool type definitions
 │   │   │       ├── db/
 │   │   │       │   ├── routes.ts         # Auto CRUD
@@ -628,7 +630,8 @@ cd packages/admin && bun run build
 - [x] Migration-based schema management (Stable/Draft model)
 - [x] Per-app isolation via AppContext
 - [x] Draft Reconcile / Verify / Publish workflow
-- [x] Git auto-commit on publish
+- [x] Database-first app storage (Platform DB as source of truth)
+- [x] Management API (Checkout-Edit-Push with optimistic locking)
 - [x] Auto CRUD REST API
 - [x] Raw SQL execution
 - [x] Query builder (filter, sort, paginate)
@@ -638,7 +641,6 @@ cd packages/admin && bun run build
 - [x] Functions module (TypeScript HTTP handlers with hot-reload)
 - [x] JSON-to-UI renderer (26 built-in components, expression engine, action system)
 - [x] Admin UI (React SPA with app management and page rendering)
-- [x] App Management API (create, update, delete apps and files)
 - [ ] MCP Server (AI Agent integration via Model Context Protocol)
 - [ ] Storage module (file uploads + buckets)
 - [ ] Worker runtime (per-app Bun Worker isolation)
