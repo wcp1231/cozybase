@@ -77,8 +77,15 @@ export function createAppRoutes(workspace: Workspace) {
       throw new BadRequestError('Request body must include a "content" field (string)');
     }
 
+    // Check existence before upsert to determine created vs updated
+    const db = workspace.getPlatformDb();
+    const existing = db.query(
+      'SELECT 1 FROM app_files WHERE app_name = ? AND path = ?',
+    ).get(name, filePath);
+
     const result = manager.updateFile(name, filePath, body.content);
-    return c.json({ data: result });
+    const status = existing ? 'updated' : 'created';
+    return c.json({ data: { ...result, status } });
   });
 
   // DELETE /apps/:name - Delete an app

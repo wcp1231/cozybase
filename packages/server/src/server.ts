@@ -163,5 +163,5 @@ export function createServer(config: Config) {
     app.get('*', serveStatic({ root: adminDistDir, path: '/index.html' }));
   }
 
-  return { app, workspace, functionRuntime };
+  return { app, workspace, functionRuntime, draftReconciler, verifier, publisher };
 }

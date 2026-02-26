@@ -388,6 +388,25 @@ Options:
 
 Environment variables `COZYBASE_WORKSPACE`, `COZYBASE_PORT` are also supported.
 
+### MCP Server
+
+The `cozybase mcp` command starts an MCP Server for AI Agent integration (stdio transport):
+
+```bash
+# Local mode (embedded, no daemon needed)
+cozybase mcp --apps-dir /path/to/workspace
+
+# Remote mode (connects to a running cozybase daemon)
+cozybase mcp --url http://homelab.local:3000 --apps-dir /path/to/workspace
+```
+
+| Option | Env Var | Description |
+|--------|---------|-------------|
+| `--apps-dir <path>` | `COZYBASE_APPS_DIR` | Agent working directory for file sync |
+| `--url <url>` | — | Remote cozybase URL (omit for local/embedded mode) |
+
+The MCP Server exposes 11 tools: `create_app`, `list_apps`, `fetch_app`, `update_app`, `update_app_file`, `delete_app`, `reconcile_app`, `verify_app`, `publish_app`, `execute_sql`, `call_api`.
+
 ## API Reference
 
 ### Platform
@@ -410,6 +429,7 @@ All paths prefixed with `/stable/apps/:appName/db`
 |--------|------|-------------|
 | GET | `/schema` | Introspect all tables |
 | POST | `/sql` | Execute raw SQL |
+| POST | `/_sql` | Execute SQL with safety checks (used by MCP RemoteBackend) |
 | GET | `/:table` | List records |
 | GET | `/:table/:id` | Get single record |
 | POST | `/:table` | Create record |
@@ -514,6 +534,7 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Verifier**: Checks that published migrations are marked immutable, then tests new migrations against a copy of the stable database.
 - **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, marks migration files as `immutable`, exports functions, reloads function cache, and cleans up draft.
 - **Management API**: RESTful HTTP API (`/api/v1/apps/*`) for app CRUD and file management. Supports single-file updates and batch Checkout-Edit-Push with optimistic locking (`base_version`).
+- **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Uses a Backend Adapter pattern (`CozybaseBackend` interface) with two implementations: `EmbeddedBackend` (local, direct module calls) and `RemoteBackend` (HTTP client to a running daemon). Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
 - **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
 - **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the server. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
@@ -544,6 +565,14 @@ cozybase/
 │   │   │   │   ├── app-resolver.ts   # Resolves AppContext + mode per request
 │   │   │   │   ├── auth.ts
 │   │   │   │   └── logger.ts
+│   │   │   ├── mcp/
+│   │   │   │   ├── types.ts           # CozybaseBackend interface + shared types
+│   │   │   │   ├── sql-safety.ts      # SQL classification + permission checks
+│   │   │   │   ├── app-dir.ts         # Agent working directory management
+│   │   │   │   ├── handlers.ts        # MCP tool handler implementations
+│   │   │   │   ├── embedded-backend.ts # Local mode (direct module calls)
+│   │   │   │   ├── remote-backend.ts  # Remote mode (HTTP API client)
+│   │   │   │   └── server.ts          # MCP Server (stdio transport)
 │   │   │   └── modules/
 │   │   │       ├── apps/
 │   │   │       │   ├── routes.ts     # Management API routes (CRUD + files)
@@ -566,6 +595,7 @@ cozybase/
 │   │       │   └── test-workspace.ts
 │   │       ├── core/               # Unit + integration tests
 │   │       ├── modules/            # Module integration tests (functions, etc.)
+│   │       ├── mcp/                # MCP tool tests (SQL safety, app-dir, backend, endpoints)
 │   │       └── scenarios/          # End-to-end tests
 │   ├── ui/                    # JSON-to-React UI renderer (@cozybase/ui)
 │   │   └── src/
@@ -606,6 +636,7 @@ cd packages/server
 bun run test:unit          # MigrationRunner, SeedLoader, AppContext
 bun run test:integration   # Workspace, DraftReconciler, Verifier, Publisher, Functions
 bun run test:e2e           # Full workflow scenarios
+bun test tests/mcp/        # MCP tools (SQL safety, app-dir, backend, SQL endpoint)
 
 # Run UI renderer tests (expression engine, action dispatcher, component registry)
 bun test packages/ui/src/
@@ -641,7 +672,7 @@ cd packages/admin && bun run build
 - [x] Functions module (TypeScript HTTP handlers with hot-reload)
 - [x] JSON-to-UI renderer (26 built-in components, expression engine, action system)
 - [x] Admin UI (React SPA with app management and page rendering)
-- [ ] MCP Server (AI Agent integration via Model Context Protocol)
+- [x] MCP Server (AI Agent integration via Model Context Protocol)
 - [ ] Storage module (file uploads + buckets)
 - [ ] Worker runtime (per-app Bun Worker isolation)
 - [ ] Cron scheduler

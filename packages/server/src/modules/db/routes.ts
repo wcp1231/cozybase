@@ -2,10 +2,14 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { AppEnv } from '../../middleware/app-resolver';
 import { eventBus, type ChangeEvent } from '../../core/event-bus';
-import { BadRequestError, NotFoundError } from '../../core/errors';
+import { AppError, BadRequestError, NotFoundError } from '../../core/errors';
 import { buildQuery, type QueryParams } from './query-builder';
 import { introspectSchema } from './schema';
 import { executeSql } from './sql';
+import { validateSql } from '../../mcp/sql-safety';
+
+const MAX_SQL_ROWS = 1000;
+const SQL_TIMEOUT_MS = 5000;
 
 export function createDbRoutes() {
   const app = new Hono<AppEnv>();
@@ -36,6 +40,77 @@ export function createDbRoutes() {
 
     const result = executeSql(db, body.sql, body.params);
     return c.json({ data: result });
+  });
+
+  // POST /_sql - Execute SQL with safety checks (for MCP RemoteBackend)
+  app.post('/_sql', async (c) => {
+    const appContext = c.get('appContext');
+    const mode = c.get('appMode');
+    const db = mode === 'stable' ? appContext.stableDb : appContext.draftDb;
+
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new AppError(400, 'Invalid JSON in request body', 'SQL_INVALID');
+    }
+
+    if (!body.sql || typeof body.sql !== 'string') {
+      throw new AppError(400, 'Missing "sql" field', 'SQL_INVALID');
+    }
+
+    // SQL classification + permission check
+    const sqlMode = mode === 'stable' ? 'stable' : 'draft';
+    const check = validateSql(body.sql, sqlMode as 'draft' | 'stable');
+    if (!check.allowed) {
+      // Multi-statement → 400 SQL_INVALID; permission denial → 403 SQL_NOT_ALLOWED
+      if (check.reason === 'multi_statement') {
+        throw new AppError(400, check.error!, 'SQL_INVALID');
+      }
+      throw new AppError(403, check.error!, 'SQL_NOT_ALLOWED');
+    }
+
+    try {
+      const executeQuery = () => {
+        const stmt = db.query(body.sql);
+        const rows = stmt.all() as Record<string, unknown>[];
+
+        // Limit result set
+        const limitedRows = rows.slice(0, MAX_SQL_ROWS);
+
+        // Extract column names
+        const columns = limitedRows.length > 0
+          ? Object.keys(limitedRows[0])
+          : [];
+
+        // Convert to array format
+        const rowArrays = limitedRows.map((row) =>
+          columns.map((col) => row[col]),
+        );
+
+        return { columns, rows: rowArrays, rowCount: rowArrays.length };
+      };
+
+      const data = await Promise.race([
+        new Promise<{ columns: string[]; rows: unknown[][]; rowCount: number }>((resolve, reject) => {
+          try {
+            resolve(executeQuery());
+          } catch (err) {
+            reject(err);
+          }
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('SQL execution timed out (5s limit)')), SQL_TIMEOUT_MS),
+        ),
+      ]);
+
+      return c.json({ data });
+    } catch (error: any) {
+      if (error.message?.includes('timed out')) {
+        throw new AppError(408, error.message, 'SQL_TIMEOUT');
+      }
+      throw new AppError(400, `SQL execution error: ${error.message}`, 'SQL_INVALID');
+    }
   });
 
   // --- Auto CRUD endpoints ---

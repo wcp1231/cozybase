@@ -1,105 +1,87 @@
 /**
  * MCP Tool Type Definitions for CozyBase
  *
- * These types define the input/output interfaces for MCP tools
+ * These types define the input/output interfaces for 11 MCP tools
  * that allow AI Agents to manage CozyBase APPs via the MCP protocol.
  *
- * The actual MCP Server implementation is in a separate change.
- * Tools map to Management API endpoints.
+ * Architecture: Agent reads/writes files in a local working directory,
+ * MCP tools sync between the working directory and cozybase core.
  */
 
 import type { AppState } from '../../core/workspace';
 
-// --- Shared Types ---
+// --- Tool Input / Output Types ---
 
-export interface McpAppFile {
-  path: string;
-  content: string;
-  immutable: boolean;
-}
-
-export interface McpAppInfo {
-  name: string;
-  description: string;
-  current_version: number;
-  published_version: number;
-  state: AppState | 'unknown';
-}
-
-export interface McpAppWithFiles extends McpAppInfo {
-  files: McpAppFile[];
-}
-
-// --- create_app ---
+// -- create_app --
 
 export interface CreateAppInput {
   name: string;
   description?: string;
 }
 
-export interface CreateAppOutput extends McpAppWithFiles {
-  api_key: string;
+export interface CreateAppOutput {
+  name: string;
+  description: string;
+  directory: string;
+  files: string[];
 }
 
-// --- list_apps ---
+// -- list_apps --
 
-// No input needed
 export interface ListAppsOutput {
-  apps: McpAppInfo[];
+  apps: {
+    name: string;
+    description: string;
+    state: AppState | 'unknown';
+    current_version: number;
+    published_version: number;
+  }[];
 }
 
-// --- fetch_app ---
+// -- fetch_app --
 
 export interface FetchAppInput {
   app_name: string;
 }
 
-export type FetchAppOutput = McpAppWithFiles;
+export interface FetchAppOutput {
+  name: string;
+  description: string;
+  state: AppState | 'unknown';
+  current_version: number;
+  published_version: number;
+  directory: string;
+  files: string[];
+}
 
-// --- update_app ---
+// -- update_app --
 
 export interface UpdateAppInput {
   app_name: string;
-  base_version: number;
-  files: { path: string; content: string }[];
 }
 
-export type UpdateAppOutput = McpAppWithFiles;
+export interface UpdateAppOutput {
+  files: string[];
+  changes: {
+    added: string[];
+    modified: string[];
+    deleted: string[];
+  };
+}
 
-// --- update_app_file ---
+// -- update_app_file --
 
-/**
- * update_app_file — Update a single file in an APP without a full Checkout-Edit-Push cycle.
- *
- * **UI Definitions (`ui/pages.json`)**:
- * - APP UI definitions are stored in `ui/pages.json`.
- * - `ui/pages.json` uses JSON format with two top-level fields:
- *   - `pages`      — Array of page objects.
- *   - `components` — Optional custom component declarations.
- * - Each page has `id`, `title`, and `body` fields (`id` also serves as the route path segment).
- * - In `body`, components use `type` to specify the component type.
- *   Built-in types: `page`, `row`, `col`, `card`, `tabs`, `divider`,
- *   `table`, `list`, `text`, `heading`, `tag`, `stat`, `form`, `input`,
- *   `textarea`, `number`, `select`, `switch`, `checkbox`, `radio`,
- *   `date-picker`, `button`, `link`, `dialog`, `alert`, `empty`.
- * - Interactions use action declarations. Action types:
- *   `api`, `reload`, `dialog`, `link`, `close`, `confirm`.
- * - API URLs use App-relative paths (e.g. `/db/todo`, `/functions/todos`);
- *   the renderer auto-completes them to full URLs.
- */
 export interface UpdateAppFileInput {
   app_name: string;
   path: string;
-  content: string;
 }
 
 export interface UpdateAppFileOutput {
   path: string;
-  content: string;
-  immutable: boolean;
+  status: 'created' | 'updated';
 }
 
-// --- delete_app ---
+// -- delete_app --
 
 export interface DeleteAppInput {
   app_name: string;
@@ -109,63 +91,82 @@ export interface DeleteAppOutput {
   message: string;
 }
 
-// --- MCP Tool Registry Type ---
+// -- reconcile_app --
 
-export interface McpToolDefinition<TInput, TOutput> {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler: (input: TInput) => Promise<TOutput>;
+export interface ReconcileAppInput {
+  app_name: string;
 }
 
-/**
- * Registry of all MCP tools available to AI Agents.
- *
- * **Checkout-Edit-Push workflow**:
- *   1. Checkout — `fetch_app(app_name)` to get the full snapshot.
- *   2. Edit    — Modify files in memory.
- *   3. Push    — `update_app(app_name, base_version, files)`.
- *   4. Reconcile / Verify / Publish — Rebuild draft DB, validate, and publish.
- *
- * **Shortcut — UI-only changes**:
- *   When the Agent only modifies UI definitions (`ui/pages.json`),
- *   Reconcile / Verify / Publish are NOT needed because UI files do not
- *   involve database schema changes. Just call
- *   `update_app_file(app_name, "ui/pages.json", content)` directly.
- */
-export type McpToolRegistry = {
-  create_app: McpToolDefinition<CreateAppInput, CreateAppOutput>;
-  list_apps: McpToolDefinition<Record<string, never>, ListAppsOutput>;
-  fetch_app: McpToolDefinition<FetchAppInput, FetchAppOutput>;
-  update_app: McpToolDefinition<UpdateAppInput, UpdateAppOutput>;
-  update_app_file: McpToolDefinition<UpdateAppFileInput, UpdateAppFileOutput>;
-  delete_app: McpToolDefinition<DeleteAppInput, DeleteAppOutput>;
-};
+// -- verify_app --
+
+export interface VerifyAppInput {
+  app_name: string;
+}
+
+// -- publish_app --
+
+export interface PublishAppInput {
+  app_name: string;
+}
+
+// -- execute_sql --
+
+export interface ExecuteSqlInput {
+  app_name: string;
+  sql: string;
+  mode?: 'draft' | 'stable';
+}
+
+export interface ExecuteSqlOutput {
+  columns: string[];
+  rows: unknown[][];
+  rowCount: number;
+}
+
+// -- call_api --
+
+export interface CallApiInput {
+  app_name: string;
+  method: string;
+  path: string;
+  body?: unknown;
+  mode?: 'draft' | 'stable';
+}
+
+export interface CallApiOutput {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
 
 // --- Tool Descriptions (for MCP Server registration) ---
 
-/**
- * Pre-defined description strings for each MCP tool.
- * These will be passed to MCP clients so that AI Agents understand
- * what each tool does and how to use it correctly.
- */
-export const TOOL_DESCRIPTIONS: Record<keyof McpToolRegistry, string> = {
-  create_app: 'Create a new APP. Returns the full file snapshot and an API key.',
+export const TOOL_DESCRIPTIONS = {
+  create_app:
+    'Create a new APP. Template files will be written to the Agent working directory.\n\n' +
+    'After creation, use your file tools to read and edit the files in the returned `directory`.\n' +
+    'When done editing, call `update_app` to sync changes back to cozybase.',
 
-  list_apps: 'List all APPs with their basic info (name, description, state, versions).',
+  list_apps:
+    'List all APPs with their basic info (name, description, state, versions).',
 
   fetch_app:
-    'Fetch the full snapshot of an APP including all files and current_version. ' +
-    'This is the "Checkout" step of the Checkout-Edit-Push workflow.',
+    'Fetch an APP from cozybase and write all files to the Agent working directory.\n\n' +
+    'This replaces the working directory contents with the latest state from cozybase.\n' +
+    'Use your file tools to read the files in the returned `directory`.',
 
   update_app:
-    'Push a batch of file changes to an APP with optimistic locking (base_version). ' +
-    'This is the "Push" step of the Checkout-Edit-Push workflow. ' +
-    'After pushing, run reconcile → verify → publish to apply schema changes.',
+    'Sync all files from the Agent working directory to cozybase (full sync).\n\n' +
+    'This scans the APP directory and pushes all changes:\n' +
+    '- New files are added\n' +
+    '- Modified files are updated\n' +
+    '- Missing files are deleted (except immutable migrations)\n\n' +
+    'After syncing, run `reconcile_app` to rebuild the Draft environment.\n' +
+    '**Important**: Always call this after editing files, before reconcile/verify/publish.',
 
   update_app_file:
-    'Update a single file in an APP. No base_version needed. ' +
-    'Ideal for quick edits without a full Checkout-Edit-Push cycle.\n\n' +
+    'Sync a single file from the Agent working directory to cozybase.\n\n' +
+    'Use this for quick single-file updates instead of full `update_app`.\n\n' +
     '## UI Definitions (`ui/pages.json`)\n\n' +
     'APP UI definitions are stored in `ui/pages.json`. ' +
     'The file uses JSON format with two top-level fields:\n' +
@@ -181,7 +182,140 @@ export const TOOL_DESCRIPTIONS: Record<keyof McpToolRegistry, string> = {
     'API URLs use App-relative paths (e.g. `/db/todo`, `/functions/todos`); ' +
     'the renderer auto-completes them to full URLs.\n\n' +
     '**When only modifying `ui/pages.json`, reconcile / verify / publish are NOT needed.** ' +
-    'Just call `update_app_file(app_name, "ui/pages.json", content)` directly.',
+    'Just call `update_app_file` directly.',
 
-  delete_app: 'Delete an APP and all its associated data.',
-};
+  delete_app:
+    'Delete an APP and all its associated data. This also removes the Agent working directory.\n\n' +
+    '**WARNING: This operation is irreversible. All data will be permanently deleted.**',
+
+  reconcile_app:
+    'Rebuild the Draft environment for an APP.\n\n' +
+    'This destroys and recreates the Draft database by executing all migrations, ' +
+    'loading seed data, and exporting functions to the runtime directory.\n\n' +
+    'Call this after `update_app` or `update_app_file` when you\'ve changed ' +
+    'migrations, seeds, or functions.',
+
+  verify_app:
+    'Verify that Draft changes can be safely published to Stable.\n\n' +
+    'This checks migration compatibility by dry-running pending migrations ' +
+    'against a copy of the Stable database.',
+
+  publish_app:
+    'Publish Draft changes to Stable.\n\n' +
+    'This applies pending migrations to the Stable database, exports functions, ' +
+    'and marks executed migrations as immutable.\n\n' +
+    'Run `verify_app` first to ensure changes are safe to publish.',
+
+  execute_sql:
+    'Execute a SQL query on an APP\'s database.\n\n' +
+    '**Permission model:**\n' +
+    '- Draft mode: SELECT and DML (INSERT/UPDATE/DELETE) allowed\n' +
+    '- Stable mode: SELECT only\n' +
+    '- DDL (CREATE/DROP/ALTER) is always forbidden — use migration files instead\n\n' +
+    'Returns columns, rows, and rowCount. Maximum 1000 rows returned.\n' +
+    'Default mode is `draft`.',
+
+  call_api:
+    'Call an APP\'s HTTP endpoint (user perspective).\n\n' +
+    'Covers all APP endpoints:\n' +
+    '- Database REST API: GET/POST/PUT/DELETE `/db/{table}`\n' +
+    '- TypeScript functions: ANY `/functions/{name}`\n\n' +
+    'Default mode is `draft`.',
+} as const;
+
+// --- Input Schemas (for MCP Server tool registration) ---
+
+export const INPUT_SCHEMAS = {
+  create_app: {
+    type: 'object' as const,
+    properties: {
+      name: { type: 'string', description: 'APP name (alphanumeric, hyphens, underscores)' },
+      description: { type: 'string', description: 'APP description (optional)' },
+    },
+    required: ['name'],
+  },
+
+  list_apps: {
+    type: 'object' as const,
+    properties: {},
+  },
+
+  fetch_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  update_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  update_app_file: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+      path: { type: 'string', description: 'File path relative to APP directory (e.g. "functions/hello.ts")' },
+    },
+    required: ['app_name', 'path'],
+  },
+
+  delete_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  reconcile_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  verify_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  publish_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  execute_sql: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+      sql: { type: 'string', description: 'SQL statement to execute' },
+      mode: { type: 'string', enum: ['draft', 'stable'], description: 'Database mode (default: draft)' },
+    },
+    required: ['app_name', 'sql'],
+  },
+
+  call_api: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+      method: { type: 'string', description: 'HTTP method (GET, POST, PUT, DELETE, etc.)' },
+      path: { type: 'string', description: 'API path (e.g. /db/tasks, /functions/hello)' },
+      body: { description: 'Request body (optional, for POST/PUT)' },
+      mode: { type: 'string', enum: ['draft', 'stable'], description: 'App mode (default: draft)' },
+    },
+    required: ['app_name', 'method', 'path'],
+  },
+} as const;
