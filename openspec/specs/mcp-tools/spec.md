@@ -51,7 +51,11 @@ cozybase mcp --url http://homelab.local:2765 --apps-dir /path/to/workspace
 
 ### Requirement: Agent 工作目录管理
 
-`cozybase mcp` SHALL 管理 Agent 工作目录，位置通过 `--apps-dir` 参数或 `COZYBASE_APPS_DIR` 环境变量配置。
+`cozybase mcp` SHALL 管理 Agent 工作目录，位置通过以下优先级确定（从高到低）：
+
+1. `--apps-dir` 参数
+2. `COZYBASE_APPS_DIR` 环境变量
+3. `process.cwd()`（当前工作目录）
 
 每个 APP 对应一个子目录 `{apps_dir}/{app-name}/`，目录结构如下：
 ```
@@ -70,6 +74,11 @@ cozybase mcp --url http://homelab.local:2765 --apps-dir /path/to/workspace
 ```
 
 Agent 工作目录 SHALL 与 cozybase 数据目录（`~/.cozybase/`）完全独立。两个目录可能在不同的机器上。
+
+#### Scenario: 默认使用当前工作目录
+
+- **WHEN** 运行 `cozybase mcp` 未指定 `--apps-dir` 且未设置 `COZYBASE_APPS_DIR`
+- **THEN** 系统 SHALL 使用 `process.cwd()` 作为 Agent 工作目录根目录
 
 #### Scenario: 通过参数配置工作目录
 - **WHEN** 运行 `cozybase mcp --apps-dir /home/user/projects`

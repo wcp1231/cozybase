@@ -35,7 +35,7 @@ function loadMcpConfig() {
   const appsDir = resolve(
     (values['apps-dir'] as string | undefined)
     ?? process.env.COZYBASE_APPS_DIR
-    ?? resolve(homedir(), '.cozybase', 'apps'),
+    ?? process.cwd(),
   );
 
   const url = (values.url as string | undefined)
