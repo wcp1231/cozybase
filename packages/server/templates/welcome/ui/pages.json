@@ -61,7 +61,7 @@
             "url": "/db/todo",
             "params": {
               "completed": "${status-tabs.value}",
-              "order": "created_at DESC"
+              "order": "created_at.desc"
             }
           },
           "columns": [

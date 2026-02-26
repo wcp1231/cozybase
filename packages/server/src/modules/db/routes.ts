@@ -58,6 +58,20 @@ export function createDbRoutes() {
       offset: c.req.query('offset'),
     };
 
+    // Treat unknown query params as shorthand equality filters.
+    // e.g. ?completed=1 → WHERE completed = 1 (same as ?where=completed.eq.1)
+    // Empty values are skipped so that optional filters work naturally.
+    const knownParams = new Set(['select', 'where', 'order', 'limit', 'offset']);
+    const url = new URL(c.req.url);
+    for (const [key, value] of url.searchParams.entries()) {
+      if (!knownParams.has(key) && value !== '') {
+        const existing = params.where ?? [];
+        const arr = Array.isArray(existing) ? existing : [existing];
+        arr.push(`${key}.eq.${value}`);
+        params.where = arr;
+      }
+    }
+
     const query = buildQuery(table, params);
     const sql = `SELECT ${query.selectClause} FROM "${table}" ${query.whereClause} ${query.orderClause} ${query.limitClause}`;
 
@@ -117,10 +131,13 @@ export function createDbRoutes() {
       throw new BadRequestError('Request body must be a JSON object');
     }
 
-    // Auto-generate id if column exists and not provided
+    // Auto-generate id if column exists, is not INTEGER type, and not provided
     const pk = getPrimaryKey(db, table);
     if (pk === 'id' && !body.id) {
-      body.id = nanoid(12);
+      const pkType = getPrimaryKeyType(db, table);
+      if (!pkType.toUpperCase().includes('INT')) {
+        body.id = nanoid(12);
+      }
     }
 
     const columns = Object.keys(body);
@@ -242,6 +259,16 @@ function getPrimaryKey(db: any, table: string): string {
   }[];
   const pk = columns.find((c) => c.pk === 1);
   return pk?.name ?? 'rowid';
+}
+
+function getPrimaryKeyType(db: any, table: string): string {
+  const columns = db.query(`PRAGMA table_info("${table}")`).all() as {
+    name: string;
+    pk: number;
+    type: string;
+  }[];
+  const pk = columns.find((c) => c.pk === 1);
+  return pk?.type ?? 'INTEGER';
 }
 
 function emitChange(
