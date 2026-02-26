@@ -1,5 +1,10 @@
 {
   "name": "cozybase",
   "private": true,
-  "workspaces": ["packages/*"]
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build:ui": "cd packages/ui && bun run build",
+    "build:admin": "cd packages/admin && bun run build",
+    "build:all": "bun run build:ui && bun run build:admin"
+  }
 }

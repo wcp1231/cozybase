@@ -18,10 +18,12 @@ Workspace (~/.cozybase)
 │ │   │   └── 002_add_tags.sql   └── blog-app/            │
 │ │   ├── seeds/                     └── db.sqlite         │
 │ │   │   └── todos.sql                                    │
-│ │   └── functions/         draft/ (git-ignored)          │
-│ │       └── health.ts      └── apps/                     │
-│ └── blog-app/                  └── todo-app/             │
-│     ├── app.yaml                   └── db.sqlite  ← Draft DB
+│ │   ├── functions/         draft/ (git-ignored)          │
+│ │   │   └── health.ts      └── apps/                     │
+│ │   └── ui/                    └── todo-app/             │
+│ │       └── pages.json              └── db.sqlite ← Draft DB
+│ └── blog-app/                                            │
+│     ├── app.yaml                                         │
 │     └── migrations/                                      │
 │         └── 001_init.sql                                 │
 │                                                          │
@@ -34,7 +36,7 @@ Workspace (~/.cozybase)
    │  Workspace → AppContext (per-app) │ │
    │  DraftReconciler / Verifier /     │─┘
    │  Publisher → SQLite               │
-   │  HTTP Server + Event Bus          │
+   │  HTTP Server + Admin UI           │
    └───────────────────────────────────┘
 ```
 
@@ -48,7 +50,7 @@ bun install
 bun run packages/server/src/index.ts
 ```
 
-On first run, Cozybase auto-creates the workspace with an example `hello` app:
+On first run, Cozybase auto-creates the workspace with an example `welcome` app (a TODO list with UI):
 
 ```
 Initializing new workspace...
@@ -277,6 +279,103 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/functions/items \
 
 **Where operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`
 
+## Admin UI
+
+Cozybase includes a built-in Admin UI that renders app interfaces from declarative JSON definitions. Apps define their UI in `ui/pages.json`, and the Admin SPA renders them automatically.
+
+Access the Admin at `http://localhost:3000/` after starting the server.
+
+### JSON UI Schema
+
+Each app's UI is defined in `ui/pages.json`:
+
+```json
+{
+  "pages": [
+    {
+      "id": "todo-list",
+      "title": "TODO List",
+      "body": [
+        { "type": "heading", "text": "TODO List", "level": 2 },
+        {
+          "type": "table",
+          "id": "todo-table",
+          "api": { "url": "/db/todo" },
+          "columns": [
+            { "name": "title", "label": "Title" },
+            {
+              "name": "completed", "label": "Status",
+              "render": {
+                "type": "tag",
+                "text": "${row.completed === 1 ? 'Done' : 'Pending'}",
+                "color": "${row.completed === 1 ? 'success' : 'default'}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "components": {}
+}
+```
+
+- **`pages`** — Array of page objects. Each page has `id` (also used as the route path), `title`, and `body` (component tree).
+- **`components`** — Optional custom component declarations with props and body templates.
+
+### Built-in Components
+
+| Category | Components |
+|----------|-----------|
+| Layout | `page`, `row`, `col`, `card`, `tabs`, `divider` |
+| Data Display | `table`, `list`, `text`, `heading`, `tag`, `stat` |
+| Data Input | `form`, `input`, `textarea`, `number`, `select`, `switch`, `checkbox`, `radio`, `date-picker` |
+| Action & Feedback | `button`, `link`, `dialog`, `alert`, `empty` |
+
+### Expressions
+
+Components support `${...}` expressions for dynamic values:
+
+- `${row.completed}` — Access current row data in table columns
+- `${status-tabs.value}` — Cross-component state reference
+- `${row.completed === 1 ? 'Done' : 'Pending'}` — Ternary expressions
+- `${form.title}` — Form field values
+- `${props.label}` — Custom component props
+
+### Actions
+
+Interactive behaviors are declared via actions:
+
+| Action | Description |
+|--------|-------------|
+| `api` | HTTP request with `method`, `url`, `body`, `onSuccess`/`onError` callbacks |
+| `reload` | Trigger reload on a target component by id |
+| `dialog` | Open a modal dialog with a component body |
+| `link` | Navigate to URL with optional params |
+| `close` | Close the current dialog |
+| `confirm` | Show confirmation dialog before proceeding |
+
+API URLs in actions use app-relative paths (e.g. `/db/todo`, `/functions/hello`) — the renderer auto-completes them.
+
+### Admin Routes
+
+| Path | Description |
+|------|-------------|
+| `/` | Redirect to app list |
+| `/apps` | List all apps |
+| `/apps/:appName` | Redirect to first page of an app |
+| `/apps/:appName/:pageId` | Render a specific page |
+
+### UI-only Changes
+
+When only modifying `ui/pages.json`, the Reconcile / Verify / Publish workflow is not needed — UI files don't involve database schema changes. Just update the file directly:
+
+```bash
+curl -X PUT http://localhost:3000/api/v1/apps/todo-app/files/ui/pages.json \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "{\"pages\": [...]}"}'
+```
+
 ## CLI Options
 
 ```
@@ -297,7 +396,11 @@ Environment variables `COZYBASE_WORKSPACE`, `COZYBASE_PORT` are also supported.
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/api/v1/apps` | List all apps with states |
-| GET | `/api/v1/apps/:appName` | Single app status |
+| GET | `/api/v1/apps/:appName` | Single app with files |
+| POST | `/api/v1/apps` | Create a new app |
+| PUT | `/api/v1/apps/:appName` | Update app (optimistic lock with `base_version`) |
+| PUT | `/api/v1/apps/:appName/files/*` | Update a single file |
+| DELETE | `/api/v1/apps/:appName` | Delete an app |
 
 ### Stable Database
 
@@ -346,8 +449,10 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 │   │   │   └── 002_add_priority.sql
 │   │   ├── seeds/                      # Test data (.sql or .json)
 │   │   │   └── todos.sql
-│   │   └── functions/                  # TypeScript HTTP handlers
-│   │       └── health.ts
+│   │   ├── functions/                  # TypeScript HTTP handlers
+│   │   │   └── health.ts
+│   │   └── ui/                         # UI definitions (JSON)
+│   │       └── pages.json
 │   └── blog-app/
 │       ├── app.yaml
 │       └── migrations/
@@ -407,6 +512,8 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Verifier**: Checks that committed migrations haven't been modified, then tests new migrations against a copy of the stable database.
 - **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, reloads function cache, git commits, and cleans up draft.
 - **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
+- **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
+- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the server. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
 - **App States**: Dynamically derived from git status and filesystem — `draft_only`, `stable`, `stable_draft`, `deleted`.
 - **Git Integration**: After successful Publish, `apps/` changes are auto-committed to the workspace git repo.
 
@@ -418,7 +525,7 @@ cozybase/
 │   ├── server/                 # Daemon server
 │   │   ├── src/
 │   │   │   ├── index.ts              # Entry point
-│   │   │   ├── server.ts             # Hono app factory
+│   │   │   ├── server.ts             # Hono app factory + static file serving
 │   │   │   ├── config.ts             # Configuration
 │   │   │   ├── core/
 │   │   │   │   ├── workspace.ts      # Workspace + app discovery + git
@@ -437,13 +544,14 @@ cozybase/
 │   │   │   │   └── logger.ts
 │   │   │   └── modules/
 │   │   │       ├── apps/
-│   │   │       │   ├── routes.ts     # Platform status API
-│   │   │       │   └── manager.ts    # App CRUD operations
-│   │   │       └── db/
-│   │   │           ├── routes.ts         # Auto CRUD
-│   │   │           ├── query-builder.ts  # URL → SQL
-│   │   │           ├── schema.ts         # Schema introspection
-│   │   │           └── sql.ts            # Raw SQL execution
+│   │   │       │   ├── routes.ts     # App CRUD + file management API
+│   │   │       │   ├── manager.ts    # App CRUD operations
+│   │   │       │   └── mcp-types.ts  # MCP tool type definitions
+│   │   │       ├── db/
+│   │   │       │   ├── routes.ts         # Auto CRUD
+│   │   │       │   ├── query-builder.ts  # URL → SQL
+│   │   │       │   ├── schema.ts         # Schema introspection
+│   │   │       │   └── sql.ts            # Raw SQL execution
 │   │   │       └── functions/
 │   │   │           ├── types.ts          # FunctionRuntime, FunctionContext interfaces
 │   │   │           ├── direct-runtime.ts # Module loading + execution
@@ -457,23 +565,51 @@ cozybase/
 │   │       ├── core/               # Unit + integration tests
 │   │       ├── modules/            # Module integration tests (functions, etc.)
 │   │       └── scenarios/          # End-to-end tests
-│   ├── sdk/                    # TypeScript SDK (planned)
-│   └── admin/                  # React Admin UI (planned)
+│   ├── ui/                    # JSON-to-React UI renderer (@cozybase/ui)
+│   │   └── src/
+│   │       ├── index.ts              # Public exports
+│   │       ├── renderer.tsx          # SchemaRenderer entry + NodeRenderer
+│   │       ├── schema/
+│   │       │   └── types.ts          # PagesJson, ComponentSchema, ActionSchema types
+│   │       ├── engine/
+│   │       │   ├── registry.ts       # Component registry (builtin + custom)
+│   │       │   ├── context.tsx       # PageContext (state, reload, dialog, customComponents)
+│   │       │   ├── expression.ts     # ${...} expression resolver (whitelist-based)
+│   │       │   └── action.ts         # Action dispatcher (api, reload, dialog, etc.)
+│   │       └── components/
+│   │           ├── layout.tsx        # page, row, col, card, tabs, divider
+│   │           ├── display.tsx       # table, list, text, heading, tag, stat
+│   │           ├── input.tsx         # form, input, textarea, number, select, switch, ...
+│   │           └── action.tsx        # button, link, dialog, alert, empty
+│   ├── admin/                 # Admin SPA (Vite + React)
+│   │   └── src/
+│   │       ├── main.tsx              # Vite entry point
+│   │       ├── app.tsx               # Router setup
+│   │       └── pages/
+│   │           ├── app-list.tsx      # App listing page
+│   │           ├── app-layout.tsx    # App sidebar + navigation
+│   │           └── app-page-view.tsx # SchemaRenderer integration
+│   └── sdk/                   # TypeScript SDK (planned)
 └── openspec/                   # Design specs and change tracking
 ```
 
 ## Testing
 
 ```bash
-cd packages/server
-
-# Run all tests
-bun test tests/
+# Run all server tests
+bun test packages/server/
 
 # Run by category
+cd packages/server
 bun run test:unit          # MigrationRunner, SeedLoader, AppContext
 bun run test:integration   # Workspace, DraftReconciler, Verifier, Publisher, Functions
 bun run test:e2e           # Full workflow scenarios
+
+# Run UI renderer tests (expression engine, action dispatcher, component registry)
+bun test packages/ui/src/
+
+# Build admin SPA
+cd packages/admin && bun run build
 ```
 
 ## Tech Stack
@@ -481,6 +617,7 @@ bun run test:e2e           # Full workflow scenarios
 - **Runtime**: [Bun](https://bun.sh)
 - **HTTP**: [Hono](https://hono.dev)
 - **Database**: SQLite via `bun:sqlite` (WAL mode, per-app isolation)
+- **UI**: [React](https://react.dev) 19 + [Vite](https://vite.dev)
 - **Validation**: [Zod](https://zod.dev)
 - **Auth**: [jose](https://github.com/panva/jose) (JWT)
 - **YAML**: [yaml](https://eemeli.org/yaml/)
@@ -499,12 +636,15 @@ bun run test:e2e           # Full workflow scenarios
 - [x] Stable database backup and rollback
 - [x] Automated test suite
 - [x] Functions module (TypeScript HTTP handlers with hot-reload)
+- [x] JSON-to-UI renderer (26 built-in components, expression engine, action system)
+- [x] Admin UI (React SPA with app management and page rendering)
+- [x] App Management API (create, update, delete apps and files)
+- [ ] MCP Server (AI Agent integration via Model Context Protocol)
 - [ ] Storage module (file uploads + buckets)
 - [ ] Worker runtime (per-app Bun Worker isolation)
 - [ ] Cron scheduler
 - [ ] Realtime (WebSocket + change events)
 - [ ] Auth module
-- [ ] Admin UI (React)
 - [ ] TypeScript SDK
 - [ ] CLI tool
 

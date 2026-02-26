@@ -6,6 +6,7 @@
         "bun": true,
         "npx tsc": true,
         "mkdir": true,
-        "./node_modules/.bin/tsc": true
+        "./node_modules/.bin/tsc": true,
+        "node_modules/.bin/tsc": true
     }
 }

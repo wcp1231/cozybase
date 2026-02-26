@@ -74,15 +74,22 @@ export class AppManager {
   constructor(private workspace: Workspace) {}
 
   /** List all apps (basic info, no files) */
-  list(): (App & { state: AppState | 'unknown' })[] {
+  list(): (App & { state: AppState | 'unknown'; has_ui: boolean })[] {
     const db = this.workspace.getPlatformDb();
     const apps = db.query(
       'SELECT name, description, status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
     ).all() as App[];
 
+    // Batch-check which apps have ui/pages.json
+    const uiFiles = db.query(
+      "SELECT DISTINCT app_name FROM app_files WHERE path = 'ui/pages.json'",
+    ).all() as { app_name: string }[];
+    const appsWithUi = new Set(uiFiles.map((f) => f.app_name));
+
     return apps.map((app) => ({
       ...app,
       state: this.workspace.getAppState(app.name) ?? 'unknown' as const,
+      has_ui: appsWithUi.has(app.name),
     }));
   }
 

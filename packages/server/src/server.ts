@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { serveStatic } from 'hono/bun';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
 import { DraftReconciler } from './core/draft-reconciler';
@@ -138,6 +141,27 @@ export function createServer(config: Config) {
   });
 
   app.route('/draft/apps/:appName', draftMgmt);
+
+  // --- Admin SPA static files ---
+  // Resolve the admin build directory (relative to the server package)
+  const adminDistDir = resolve(import.meta.dir, '..', '..', '..', 'admin', 'dist');
+
+  if (existsSync(adminDistDir)) {
+    // Serve static assets from admin build
+    app.use(
+      '/assets/*',
+      serveStatic({ root: adminDistDir }),
+    );
+
+    // Serve other static files (favicon, etc.)
+    app.use(
+      '/favicon.ico',
+      serveStatic({ root: adminDistDir }),
+    );
+
+    // SPA fallback: any unmatched GET request returns index.html
+    app.get('*', serveStatic({ root: adminDistDir, path: '/index.html' }));
+  }
 
   return { app, workspace, functionRuntime };
 }
