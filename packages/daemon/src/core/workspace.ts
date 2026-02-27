@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 import { z } from 'zod';
 import { AppContext } from './app-context';
@@ -37,8 +37,7 @@ const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates');
 
 export class Workspace {
   readonly root: string;
-  readonly appsDir: string; // Kept for backward compat (old modules read from here during transition)
-  readonly dataDir: string;
+  readonly stableDir: string;
   readonly draftDir: string;
 
   private _config: WorkspaceConfig | null = null;
@@ -48,8 +47,7 @@ export class Workspace {
 
   constructor(root: string) {
     this.root = root;
-    this.appsDir = join(root, 'apps');
-    this.dataDir = join(root, 'data');
+    this.stableDir = join(root, 'stable');
     this.draftDir = join(root, 'draft');
   }
 
@@ -62,7 +60,7 @@ export class Workspace {
 
   /** Initialize a new workspace: directories, config, template apps to DB */
   init(): void {
-    mkdirSync(this.dataDir, { recursive: true });
+    mkdirSync(this.stableDir, { recursive: true });
     mkdirSync(this.draftDir, { recursive: true });
 
     // Write workspace.yaml
@@ -94,9 +92,6 @@ export class Workspace {
     // Eagerly initialize platform DB
     this.getPlatformDb();
 
-    // Migrate old filesystem-based workspace if needed
-    this.migrateOldWorkspace();
-
     // Initialize app state cache
     this.refreshAllAppStates();
   }
@@ -126,8 +121,7 @@ export class Workspace {
   /** Get or initialize the platform-level database */
   getPlatformDb(): Database {
     if (!this._platformDb) {
-      const dbPath = join(this.dataDir, 'platform.sqlite');
-      mkdirSync(dirname(dbPath), { recursive: true });
+      const dbPath = join(this.root, 'platform.sqlite');
       this._platformDb = new Database(dbPath);
       this._platformDb.exec('PRAGMA journal_mode = WAL');
       this._platformDb.exec('PRAGMA foreign_keys = ON');
@@ -271,7 +265,7 @@ export class Workspace {
     const row = db.query('SELECT name FROM apps WHERE name = ?').get(name);
     if (!row) return null;
 
-    const ctx = new AppContext(name, this.dataDir, this.draftDir);
+    const ctx = new AppContext(name, this.stableDir, this.draftDir);
     this._apps.set(name, ctx);
     return ctx;
   }
@@ -354,84 +348,5 @@ export class Workspace {
     }
 
     return result;
-  }
-
-  // --- Old Workspace Migration ---
-
-  /** Detect and migrate old filesystem-based workspaces to DB */
-  private migrateOldWorkspace(): void {
-    // Detection: apps/ directory exists AND app_files table is empty
-    if (!existsSync(this.appsDir)) return;
-
-    const db = this.getPlatformDb();
-    const count = db.query('SELECT COUNT(*) as cnt FROM app_files').get() as { cnt: number };
-    if (count.cnt > 0) return; // Already has data in DB
-
-    const entries = readdirSync(this.appsDir, { withFileTypes: true });
-    const appDirs = entries.filter(
-      (e) => e.isDirectory() && !e.name.startsWith('.') && /^[a-zA-Z0-9_-]+$/.test(e.name),
-    );
-
-    if (appDirs.length === 0) return;
-
-    console.log('[workspace] Detected old filesystem-based workspace, migrating to DB...');
-
-    for (const entry of appDirs) {
-      const appDir = join(this.appsDir, entry.name);
-      const appYamlPath = join(appDir, 'app.yaml');
-      if (!existsSync(appYamlPath)) continue;
-
-      console.log(`[workspace]   Migrating app: ${entry.name}`);
-      this.importAppFromDir(entry.name, appDir);
-
-      // Check if this app has a stable DB with executed migrations
-      const stableDbPath = join(this.dataDir, 'apps', entry.name, 'db.sqlite');
-      if (existsSync(stableDbPath)) {
-        this.migrateAppVersionInfo(entry.name, stableDbPath);
-      }
-    }
-
-    console.log('[workspace] Migration complete.');
-  }
-
-  /** Migrate version and immutability info for a single app */
-  private migrateAppVersionInfo(appName: string, stableDbPath: string): void {
-    const platformDb = this.getPlatformDb();
-
-    try {
-      const stableDb = new Database(stableDbPath, { readonly: true });
-
-      try {
-        // Check if _migrations table exists and get executed versions
-        const executedMigrations = stableDb.query(
-          'SELECT version FROM _migrations ORDER BY version',
-        ).all() as { version: number }[];
-
-        if (executedMigrations.length > 0) {
-          // Mark executed migration files as immutable
-          for (const { version } of executedMigrations) {
-            const versionPrefix = String(version).padStart(3, '0');
-            platformDb.query(
-              "UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?",
-            ).run(appName, `migrations/${versionPrefix}_%`);
-          }
-
-          console.log(`[workspace]   ${appName}: marked ${executedMigrations.length} migration(s) immutable`);
-        }
-      } catch {
-        // _migrations table might not exist (app published without migrations)
-      } finally {
-        stableDb.close();
-      }
-
-      // Stable DB exists → set published_version = current_version regardless of migration count
-      platformDb.query(
-        "UPDATE apps SET published_version = current_version WHERE name = ?",
-      ).run(appName);
-
-      console.log(`[workspace]   ${appName}: set published`);
-    } catch (err: any) {
-      console.warn(`[workspace]   ${appName}: failed to read stable DB: ${err.message}`);
-    }
   }
 }

@@ -81,7 +81,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.2 ---
   describe('9.2: Draft only -> Publish -> verify stable state', () => {
-    test('publish from draft creates full stable environment', () => {
+    test('publish from draft creates full stable environment', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app
@@ -96,11 +96,11 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 3: Publish
       const publisher = new Publisher(handle.workspace);
-      const result = publisher.publish('todos');
+      const result = await publisher.publish('todos');
       expect(result.success).toBe(true);
 
       // Step 4: Stable DB exists
-      const stableDbPath = join(handle.root, 'data', 'apps', 'todos', 'db.sqlite');
+      const stableDbPath = join(handle.root, 'stable', 'todos', 'db.sqlite');
       expect(existsSync(stableDbPath)).toBe(true);
 
       // Step 5: _migrations table has version 1
@@ -121,7 +121,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(migFile.immutable).toBe(1);
 
       // Step 8: Draft DB removed
-      const draftDbPath = join(handle.root, 'draft', 'apps', 'todos', 'db.sqlite');
+      const draftDbPath = join(handle.root, 'draft', 'todos', 'db.sqlite');
       expect(existsSync(draftDbPath)).toBe(false);
 
       // Step 9: State is stable
@@ -141,7 +141,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('todos');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('todos');
+      await publisher.publish('todos');
 
       // Step 2: Add new migration
       addMigration(handle, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
@@ -163,7 +163,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(verifyResult.migrationsToApply).toEqual(['002_add_priority.sql']);
 
       // Step 6: Publish
-      const publishResult = publisher.publish('todos');
+      const publishResult = await publisher.publish('todos');
       expect(publishResult.success).toBe(true);
       expect(publishResult.migrationsApplied).toContain('002_add_priority.sql');
 
@@ -177,7 +177,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       db.close();
 
       // Step 8: Backup exists
-      const backupPath = join(handle.root, 'data', 'apps', 'todos', 'db.sqlite.bak');
+      const backupPath = join(handle.root, 'stable', 'todos', 'db.sqlite.bak');
       expect(existsSync(backupPath)).toBe(true);
 
       // Step 9: State is stable
@@ -188,7 +188,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.4 ---
   describe('9.4: Modify published migration -> Verify -> immutability error', () => {
-    test('published migration tampering detected', () => {
+    test('published migration tampering detected', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app and publish (marks migrations immutable)
@@ -197,7 +197,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('todos');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('todos');
+      await publisher.publish('todos');
 
       // Step 2: Modify published migration (clears immutable flag in test helper)
       modifyMigration(handle, 'todos', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
@@ -235,13 +235,13 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(reconciler.reconcile('todos')).rejects.toThrow(/deleted/);
 
       const publisher = new Publisher(handle.workspace);
-      expect(() => publisher.publish('todos')).toThrow(/deleted/);
+      await expect(publisher.publish('todos')).rejects.toThrow(/deleted/);
     });
   });
 
   // --- Scenario 9.6 ---
   describe('9.6: Publish with bad SQL -> backup restore', () => {
-    test('failed publish restores stable database', () => {
+    test('failed publish restores stable database', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app and publish (establish stable)
@@ -250,7 +250,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('todos');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('todos');
+      await publisher.publish('todos');
 
       // Step 2: Insert canary row into stable DB
       const appCtx = handle.workspace.getOrCreateApp('todos')!;
@@ -265,7 +265,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
 
       // Step 5: Publish should fail
-      const result = publisher.publish('todos');
+      const result = await publisher.publish('todos');
       expect(result.success).toBe(false);
 
       // Step 6: Canary row still present (stable DB restored from backup)
@@ -283,7 +283,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.7: Init -> auto-publish -> stable accessible ---
   describe('9.7: Init auto-publishes template apps to stable', () => {
-    test('after init + publish, template app is stable with DB and functions', () => {
+    test('after init + publish, template app is stable with DB and functions', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with migration + function (simulating template)
@@ -300,15 +300,15 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 3: Auto-publish (simulating what server.ts does after init)
       const publisher = new Publisher(handle.workspace);
-      const result = publisher.publish('welcome');
+      const result = await publisher.publish('welcome');
       expect(result.success).toBe(true);
 
       // Step 4: Stable DB now exists
-      const stableDbPath = join(handle.root, 'data', 'apps', 'welcome', 'db.sqlite');
+      const stableDbPath = join(handle.root, 'stable', 'welcome', 'db.sqlite');
       expect(existsSync(stableDbPath)).toBe(true);
 
       // Step 5: Stable functions directory exists with todos.ts
-      const stableFnDir = join(handle.root, 'data', 'apps', 'welcome', 'functions');
+      const stableFnDir = join(handle.root, 'stable', 'welcome', 'functions');
       expect(existsSync(stableFnDir)).toBe(true);
       expect(existsSync(join(stableFnDir, 'todos.ts'))).toBe(true);
 
@@ -335,7 +335,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(handle.workspace.getAppState('myapp')).toBe('draft_only');
 
       // Step 3: Before reconcile, draft functions dir does not exist
-      const draftFnDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
+      const draftFnDir = join(handle.root, 'draft', 'myapp', 'functions');
       expect(existsSync(draftFnDir)).toBe(false);
 
       // Step 4: Reconcile
@@ -373,7 +373,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       const result1 = await reconciler.reconcile('myapp');
       expect(result1.success).toBe(true);
 
-      const draftFnPath = join(handle.root, 'draft', 'apps', 'myapp', 'functions', 'handler.ts');
+      const draftFnPath = join(handle.root, 'draft', 'myapp', 'functions', 'handler.ts');
       expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
 
       // Step 3: Modify function in DB (v2)
@@ -412,7 +412,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       const result1 = await reconciler.reconcile('myapp');
       expect(result1.success).toBe(true);
 
-      const draftFnDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
+      const draftFnDir = join(handle.root, 'draft', 'myapp', 'functions');
       expect(readdirSync(draftFnDir).sort()).toEqual(['orders.ts', 'users.ts']);
 
       // Step 3: Delete orders.ts from app_files DB
@@ -446,7 +446,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(result.ui).toEqual({ exported: true });
 
       // Step 3: UI file exists in draft directory
-      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
+      const draftUiPath = join(handle.root, 'draft', 'myapp', 'ui', 'pages.json');
       expect(existsSync(draftUiPath)).toBe(true);
 
       // Step 4: Content matches
@@ -457,7 +457,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.12: Publish exports UI definition to stable ---
   describe('9.12: Publish exports ui/pages.json to stable directory', () => {
-    test('publish copies UI definition to data/apps/{name}/ui/pages.json', () => {
+    test('publish copies UI definition to stable/myapp/ui/pages.json', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with migration + UI
@@ -469,12 +469,12 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 2: Publish
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
-      const result = publisher.publish('myapp');
+      const result = await publisher.publish('myapp');
       expect(result.success).toBe(true);
       expect(result.ui).toEqual({ exported: true });
 
       // Step 3: UI file exists in stable directory
-      const stableUiPath = join(handle.root, 'data', 'apps', 'myapp', 'ui', 'pages.json');
+      const stableUiPath = join(handle.root, 'stable', 'myapp', 'ui', 'pages.json');
       expect(existsSync(stableUiPath)).toBe(true);
 
       // Step 4: Content matches
@@ -482,7 +482,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(JSON.parse(content)).toEqual(JSON.parse(TEST_UI_PAGES_JSON));
 
       // Step 5: Draft UI cleaned up
-      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
+      const draftUiPath = join(handle.root, 'draft', 'myapp', 'ui', 'pages.json');
       expect(existsSync(draftUiPath)).toBe(false);
     });
   });
@@ -506,13 +506,13 @@ describe('End-to-end Reconciler Scenarios', () => {
 
       // Step 3: Publish — no ui field in result
       const publisher = new Publisher(handle.workspace);
-      const publishResult = publisher.publish('myapp');
+      const publishResult = await publisher.publish('myapp');
       expect(publishResult.success).toBe(true);
       expect(publishResult.ui).toBeUndefined();
 
       // Step 4: No UI files created
-      const draftUiPath = join(handle.root, 'draft', 'apps', 'myapp', 'ui', 'pages.json');
-      const stableUiPath = join(handle.root, 'data', 'apps', 'myapp', 'ui', 'pages.json');
+      const draftUiPath = join(handle.root, 'draft', 'myapp', 'ui', 'pages.json');
+      const stableUiPath = join(handle.root, 'stable', 'myapp', 'ui', 'pages.json');
       expect(existsSync(draftUiPath)).toBe(false);
       expect(existsSync(stableUiPath)).toBe(false);
     });
@@ -530,7 +530,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('myapp');
+      await publisher.publish('myapp');
 
       // Step 2: Create server and make request
       const { createServer } = await import('../../src/server');
@@ -563,7 +563,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('myapp');
+      await publisher.publish('myapp');
 
       // Step 2: Create server and make request
       const { createServer } = await import('../../src/server');

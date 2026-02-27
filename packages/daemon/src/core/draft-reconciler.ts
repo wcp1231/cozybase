@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
@@ -24,6 +24,7 @@ export interface DraftReconcileResult {
     warnings: FunctionValidationResult[];
   };
   ui?: { exported: boolean };
+  npm?: { installed: boolean; warning?: string };
   error?: string;
 }
 
@@ -96,7 +97,7 @@ export class DraftReconciler {
     }
 
     // 5. Export functions from DB to draft directory
-    const draftFunctionsDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
+    const draftFunctionsDir = join(appContext.draftDataDir, 'functions');
     exportFunctionsFromDb(platformDb, appName, draftFunctionsDir);
 
     // 6. Validate functions (optional, non-blocking)
@@ -105,8 +106,7 @@ export class DraftReconciler {
     // 7. Export UI definition (non-blocking)
     let uiResult: DraftReconcileResult['ui'];
     try {
-      const draftAppDir = join(this.workspace.draftDir, 'apps', appName);
-      const exported = exportUiFromDb(platformDb, appName, draftAppDir);
+      const exported = exportUiFromDb(platformDb, appName, appContext.draftDataDir);
       if (exported) {
         uiResult = { exported: true };
       }
@@ -115,18 +115,22 @@ export class DraftReconciler {
       uiResult = { exported: false };
     }
 
+    // 8. Export package.json and run bun install (non-blocking on failure)
+    const npmResult = await this.exportPackageJsonAndInstall(appName, appContext.draftDataDir);
+
     return {
       success: true,
       migrations: migrationResult.executed,
       seeds: seedResult.loaded,
       functions: functionsResult,
       ui: uiResult,
+      npm: npmResult,
     };
   }
 
   /** Validate all function files for an app (non-blocking, reads from draft dir) */
   private async validateFunctions(appName: string): Promise<DraftReconcileResult['functions']> {
-    const functionsDir = join(this.workspace.draftDir, 'apps', appName, 'functions');
+    const functionsDir = join(this.workspace.draftDir, appName, 'functions');
     if (!existsSync(functionsDir)) {
       return undefined;
     }
@@ -171,5 +175,47 @@ export class DraftReconciler {
     }
 
     return { validated, warnings };
+  }
+
+  /** Export package.json from app_files to app dir, then run bun install */
+  private async exportPackageJsonAndInstall(
+    appName: string,
+    appDir: string,
+  ): Promise<DraftReconcileResult['npm']> {
+    const platformDb = this.workspace.getPlatformDb();
+    const record = platformDb
+      .query("SELECT content FROM app_files WHERE app_name = ? AND path = 'package.json'")
+      .get(appName) as { content: string } | null;
+
+    if (!record) return undefined;
+
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, 'package.json'), record.content, 'utf-8');
+
+    return this.runBunInstall(appDir);
+  }
+
+  /** Run bun install in the given directory; returns result without throwing on failure */
+  private async runBunInstall(cwd: string): Promise<{ installed: boolean; warning?: string }> {
+    try {
+      const proc = Bun.spawn(['bun', 'install'], {
+        cwd,
+        stdout: 'ignore',
+        stderr: 'pipe',
+      });
+      // Drain stderr before awaiting exit to avoid pipe buffer deadlock
+      const stderrPromise = new Response(proc.stderr).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        const stderr = await stderrPromise;
+        return {
+          installed: false,
+          warning: `bun install exited with code ${exitCode}: ${stderr.trim()}`,
+        };
+      }
+      return { installed: true };
+    } catch (err: any) {
+      return { installed: false, warning: `bun install failed: ${err.message}` };
+    }
   }
 }

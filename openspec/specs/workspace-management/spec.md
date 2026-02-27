@@ -3,61 +3,53 @@
 ## Purpose
 
 Manage workspace lifecycle including directory structure, initialization, Platform DB schema, app definition loading from DB, and legacy workspace migration. The `apps/` directory is removed; Platform DB `app_files` is the source of truth for all app definitions.
-
 ## Requirements
-
 ### Requirement: Workspace 目录结构
 
-Workspace 目录结构 SHALL 扩展以支持 Runtime 包和 APP npm 依赖。
+Workspace 目录结构 SHALL 支持每个 APP 模式（stable/draft）作为独立的 Node.js 包目录，包含自己的 `node_modules/`。
 
 系统 SHALL 使用以下固定的目录结构来组织 workspace：
 
 - `workspace.yaml` — workspace 配置文件
-- `package.json` — Bun Workspace 配置（`workspaces: ["packages/*", "data/apps/*"]`）
-- `data/` — Stable 运行时数据目录
-- `data/platform.sqlite` — 平台级数据库（Source of Truth，含 `app_files` 表）
-- `data/apps/{appName}/` — 各 app 的 Stable 数据目录
-  - `db.sqlite` — APP 数据库
-  - `functions/` — 函数文件目录
-  - `ui/` — UI 构建产物目录（`index.html`、`assets/`、`ui.json`）
-- `draft/` — Draft 运行时数据目录
-- `draft/apps/{appName}/` — 各 app 的 Draft 数据目录
-  - `db.sqlite` — APP 数据库
-  - `functions/` — 函数文件目录
-  - `ui/` — UI 构建产物目录（`index.html`、`assets/`、`ui.json`）
+- `platform.sqlite` — 平台级数据库（Source of Truth，含 `app_files` 表），位于 workspace 根目录
+- `stable/` — Stable 运行时目录，每个已发布 APP 一个子目录
+- `stable/{appName}/` — 各 APP 的 Stable 运行时目录（完整 Node.js 包目录）
+  - `package.json` — APP 的 npm 依赖声明（从 `app_files` 导出）
+  - `node_modules/` — APP 自身的 npm 依赖（publish 后 `bun install` 安装）
+  - `db.sqlite` — APP Stable 数据库
+  - `functions/` — Stable 函数文件目录（从 `app_files` 导出）
+  - `ui/` — Stable UI 构建产物目录（`index.html`、`assets/`、`ui.json`）
+- `draft/` — Draft 运行时目录，每个有 Draft 状态的 APP 一个子目录
+- `draft/{appName}/` — 各 APP 的 Draft 运行时目录（完整 Node.js 包目录）
+  - `package.json` — APP 的 npm 依赖声明（从 `app_files` 导出）
+  - `node_modules/` — APP 自身的 npm 依赖（reconcile 后 `bun install` 安装）
+  - `db.sqlite` — APP Draft 数据库
+  - `functions/` — Draft 函数文件目录（从 `app_files` 导出）
+  - `ui/` — Draft UI 构建产物目录
 
-`data/` 和 `draft/` 的相对路径 SHALL 为硬编码约定，不可通过配置修改。
+`stable/` 和 `draft/` 的相对路径 SHALL 为硬编码约定，不可通过配置修改。
 
-`apps/` 顶层目录不再存在。APP 定义文件的 Source of Truth 为 `data/platform.sqlite` 中的 `app_files` 表。
-
-`data/apps/{appName}/functions/` 和 `draft/apps/{appName}/functions/` 为 function 文件的运行时缓存，由系统在 Reconcile/Publish 时从 DB 导出。
+不使用 Bun Workspace。workspace 根目录 SHALL 不包含 `package.json`。各 APP 目录独立管理自己的 `node_modules/`。
 
 #### Scenario: workspace 目录结构完整性
 
 - **WHEN** workspace 初始化完成后
-- **THEN** workspace root 下 SHALL 存在 `workspace.yaml`、`package.json`、`data/`、`draft/` 目录。不应存在 `apps/`、`.git/`、`.gitignore`
+- **THEN** workspace root 下 SHALL 存在 `workspace.yaml`、`platform.sqlite`、`stable/`、`draft/` 目录。不应存在 `data/`、`apps/`、`package.json`（根目录）
 
-#### Scenario: 新增 Runtime 相关目录
-- **WHEN** Workspace 初始化
-- **THEN** 除现有目录外，`data/apps/{appName}/` 和 `draft/apps/{appName}/` 目录均包含：
-  - `db.sqlite` — APP 数据库
-  - `functions/` — 函数文件目录
-  - `ui/` — UI 构建产物目录（`index.html`、`assets/`、`ui.json`）
+#### Scenario: stable APP 目录结构
 
-#### Scenario: Bun Workspace 配置
-- **WHEN** Workspace 初始化
-- **THEN** Workspace 根目录包含 `package.json`，配置 Bun Workspace：
-  ```json
-  {
-    "workspaces": ["packages/*", "data/apps/*"]
-  }
-  ```
-- **AND** 公共依赖（如 `react`、`@cozybase/ui`）提升到 Workspace 根目录的 `node_modules/`
+- **WHEN** 一个 APP 完成首次 publish 后
+- **THEN** `stable/{appName}/` 目录 SHALL 存在，包含 `db.sqlite`、`functions/`、`ui/`；若 `app_files` 中有 `package.json` 记录，SHALL 同时存在 `package.json` 和 `node_modules/`
+
+#### Scenario: draft APP 目录结构
+
+- **WHEN** 一个 APP 完成 reconcile 后
+- **THEN** `draft/{appName}/` 目录 SHALL 存在，包含 `db.sqlite`、`functions/`；若 `app_files` 中有 `package.json` 记录，SHALL 同时存在 `package.json` 和 `node_modules/`
 
 #### Scenario: 定义与运行时数据分离
 
-- **WHEN** 一个 App 的定义文件存储在 `data/platform.sqlite` 的 `app_files` 表中
-- **THEN** 该 app 的 Stable 运行时数据 SHALL 存放在 `data/apps/{appName}/` 下，Draft 运行时数据 SHALL 存放在 `draft/apps/{appName}/` 下
+- **WHEN** 一个 APP 的定义文件存储在 `platform.sqlite` 的 `app_files` 表中
+- **THEN** 该 APP 的 Stable 运行时数据 SHALL 存放在 `stable/{appName}/` 下，Draft 运行时数据 SHALL 存放在 `draft/{appName}/` 下
 
 ### Requirement: Workspace 自动初始化
 
@@ -227,22 +219,6 @@ interface AppDefinition {
 - **WHEN** `app_files` 表中已有记录
 - **THEN** 系统 SHALL 跳过迁移逻辑，即使 `apps/` 目录仍存在
 
-### Requirement: APP npm 依赖支持
-
-每个 APP SHALL 可以声明自己的 npm 依赖，通过 Bun Workspace 机制管理。
-
-#### Scenario: APP 声明特有依赖
-- **WHEN** APP 目录下存在 `package.json` 声明了额外依赖
-- **THEN** 执行 `bun install` 在 Workspace 根目录时，APP 特有依赖安装到 APP 自身的 `node_modules/` 或提升到根目录
-
-#### Scenario: 公共依赖共享
-- **WHEN** 多个 APP 使用相同版本的公共依赖（如 `@cozybase/ui`）
-- **THEN** 该依赖仅在 Workspace 根目录的 `node_modules/` 中安装一份
-
-#### Scenario: APP 函数模块解析
-- **WHEN** Runtime 加载 APP 函数并且函数 import 了第三方依赖
-- **THEN** 模块解析按标准 Node 解析算法，先查找 APP 自身的 `node_modules/`，再向上查找 Workspace 根目录的 `node_modules/`
-
 ### Requirement: packages 结构变更
 
 `packages/` 目录 SHALL 新增 `runtime` 包，原 `server` 包重构为 `daemon` 包。
@@ -261,3 +237,4 @@ interface AppDefinition {
   - `daemon` → `runtime`（import `createRuntime`）
   - `admin` → 无直接代码依赖（通过 HTTP 与 daemon 通信）
   - `runtime` → `ui` 无直接依赖（`ui` 由 APP 构建时打包）
+

@@ -26,7 +26,7 @@ describe('Workspace', () => {
       handle = createTestWorkspace();
       const { root } = handle;
 
-      expect(existsSync(join(root, 'data'))).toBe(true);
+      expect(existsSync(join(root, 'stable'))).toBe(true);
       expect(existsSync(join(root, 'draft'))).toBe(true);
       expect(existsSync(join(root, 'workspace.yaml'))).toBe(true);
     });

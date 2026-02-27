@@ -325,13 +325,13 @@ export class AppManager {
     db.query('DELETE FROM apps WHERE name = ?').run(name);
 
     // Remove app data directory (stable DB + functions)
-    const appDataDir = join(this.workspace.dataDir, 'apps', name);
+    const appDataDir = join(this.workspace.stableDir, name);
     if (existsSync(appDataDir)) {
       rmSync(appDataDir, { recursive: true, force: true });
     }
 
     // Remove draft data directory (draft DB + functions)
-    const draftDataDir = join(this.workspace.draftDir, 'apps', name);
+    const draftDataDir = join(this.workspace.draftDir, name);
     if (existsSync(draftDataDir)) {
       rmSync(draftDataDir, { recursive: true, force: true });
     }

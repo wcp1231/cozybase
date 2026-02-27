@@ -11,7 +11,7 @@ import { Publisher } from './core/publisher';
 import { AppError, BadRequestError } from './core/errors';
 import { logger } from './middleware/logger';
 import { createAppRoutes } from './modules/apps/routes';
-import { createRuntime, type AppRegistry, type AppStartRequest } from '@cozybase/runtime';
+import { createRuntime, type AppRegistry } from '@cozybase/runtime';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -37,22 +37,8 @@ export function createServer(config: Config) {
   // --- Create Runtime ---
   const { app: runtimeApp, registry } = createRuntime();
 
-  // --- Auto-publish template apps after first init ---
-  if (justInitialized) {
-    for (const appDef of workspace.scanApps()) {
-      const state = workspace.getAppState(appDef.name);
-      if (state === 'draft_only') {
-        console.log(`  Auto-publishing template app: ${appDef.name}`);
-        const result = publisher.publish(appDef.name);
-        if (!result.success) {
-          console.error(`  Failed to auto-publish '${appDef.name}': ${result.error}`);
-        }
-      }
-    }
-  }
-
-  // --- Startup promise: load all apps into registry before serving ---
-  const startup = startAppsInRuntime(workspace, registry);
+  // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
+  const startup = initializeRuntime(workspace, registry, publisher, justInitialized);
 
   // --- Global middleware ---
   app.use('*', cors());
@@ -125,7 +111,7 @@ export function createServer(config: Config) {
 
   app.post('/draft/apps/:appName/publish', draftMgmtMiddleware, async (c) => {
     const appName = c.req.param('appName')!;
-    const result = publisher.publish(appName);
+    const result = await publisher.publish(appName);
 
     if (result.success) {
       // Restart stable in Runtime after publish
@@ -178,9 +164,38 @@ export function createServer(config: Config) {
 }
 
 /**
- * Start all known apps in the Runtime registry directly.
+ * Auto-publish template apps on first init, then start all known apps in the Runtime registry.
  */
-async function startAppsInRuntime(workspace: Workspace, registry: AppRegistry) {
+async function initializeRuntime(
+  workspace: Workspace,
+  registry: AppRegistry,
+  publisher: Publisher,
+  justInitialized: boolean,
+) {
+  // Auto-publish template apps on first workspace initialization
+  if (justInitialized) {
+    console.log('Auto-publishing template apps...');
+    workspace.refreshAllAppStates();
+    for (const appDef of workspace.scanApps()) {
+      const state = workspace.getAppState(appDef.name);
+      if (state === 'draft_only') {
+        console.log(`  Auto-publishing template app: ${appDef.name}`);
+        try {
+          const result = await publisher.publish(appDef.name);
+          if (result.success) {
+            console.log(`  Published: ${appDef.name}`);
+            workspace.refreshAppState(appDef.name);
+          } else {
+            console.error(`  Failed to auto-publish '${appDef.name}': ${result.error}`);
+          }
+        } catch (err) {
+          console.error(`  Failed to auto-publish '${appDef.name}':`, err);
+        }
+      }
+    }
+  }
+
+  // Start all apps in the Runtime registry
   for (const appDef of workspace.scanApps()) {
     const state = workspace.getAppState(appDef.name);
     const appContext = workspace.getOrCreateApp(appDef.name);

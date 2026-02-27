@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { existsSync, copyFileSync, unlinkSync, rmSync } from 'fs';
+import { existsSync, copyFileSync, unlinkSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
@@ -11,6 +11,7 @@ export interface PublishResult {
   success: boolean;
   migrationsApplied: string[];  // filenames of applied migrations
   ui?: { exported: boolean };
+  npm?: { installed: boolean; warning?: string };
   error?: string;
 }
 
@@ -22,7 +23,7 @@ export class Publisher {
   constructor(private workspace: Workspace) {}
 
   /** Publish draft changes to stable */
-  publish(appName: string): PublishResult {
+  async publish(appName: string): Promise<PublishResult> {
     // Validate app state
     const state = this.workspace.getAppState(appName);
     if (!state) {
@@ -71,13 +72,14 @@ export class Publisher {
       const pendingMigrations = this.migrationRunner.getPendingMigrations(allMigrations, executedVersions);
 
       if (pendingMigrations.length === 0 && !isNewApp) {
-        // No migrations to apply — still export functions, UI, and update versions
+        // No migrations to apply — still export functions, UI, npm deps, and update versions
         this.exportFunctions(appName);
         const uiResult = this.exportUi(appName);
+        const npmResult = await this.exportPackageJsonAndInstall(appName, appContext.stableDataDir);
         this.markImmutableAndUpdateVersion(appName, allMigrations.map(m => m.version));
         this.cleanup(appContext);
         this.workspace.refreshAppState(appName);
-        return { success: true, migrationsApplied: [], ui: uiResult };
+        return { success: true, migrationsApplied: [], ui: uiResult, npm: npmResult };
       }
 
       // 5. Execute pending migrations
@@ -105,7 +107,10 @@ export class Publisher {
       // 8. Export UI definition to stable data dir (non-blocking)
       const uiResult = this.exportUi(appName);
 
-      // 9. Mark executed migrations immutable + update published_version
+      // 9. Export package.json and run bun install (non-blocking on failure)
+      const npmResult = await this.exportPackageJsonAndInstall(appName, appContext.stableDataDir);
+
+      // 10. Mark executed migrations immutable + update published_version
       const allExecutedVersions = [...executedVersions, ...pendingMigrations.map(m => m.version)];
       this.markImmutableAndUpdateVersion(appName, allExecutedVersions);
 
@@ -117,6 +122,7 @@ export class Publisher {
         success: true,
         migrationsApplied: result.executed,
         ui: uiResult,
+        npm: npmResult,
       };
     } catch (err: any) {
       // Unexpected error: attempt rollback (don't update version or immutable)
@@ -214,6 +220,49 @@ export class Publisher {
       }
     } catch {
       // Best effort cleanup
+    }
+  }
+
+  /** Export package.json from app_files to app dir, then run bun install */
+  private async exportPackageJsonAndInstall(
+    appName: string,
+    appDir: string,
+  ): Promise<PublishResult['npm']> {
+    const platformDb = this.workspace.getPlatformDb();
+    const record = platformDb
+      .query("SELECT content FROM app_files WHERE app_name = ? AND path = 'package.json'")
+      .get(appName) as { content: string } | null;
+
+    if (!record) return undefined;
+
+    // Write package.json to app directory
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, 'package.json'), record.content, 'utf-8');
+
+    return this.runBunInstall(appDir);
+  }
+
+  /** Run bun install in the given directory; returns result without throwing on failure */
+  private async runBunInstall(cwd: string): Promise<{ installed: boolean; warning?: string }> {
+    try {
+      const proc = Bun.spawn(['bun', 'install'], {
+        cwd,
+        stdout: 'ignore',
+        stderr: 'pipe',
+      });
+      // Drain stderr before awaiting exit to avoid pipe buffer deadlock
+      const stderrPromise = new Response(proc.stderr).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        const stderr = await stderrPromise;
+        return {
+          installed: false,
+          warning: `bun install exited with code ${exitCode}: ${stderr.trim()}`,
+        };
+      }
+      return { installed: true };
+    } catch (err: any) {
+      return { installed: false, warning: `bun install failed: ${err.message}` };
     }
   }
 }

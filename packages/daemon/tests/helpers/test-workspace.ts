@@ -26,7 +26,7 @@ export interface TestWorkspaceHandle {
 export function createTestWorkspace(): TestWorkspaceHandle {
   const root = mkdtempSync(join(tmpdir(), 'cozybase-test-'));
 
-  mkdirSync(join(root, 'data'), { recursive: true });
+  mkdirSync(join(root, 'stable'), { recursive: true });
   mkdirSync(join(root, 'draft'), { recursive: true });
 
   writeFileSync(
@@ -193,18 +193,18 @@ export function readAppFile(handle: TestWorkspaceHandle, appName: string, path: 
 // ---- Database helpers ----
 
 export function openDraftDb(root: string, appName: string): Database {
-  return new Database(join(root, 'draft', 'apps', appName, 'db.sqlite'));
+  return new Database(join(root, 'draft', appName, 'db.sqlite'));
 }
 
 export function openStableDb(root: string, appName: string): Database {
-  return new Database(join(root, 'data', 'apps', appName, 'db.sqlite'));
+  return new Database(join(root, 'stable', appName, 'db.sqlite'));
 }
 
 /** Create a stable DB with migrations already applied (simulating a prior publish).
  *  Also marks migrations as immutable and sets published_version in platform DB. */
 export function createStableDb(handle: TestWorkspaceHandle, appName: string, migrationSqls: string[], versions: number[]): void {
   const root = handle.root;
-  const stableDir = join(root, 'data', 'apps', appName);
+  const stableDir = join(root, 'stable', appName);
   mkdirSync(stableDir, { recursive: true });
   const db = new Database(join(stableDir, 'db.sqlite'));
   db.exec('PRAGMA journal_mode = WAL');

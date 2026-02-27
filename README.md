@@ -8,31 +8,33 @@ Cozybase runs as a daemon process, manages a self-contained workspace, and suppo
 Workspace (~/.cozybase)
 ┌──────────────────────────────────────────────────────────┐
 │ workspace.yaml              ← config (name+version)      │
+│ platform.sqlite             ← Source of Truth            │
+│   ├── apps table              (name, version, status)    │
+│   ├── app_files table         (migrations, functions,    │
+│   │                            seeds, ui, config)        │
+│   └── api_keys table                                   │
 │                                                          │
-│ data/                                                    │
-│ ├── platform.sqlite         ← Source of Truth            │
-│ │   ├── apps table            (name, version, status)    │
-│ │   ├── app_files table       (migrations, functions,    │
-│ │   │                          seeds, ui, config)        │
-│ │   └── api_keys table                                   │
-│ ├── apps/                                                │
-│ │   ├── todo-app/                                        │
-│ │   │   ├── db.sqlite       ← Stable DB                  │
-│ │   │   ├── functions/      ← Exported from DB           │
-│ │   │   │   └── health.ts                                │
-│ │   │   └── ui/             ← Exported from DB           │
-│ │   │       └── pages.json                               │
-│ │   └── blog-app/                                        │
-│ │       └── db.sqlite                                    │
-│ │                                                        │
+│ stable/                                                  │
+│ ├── todo-app/                                            │
+│ │   ├── db.sqlite         ← Stable DB                    │
+│ │   ├── package.json      ← Exported from app_files      │
+│ │   ├── node_modules/     ← bun install result           │
+│ │   ├── functions/        ← Exported from DB             │
+│ │   │   └── health.ts                                  │
+│ │   └── ui/               ← Exported from DB             │
+│ │       └── pages.json                                 │
+│ └── blog-app/                                            │
+│     └── db.sqlite                                        │
+│                                                          │
 │ draft/                                                   │
-│ └── apps/                                                │
-│     └── todo-app/                                        │
-│         ├── db.sqlite       ← Draft DB                   │
-│         ├── functions/      ← Exported from DB           │
-│         │   └── health.ts                                │
-│         └── ui/             ← Exported from DB           │
-│             └── pages.json                               │
+│ └── todo-app/                                            │
+│     ├── db.sqlite         ← Draft DB                     │
+│     ├── package.json      ← Exported from app_files      │
+│     ├── node_modules/     ← bun install result           │
+│     ├── functions/        ← Exported from DB             │
+│     │   └── health.ts                                  │
+│     └── ui/               ← Exported from DB             │
+│         └── pages.json                                 │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
    Platform DB (source of truth)    Runtime state
@@ -491,39 +493,47 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/stable/apps/:appName/ui.json` | Get published UI definition |
-| GET | `/draft/apps/:appName/ui.json` | Get draft UI definition |
+| GET | `/stable/apps/:appName/ui` | Get published UI definition |
+| GET | `/draft/apps/:appName/ui` | Get draft UI definition |
 
 ## Workspace Structure
 
 ```
 ~/.cozybase/                            # Workspace root
 ├── workspace.yaml                      # Config: name + schema version
-├── data/                               # Persistent state
-│   ├── platform.sqlite                 # Source of Truth (apps, app_files, api_keys)
-│   └── apps/
-│       ├── todo-app/
-│       │   ├── db.sqlite               # Stable database
-│       │   ├── db.sqlite.bak           # Auto-backup before publish
-│       │   ├── functions/              # Function files (exported from DB)
-│       │   │   └── health.ts
-│       │   └── ui/                     # UI definition (exported from DB)
-│       │       └── pages.json
-│       └── blog-app/
-│           ├── db.sqlite
-│           └── functions/
-│               └── posts.ts
+├── platform.sqlite                     # Source of Truth (apps, app_files, api_keys)
+├── stable/                             # Stable runtime state
+│   └── todo-app/
+│       ├── db.sqlite                   # Stable database
+│       ├── db.sqlite.bak               # Auto-backup before publish
+│       ├── package.json                # Exported from app_files (if present)
+│       ├── node_modules/               # Installed by bun install
+│       ├── functions/                  # Function files (exported from DB)
+│       │   └── health.ts
+│       └── ui/                         # UI definition (exported from DB)
+│           └── pages.json
 └── draft/                              # Draft runtime state
-    └── apps/
-        └── todo-app/
-            ├── db.sqlite               # Draft database (destroy+rebuild)
-            ├── functions/              # Function files (exported from DB)
-            │   └── health.ts
-            └── ui/                     # UI definition (exported from DB)
-                └── pages.json
+    └── todo-app/
+        ├── db.sqlite                   # Draft database (destroy+rebuild)
+        ├── package.json                # Exported from app_files (if present)
+        ├── node_modules/               # Installed by bun install
+        ├── functions/                  # Function files (exported from DB)
+        │   └── health.ts
+        └── ui/                         # UI definition (exported from DB)
+            └── pages.json
 ```
 
-App definitions (migrations, functions, seeds, UI, config) are stored in `platform.sqlite`'s `app_files` table — **not** on the filesystem. The `functions/` and `ui/` directories under `data/` and `draft/` are runtime exports: during Reconcile/Publish, function source code and UI definitions are written from the DB to disk.
+App definitions (migrations, functions, seeds, UI, config) are stored in `platform.sqlite`'s `app_files` table — **not** on the filesystem. The `functions/`, `ui/`, and (optionally) `package.json` files under `stable/` and `draft/` are runtime exports: during Reconcile/Publish, source definitions are written from DB to disk.
+
+### Upgrade Note (Workspace Layout)
+
+If you are upgrading from an older workspace layout that used `data/platform.sqlite` and `data/apps/*`, migrate manually:
+
+```bash
+mv ~/.cozybase/data/platform.sqlite ~/.cozybase/platform.sqlite
+mkdir -p ~/.cozybase/stable
+mv ~/.cozybase/data/apps/* ~/.cozybase/stable/
+```
 
 ### Platform DB Schema
 
@@ -570,7 +580,7 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 
 ### Core Concepts
 
-- **Workspace**: Self-contained directory (`~/.cozybase`) with `data/` (Platform DB + stable runtime) and `draft/` (draft runtime). Auto-initializes on first startup with template apps loaded into the Platform DB.
+- **Workspace**: Self-contained directory (`~/.cozybase`) with root-level `platform.sqlite`, `stable/` (stable runtime), and `draft/` (draft runtime). Auto-initializes on first startup with template apps loaded into the Platform DB.
 - **Platform DB**: Central `platform.sqlite` stores all app definitions (`apps` + `app_files` tables). Acts as the single source of truth — Management API is the only entry point for modifications.
 - **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request. Lives in the Daemon layer.
 - **DraftReconciler**: Reads migrations, seeds, functions, and UI definitions from Platform DB, destroys and rebuilds the draft database. Exports function and UI files to disk.
@@ -658,7 +668,7 @@ cozybase/
 │   │       │   │   ├── logger.ts         # Structured function logger
 │   │       │   │   └── routes.ts         # Function HTTP routes (/fn/:name)
 │   │       │   └── ui/
-│   │       │       └── routes.ts         # UI routes (/ui.json, /assets, /)
+│   │       │       └── routes.ts         # UI routes (/ui, /assets, /)
 │   │       └── routes/
 │   │           └── internal.ts           # Reserved for internal routes
 │   ├── ui/                    # JSON-to-React UI renderer (@cozybase/ui)

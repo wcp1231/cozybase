@@ -23,7 +23,7 @@ describe('Publisher', () => {
   });
 
   describe('publish draft_only app', () => {
-    test('creates stable DB, records migrations, marks immutable, cleans draft', () => {
+    test('creates stable DB, records migrations, marks immutable, cleans draft', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -32,13 +32,13 @@ describe('Publisher', () => {
       expect(handle.workspace.getAppState('myapp')).toBe('draft_only');
 
       const publisher = new Publisher(handle.workspace);
-      const result = publisher.publish('myapp');
+      const result = await publisher.publish('myapp');
 
       expect(result.success).toBe(true);
       expect(result.migrationsApplied).toContain('001_init.sql');
 
       // 1. Stable DB exists
-      const stableDbPath = join(handle.root, 'data', 'apps', 'myapp', 'db.sqlite');
+      const stableDbPath = join(handle.root, 'stable', 'myapp', 'db.sqlite');
       expect(existsSync(stableDbPath)).toBe(true);
 
       // 2. _migrations table has version 1
@@ -65,7 +65,7 @@ describe('Publisher', () => {
       expect(appRow.published_version).toBe(appRow.current_version);
 
       // 6. Draft DB cleaned up
-      const draftDbPath = join(handle.root, 'draft', 'apps', 'myapp', 'db.sqlite');
+      const draftDbPath = join(handle.root, 'draft', 'myapp', 'db.sqlite');
       expect(existsSync(draftDbPath)).toBe(false);
 
       // 7. State is now stable
@@ -75,7 +75,7 @@ describe('Publisher', () => {
   });
 
   describe('publish stable_draft app', () => {
-    test('incremental migration + backup created', () => {
+    test('incremental migration + backup created', async () => {
       handle = createTestWorkspace();
 
       // Phase 1: Create app and publish
@@ -84,7 +84,7 @@ describe('Publisher', () => {
       });
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('myapp');
+      await publisher.publish('myapp');
 
       // Phase 2: Add new migration
       addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
@@ -92,7 +92,7 @@ describe('Publisher', () => {
       expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
 
       // Publish again
-      const result = publisher.publish('myapp');
+      const result = await publisher.publish('myapp');
 
       expect(result.success).toBe(true);
       expect(result.migrationsApplied).toContain('002_add_col.sql');
@@ -108,7 +108,7 @@ describe('Publisher', () => {
       db.close();
 
       // 3. Backup file exists
-      const backupPath = join(handle.root, 'data', 'apps', 'myapp', 'db.sqlite.bak');
+      const backupPath = join(handle.root, 'stable', 'myapp', 'db.sqlite.bak');
       expect(existsSync(backupPath)).toBe(true);
 
       // 4. Both migrations marked immutable
@@ -125,7 +125,7 @@ describe('Publisher', () => {
   });
 
   describe('publish failure rollback', () => {
-    test('restores stable DB from backup when migration fails', () => {
+    test('restores stable DB from backup when migration fails', async () => {
       handle = createTestWorkspace();
 
       // Phase 1: Create and publish
@@ -134,7 +134,7 @@ describe('Publisher', () => {
       });
       handle.workspace.refreshAppState('myapp');
       const publisher = new Publisher(handle.workspace);
-      publisher.publish('myapp');
+      await publisher.publish('myapp');
 
       // Insert canary row
       const appCtx = handle.workspace.getOrCreateApp('myapp')!;
@@ -147,7 +147,7 @@ describe('Publisher', () => {
       handle.workspace.refreshAppState('myapp');
 
       // Publish should fail
-      const result = publisher.publish('myapp');
+      const result = await publisher.publish('myapp');
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('002_bad.sql');
@@ -164,7 +164,7 @@ describe('Publisher', () => {
       db.close();
     });
 
-    test('for new app failure: deletes failed stable DB', () => {
+    test('for new app failure: deletes failed stable DB', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_bad.sql': MIGRATION_BAD_SQL },
@@ -172,18 +172,18 @@ describe('Publisher', () => {
       handle.workspace.refreshAppState('myapp');
 
       const publisher = new Publisher(handle.workspace);
-      const result = publisher.publish('myapp');
+      const result = await publisher.publish('myapp');
 
       expect(result.success).toBe(false);
 
       // Stable DB should not exist
-      const stablePath = join(handle.root, 'data', 'apps', 'myapp', 'db.sqlite');
+      const stablePath = join(handle.root, 'stable', 'myapp', 'db.sqlite');
       expect(existsSync(stablePath)).toBe(false);
     });
   });
 
   describe('edge cases', () => {
-    test('throws BadRequestError for deleted app', () => {
+    test('throws BadRequestError for deleted app', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         spec: { description: 'test', status: 'deleted' },
@@ -191,10 +191,10 @@ describe('Publisher', () => {
       handle.workspace.refreshAppState('myapp');
 
       const publisher = new Publisher(handle.workspace);
-      expect(() => publisher.publish('myapp')).toThrow(/deleted/);
+      await expect(publisher.publish('myapp')).rejects.toThrow(/deleted/);
     });
 
-    test('throws BadRequestError for stable app with no draft changes', () => {
+    test('throws BadRequestError for stable app with no draft changes', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -203,7 +203,7 @@ describe('Publisher', () => {
       handle.workspace.refreshAppState('myapp');
 
       const publisher = new Publisher(handle.workspace);
-      expect(() => publisher.publish('myapp')).toThrow(/no draft changes/);
+      await expect(publisher.publish('myapp')).rejects.toThrow(/no draft changes/);
     });
   });
 });

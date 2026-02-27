@@ -18,9 +18,9 @@ export class AppContext {
     draftRootDir: string,
   ) {
     this.name = name;
-    this.stableDataDir = join(dataRootDir, 'apps', name);
+    this.stableDataDir = join(dataRootDir, name);
     this.stableDbPath = join(this.stableDataDir, 'db.sqlite');
-    this.draftDataDir = join(draftRootDir, 'apps', name);
+    this.draftDataDir = join(draftRootDir, name);
     this.draftDbPath = join(this.draftDataDir, 'db.sqlite');
   }
 

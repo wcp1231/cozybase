@@ -424,7 +424,7 @@ describe('createServer() first-init auto-publish', () => {
     expect(state).toBe('stable');
 
     // Stable DB should exist
-    const stableDbPath = join(tmpRoot, 'data', 'apps', 'welcome', 'db.sqlite');
+    const stableDbPath = join(tmpRoot, 'stable', 'welcome', 'db.sqlite');
     expect(existsSync(stableDbPath)).toBe(true);
 
     // Stable function route should work
@@ -451,7 +451,7 @@ describe('createServer() first-init auto-publish', () => {
     ws1.close();
 
     // Increment current_version in platform DB to simulate a new draft change
-    const platformDbPath = join(tmpRoot, 'data', 'platform.sqlite');
+    const platformDbPath = join(tmpRoot, 'platform.sqlite');
     const db = new Database(platformDbPath);
     db.query("UPDATE apps SET current_version = current_version + 1 WHERE name = 'welcome'").run();
     db.close();
