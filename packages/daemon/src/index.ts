@@ -32,9 +32,9 @@ console.log(`
     GET  /api/v1/apps
     GET  /api/v1/apps/:appName
     *    /stable/apps/:appName/fn/:fnName
-    *    /stable/apps/:appName/db/*
+    *    /stable/apps/:appName/fn/_db/*
     *    /draft/apps/:appName/fn/:fnName
-    *    /draft/apps/:appName/db/*
+    *    /draft/apps/:appName/fn/_db/*
     POST /draft/apps/:appName/reconcile
     POST /draft/apps/:appName/verify
     POST /draft/apps/:appName/publish

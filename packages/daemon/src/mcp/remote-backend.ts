@@ -136,7 +136,7 @@ export class RemoteBackend implements CozybaseBackend {
     const sqlMode = mode === 'stable' ? 'stable' : 'draft';
     const res = await this.request(
       'POST',
-      `/${sqlMode}/apps/${encodeURIComponent(name)}/db/_sql`,
+      `/${sqlMode}/apps/${encodeURIComponent(name)}/fn/_db/sql`,
       { sql },
     );
     return {

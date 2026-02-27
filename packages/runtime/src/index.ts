@@ -2,12 +2,20 @@ import { Hono } from 'hono';
 import { AppRegistry } from './registry';
 import { appEntryResolver } from './middleware/app-entry-resolver';
 import { createFunctionRoutes } from './modules/functions/routes';
-import { createDbRoutes } from './modules/db/routes';
 import { createUiRoutes } from './modules/ui/routes';
+import {
+  createInProcessPlatformClient,
+  type PlatformClient,
+  type PlatformHandler,
+} from './platform-client';
 
 export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type AppStatus } from './registry';
-export { type DaemonClient, createInProcessDaemonClient, createHttpDaemonClient } from './daemon-client';
+export { type PlatformClient, type PlatformHandler, createInProcessPlatformClient } from './platform-client';
 export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
+
+export interface RuntimeOptions {
+  platformHandler?: PlatformHandler;
+}
 
 /**
  * Create a Runtime Hono app instance with all APP routes.
@@ -18,9 +26,23 @@ export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
  *
  * NOTE: Internal management is done via registry directly — no /internal routes are exposed on the app.
  */
-export function createRuntime() {
+export function createRuntime(options: RuntimeOptions = {}): {
+  app: Hono;
+  registry: AppRegistry;
+  platformClient: PlatformClient;
+} {
   const app = new Hono();
   const registry = new AppRegistry();
+  const stablePlatformClient = createInProcessPlatformClient(
+    app,
+    options.platformHandler,
+    'stable',
+  );
+  const draftPlatformClient = createInProcessPlatformClient(
+    app,
+    options.platformHandler,
+    'draft',
+  );
 
   // --- APP external routes ---
   // These routes expect to be mounted under /{mode} prefix by Daemon,
@@ -29,11 +51,7 @@ export function createRuntime() {
   // Stable mode routes
   const stableFn = new Hono();
   stableFn.use('*', appEntryResolver(registry, 'stable'));
-  stableFn.route('/', createFunctionRoutes());
-
-  const stableDb = new Hono();
-  stableDb.use('*', appEntryResolver(registry, 'stable'));
-  stableDb.route('/', createDbRoutes());
+  stableFn.route('/', createFunctionRoutes(stablePlatformClient));
 
   const stableUi = new Hono();
   stableUi.use('*', appEntryResolver(registry, 'stable'));
@@ -42,11 +60,7 @@ export function createRuntime() {
   // Draft mode routes
   const draftFn = new Hono();
   draftFn.use('*', appEntryResolver(registry, 'draft'));
-  draftFn.route('/', createFunctionRoutes());
-
-  const draftDb = new Hono();
-  draftDb.use('*', appEntryResolver(registry, 'draft'));
-  draftDb.route('/', createDbRoutes());
+  draftFn.route('/', createFunctionRoutes(draftPlatformClient));
 
   const draftUi = new Hono();
   draftUi.use('*', appEntryResolver(registry, 'draft'));
@@ -54,13 +68,11 @@ export function createRuntime() {
 
   // Mount stable routes
   app.route('/stable/apps/:name/fn', stableFn);
-  app.route('/stable/apps/:name/db', stableDb);
   app.route('/stable/apps/:name', stableUi);
 
   // Mount draft routes
   app.route('/draft/apps/:name/fn', draftFn);
-  app.route('/draft/apps/:name/db', draftDb);
   app.route('/draft/apps/:name', draftUi);
 
-  return { app, registry };
+  return { app, registry, platformClient: stablePlatformClient };
 }

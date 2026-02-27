@@ -1,5 +1,5 @@
 /**
- * SQL Endpoint (`POST /{mode}/apps/{appName}/db/_sql`) — Integration Tests
+ * SQL Endpoint (`POST /{mode}/apps/{appName}/fn/_db/sql`) — Integration Tests
  *
  * Tests permission control, result set limits, and error format
  * through the full HTTP endpoint stack.
@@ -57,14 +57,14 @@ async function sqlRequest(
   appName: string,
   sql: string,
 ): Promise<Response> {
-  return app.request(`http://localhost/${mode}/apps/${appName}/db/_sql`, {
+  return app.request(`http://localhost/${mode}/apps/${appName}/fn/_db/sql`, {
     method: 'POST',
     body: JSON.stringify({ sql }),
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
-describe('POST /{mode}/apps/{appName}/db/_sql', () => {
+describe('POST /{mode}/apps/{appName}/fn/_db/sql', () => {
   test('SELECT returns columns and rows', async () => {
     const { app } = await createApp();
 
@@ -138,7 +138,7 @@ describe('POST /{mode}/apps/{appName}/db/_sql', () => {
   test('missing sql field returns SQL_INVALID', async () => {
     const { app } = await createApp();
 
-    const res = await app.request('http://localhost/draft/apps/todo/db/_sql', {
+    const res = await app.request('http://localhost/draft/apps/todo/fn/_db/sql', {
       method: 'POST',
       body: JSON.stringify({}),
       headers: { 'Content-Type': 'application/json' },
@@ -185,7 +185,7 @@ describe('POST /{mode}/apps/{appName}/db/_sql', () => {
   test('invalid JSON body returns SQL_INVALID', async () => {
     const { app } = await createApp();
 
-    const res = await app.request('http://localhost/draft/apps/todo/db/_sql', {
+    const res = await app.request('http://localhost/draft/apps/todo/fn/_db/sql', {
       method: 'POST',
       body: 'not-valid-json{{{',
       headers: { 'Content-Type': 'application/json' },

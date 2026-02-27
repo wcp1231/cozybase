@@ -132,6 +132,9 @@ export class AppManager {
     if (!APP_NAME_PATTERN.test(name)) {
       throw new InvalidNameError(`Invalid app name '${name}'. Must match ${APP_NAME_PATTERN}`);
     }
+    if (name.startsWith('_')) {
+      throw new InvalidNameError(`Invalid app name '${name}'. App names cannot start with '_'`);
+    }
 
     const db = this.workspace.getPlatformDb();
 

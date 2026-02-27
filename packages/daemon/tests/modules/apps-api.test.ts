@@ -74,6 +74,17 @@ describe('Management API (/api/v1/apps)', () => {
       expect(body.error.code).toBe('INVALID_NAME');
     });
 
+    test('rejects app names with _ prefix', async () => {
+      handle = createTestWorkspace();
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request(jsonReq('/api/v1/apps', 'POST', { name: '_platform' }));
+      expect(res.status).toBe(400);
+
+      const body = await jsonBody(res);
+      expect(body.error.code).toBe('INVALID_NAME');
+    });
+
     test('rejects duplicate name', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {

@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import type { RuntimeAppEnv } from '../../middleware/app-entry-resolver';
 import { buildQuery, QueryError, type QueryParams } from './query-builder';
 import { introspectSchema } from './schema';
-import { executeSql, SqlError } from './sql';
 import { validateSql, classifySql } from './sql-safety';
 
 const MAX_SQL_ROWS = 1000;
@@ -12,35 +11,15 @@ const SQL_TIMEOUT_MS = 5000;
 export function createDbRoutes() {
   const app = new Hono<RuntimeAppEnv>();
 
-  // GET /schema
-  app.get('/schema', (c) => {
+  // GET /schemas
+  app.get('/schemas', (c) => {
     const entry = c.get('appEntry');
     const schema = introspectSchema(entry.db!);
     return c.json({ data: schema });
   });
 
-  // POST /sql - Execute raw SQL
+  // POST /sql - Execute SQL with safety checks
   app.post('/sql', async (c) => {
-    const entry = c.get('appEntry');
-    const body = await c.req.json();
-
-    if (!body.sql || typeof body.sql !== 'string') {
-      return c.json({ error: { code: 'BAD_REQUEST', message: 'Missing "sql" field' } }, 400);
-    }
-
-    try {
-      const result = executeSql(entry.db!, body.sql, body.params);
-      return c.json({ data: result });
-    } catch (err) {
-      if (err instanceof SqlError) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: err.message } }, 400);
-      }
-      throw err;
-    }
-  });
-
-  // POST /_sql - Execute SQL with safety checks
-  app.post('/_sql', async (c) => {
     const entry = c.get('appEntry');
     const mode = c.get('appMode');
 
@@ -106,15 +85,15 @@ export function createDbRoutes() {
     }
   });
 
-  // GET /:table - List records
-  app.get('/:table', (c) => {
+  // GET /tables/:table - List records
+  app.get('/tables/:table', (c) => {
     const entry = c.get('appEntry');
     const table = c.req.param('table')!;
 
     if (!isValidTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Invalid table name: ${table}` } }, 400);
     }
-    if (table.startsWith('_') || table.startsWith('sqlite_')) {
+    if (isInternalTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot access internal table '${table}' via CRUD API` } }, 400);
     }
     if (!tableExists(entry.db!, table)) {
@@ -164,14 +143,17 @@ export function createDbRoutes() {
     }
   });
 
-  // GET /:table/:id - Get single record
-  app.get('/:table/:id', (c) => {
+  // GET /tables/:table/:id - Get single record
+  app.get('/tables/:table/:id', (c) => {
     const entry = c.get('appEntry');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
 
     if (!isValidTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Invalid table name: ${table}` } }, 400);
+    }
+    if (isInternalTableName(table)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot access internal table '${table}' via CRUD API` } }, 400);
     }
     if (!tableExists(entry.db!, table)) {
       return c.json({ error: { code: 'NOT_FOUND', message: `Table '${table}' does not exist` } }, 404);
@@ -187,13 +169,16 @@ export function createDbRoutes() {
     return c.json({ data: row });
   });
 
-  // POST /:table - Create record
-  app.post('/:table', async (c) => {
+  // POST /tables/:table - Create record
+  app.post('/tables/:table', async (c) => {
     const entry = c.get('appEntry');
     const table = c.req.param('table')!;
 
     if (!isValidTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Invalid table name: ${table}` } }, 400);
+    }
+    if (isInternalTableName(table)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot access internal table '${table}' via CRUD API` } }, 400);
     }
     if (!tableExists(entry.db!, table)) {
       return c.json({ error: { code: 'NOT_FOUND', message: `Table '${table}' does not exist` } }, 404);
@@ -205,8 +190,8 @@ export function createDbRoutes() {
     }
 
     const pk = getPrimaryKey(entry.db!, table);
+    const pkType = getPrimaryKeyType(entry.db!, table);
     if (pk === 'id' && !body.id) {
-      const pkType = getPrimaryKeyType(entry.db!, table);
       if (!pkType.toUpperCase().includes('INT')) {
         body.id = nanoid(12);
       }
@@ -217,24 +202,33 @@ export function createDbRoutes() {
     const values = Object.values(body);
     const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
 
+    let lastInsertRowid: number | bigint | undefined;
     try {
-      entry.db!.query(sql).run(...(values as any[]));
+      const result = entry.db!.query(sql).run(...(values as any[])) as { lastInsertRowid?: number | bigint };
+      lastInsertRowid = result.lastInsertRowid;
     } catch (error: any) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Insert error: ${error.message}` } }, 400);
     }
 
-    const record = entry.db!.query(`SELECT * FROM "${table}" WHERE "${pk}" = ?`).get(body[pk]);
+    const lookupId = body[pk]
+      ?? (pkType.toUpperCase().includes('INT') && lastInsertRowid !== undefined ? Number(lastInsertRowid) : undefined);
+    const record = lookupId !== undefined
+      ? entry.db!.query(`SELECT * FROM "${table}" WHERE "${pk}" = ?`).get(lookupId)
+      : entry.db!.query(`SELECT * FROM "${table}" ORDER BY rowid DESC LIMIT 1`).get();
     return c.json({ data: record }, 201);
   });
 
-  // PATCH /:table/:id - Update record
-  app.patch('/:table/:id', async (c) => {
+  // PATCH /tables/:table/:id - Update record
+  app.patch('/tables/:table/:id', async (c) => {
     const entry = c.get('appEntry');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
 
     if (!isValidTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Invalid table name: ${table}` } }, 400);
+    }
+    if (isInternalTableName(table)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot access internal table '${table}' via CRUD API` } }, 400);
     }
     if (!tableExists(entry.db!, table)) {
       return c.json({ error: { code: 'NOT_FOUND', message: `Table '${table}' does not exist` } }, 404);
@@ -269,14 +263,17 @@ export function createDbRoutes() {
     return c.json({ data: record });
   });
 
-  // DELETE /:table/:id - Delete record
-  app.delete('/:table/:id', (c) => {
+  // DELETE /tables/:table/:id - Delete record
+  app.delete('/tables/:table/:id', (c) => {
     const entry = c.get('appEntry');
     const table = c.req.param('table')!;
     const id = c.req.param('id')!;
 
     if (!isValidTableName(table)) {
       return c.json({ error: { code: 'BAD_REQUEST', message: `Invalid table name: ${table}` } }, 400);
+    }
+    if (isInternalTableName(table)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot access internal table '${table}' via CRUD API` } }, 400);
     }
     if (!tableExists(entry.db!, table)) {
       return c.json({ error: { code: 'NOT_FOUND', message: `Table '${table}' does not exist` } }, 404);
@@ -299,6 +296,10 @@ export function createDbRoutes() {
 
 function isValidTableName(table: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table);
+}
+
+function isInternalTableName(table: string): boolean {
+  return table.startsWith('_') || table.startsWith('sqlite_');
 }
 
 function tableExists(db: any, table: string): boolean {

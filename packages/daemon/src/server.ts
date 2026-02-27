@@ -12,7 +12,7 @@ import { AppError, BadRequestError } from './core/errors';
 import { logger } from './middleware/logger';
 import { createAppRoutes } from './modules/apps/routes';
 import { createThemeRoutes } from './modules/theme/routes';
-import { createRuntime, type AppRegistry } from '@cozybase/runtime';
+import { createRuntime, type AppRegistry, type PlatformHandler } from '@cozybase/runtime';
 import { generateThemeCSS } from '@cozybase/ui';
 
 export function createServer(config: Config) {
@@ -37,7 +37,30 @@ export function createServer(config: Config) {
   const publisher = new Publisher(workspace);
 
   // --- Create Runtime ---
-  const { app: runtimeApp, registry } = createRuntime();
+  const platformHandler: PlatformHandler = {
+    async handle(path, request) {
+      const normalizedPath = path.replace(/^\/+/, '');
+      let daemonPath: string | null = null;
+      if (normalizedPath === 'auth/verify') {
+        daemonPath = '/internal/auth/verify';
+      } else if (normalizedPath === 'theme/css') {
+        daemonPath = '/api/v1/theme/css';
+      }
+
+      if (!daemonPath) {
+        return new Response(
+          JSON.stringify({ error: { code: 'NOT_FOUND', message: `Unknown _platform path '${normalizedPath}'` } }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const requestUrl = new URL(request.url);
+      const mappedRequest = new Request(`http://localhost${daemonPath}${requestUrl.search}`, request);
+      return app.request(mappedRequest);
+    },
+  };
+
+  const { app: runtimeApp, registry } = createRuntime({ platformHandler });
 
   // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
   const startup = initializeRuntime(workspace, registry, publisher, justInitialized);

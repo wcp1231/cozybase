@@ -43,7 +43,7 @@
                   ],
                   "api": {
                     "method": "POST",
-                    "url": "/db/todo"
+                    "url": "/fn/_db/tables/todo"
                   },
                   "onSuccess": [
                     { "type": "reload", "target": "todo-table" },
@@ -58,7 +58,7 @@
           "type": "table",
           "id": "todo-table",
           "api": {
-            "url": "/db/todo",
+            "url": "/fn/_db/tables/todo",
             "params": {
               "completed": "${status-tabs.value}",
               "order": "created_at.desc"
@@ -89,7 +89,7 @@
               "action": {
                 "type": "api",
                 "method": "PATCH",
-                "url": "/db/todo/${row.id}",
+                "url": "/fn/_db/tables/todo/${row.id}",
                 "body": {
                   "completed": "${row.completed === 1 ? 0 : 1}"
                 },
@@ -104,7 +104,7 @@
               "action": {
                 "type": "api",
                 "method": "DELETE",
-                "url": "/db/todo/${row.id}",
+                "url": "/fn/_db/tables/todo/${row.id}",
                 "onSuccess": [
                   { "type": "reload", "target": "todo-table" }
                 ]

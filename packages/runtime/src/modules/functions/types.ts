@@ -1,3 +1,5 @@
+import type { PlatformClient } from '../../platform-client';
+
 // --- DatabaseClient ---
 
 export interface DatabaseClient {
@@ -25,6 +27,7 @@ export interface FunctionContext {
   mode: 'stable' | 'draft';
   log: Logger;
   fetch: typeof globalThis.fetch;
+  platform: PlatformClient;
 }
 
 // --- FunctionModule (internal) ---

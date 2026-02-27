@@ -179,7 +179,7 @@ export const TOOL_DESCRIPTIONS = {
     'switch, checkbox, radio, date-picker, button, link, dialog, alert, empty.\n\n' +
     'Interactions use action declarations. Action types: ' +
     'api, reload, dialog, link, close, confirm.\n\n' +
-    'API URLs use App-relative paths (e.g. `/db/todo`, `/fn/todos`); ' +
+    'API URLs use App-relative paths (e.g. `/fn/_db/tables/todo`, `/fn/todos`); ' +
     'the renderer auto-completes them to full URLs.\n\n' +
     '**When only modifying `ui/pages.json`, reconcile / verify / publish are NOT needed.** ' +
     'Just call `update_app_file` directly.',
@@ -218,7 +218,7 @@ export const TOOL_DESCRIPTIONS = {
   call_api:
     'Call an APP\'s HTTP endpoint (user perspective).\n\n' +
     'Covers all APP endpoints:\n' +
-    '- Database REST API: GET/POST/PUT/DELETE `/db/{table}`\n' +
+    '- Database REST API: `/fn/_db/tables/{table}` and `/fn/_db/tables/{table}/{id}`\n' +
     '- TypeScript functions: ANY `/fn/{name}`\n\n' +
     'Default mode is `draft`.',
 } as const;
@@ -312,7 +312,7 @@ export const INPUT_SCHEMAS = {
     properties: {
       app_name: { type: 'string', description: 'APP name' },
       method: { type: 'string', description: 'HTTP method (GET, POST, PUT, DELETE, etc.)' },
-      path: { type: 'string', description: 'API path (e.g. /db/tasks, /fn/hello)' },
+      path: { type: 'string', description: 'API path (e.g. /fn/_db/tables/tasks, /fn/hello)' },
       body: { description: 'Request body (optional, for POST/PUT)' },
       mode: { type: 'string', enum: ['draft', 'stable'], description: 'App mode (default: draft)' },
     },

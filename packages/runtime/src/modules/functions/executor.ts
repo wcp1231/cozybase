@@ -1,6 +1,7 @@
 import { join } from 'path';
 import { existsSync } from 'fs';
 import type { AppEntry } from '../../registry';
+import type { PlatformClient } from '../../platform-client';
 import type { FunctionModule, HttpMethod } from './types';
 import { HTTP_METHODS } from './types';
 import { buildFunctionContext } from './context';
@@ -13,6 +14,7 @@ export async function executeFunction(
   entry: AppEntry,
   functionName: string,
   request: Request,
+  platformClient: PlatformClient,
 ): Promise<Response> {
   // Validate function name: reject _ prefix and invalid names
   if (functionName.startsWith('_') || !/^[a-zA-Z0-9_-]+$/.test(functionName)) {
@@ -43,7 +45,7 @@ export async function executeFunction(
   }
 
   // Build context and execute
-  const ctx = buildFunctionContext(entry, functionName, request);
+  const ctx = buildFunctionContext(entry, functionName, request, platformClient);
   try {
     const result = await handler(ctx);
     return toResponse(result);
