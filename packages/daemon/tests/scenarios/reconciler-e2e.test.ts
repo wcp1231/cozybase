@@ -520,7 +520,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.14: GET /stable/apps/:appName/ui returns UI definition ---
   describe('9.14: Stable UI API returns correct JSON after publish', () => {
-    test('GET /stable/apps/:appName/ui.json returns published UI definition', async () => {
+    test('GET /stable/apps/:appName/ui returns published UI definition', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with UI and publish
@@ -542,7 +542,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       await startup;
 
-      const res = await app.request('/stable/apps/myapp/ui.json');
+      const res = await app.request('/stable/apps/myapp/ui');
       expect(res.status).toBe(200);
 
       const json = await res.json();
@@ -554,7 +554,7 @@ describe('End-to-end Reconciler Scenarios', () => {
 
   // --- Scenario 9.15: GET /stable/apps/:appName/ui returns 404 when not published ---
   describe('9.15: Stable UI API returns 404 when UI not published', () => {
-    test('GET /stable/apps/:appName/ui.json returns 404 when no UI file exists', async () => {
+    test('GET /stable/apps/:appName/ui returns 404 when no UI file exists', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app without UI and publish (so it has stable state)
@@ -575,7 +575,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       await startup;
 
-      const res = await app.request('/stable/apps/myapp/ui.json');
+      const res = await app.request('/stable/apps/myapp/ui');
       expect(res.status).toBe(404);
 
       const json = await res.json();

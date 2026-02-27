@@ -7,8 +7,8 @@ import type { RuntimeAppEnv } from '../../middleware/app-entry-resolver';
 export function createUiRoutes() {
   const app = new Hono<RuntimeAppEnv>();
 
-  // GET /ui.json - UI Schema
-  app.get('/ui.json', (c) => {
+  // GET /ui - UI definition (pages.json)
+  app.get('/ui', (c) => {
     const entry = c.get('appEntry');
     const uiJsonPath = join(entry.uiDir, 'pages.json');
 
