@@ -3,6 +3,21 @@ import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
+import {
+  CzSwitch,
+  CzCheckbox,
+  CzRadioGroup,
+  CzRadioGroupItem,
+  CzSelect,
+  CzSelectTrigger,
+  CzSelectContent,
+  CzSelectItem,
+  CzSelectValue,
+  CzPopover,
+  CzPopoverTrigger,
+  CzPopoverContent,
+  CzCalendar,
+} from '../primitives';
 import type {
   FormComponent,
   FieldSchema,
@@ -29,6 +44,7 @@ function useActionContext() {
     triggerReload: ctx.triggerReload,
     openDialog: ctx.openDialog,
     closeDialog: ctx.closeDialog,
+    requestConfirm: ctx.requestConfirm,
   };
 }
 
@@ -300,38 +316,29 @@ function renderFieldInput(
 
     case 'select':
       return (
-        <select
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-          className={clsx(baseInputClass, 'bg-bg')}
+        <CzSelect
+          value={String(value ?? '') || undefined}
+          onValueChange={(v) => onChange(v)}
         >
-          <option value="">{placeholder || '-- Select --'}</option>
-          {(field.options ?? []).map((opt: OptionItem) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          <CzSelectTrigger>
+            <CzSelectValue placeholder={placeholder || '-- Select --'} />
+          </CzSelectTrigger>
+          <CzSelectContent>
+            {(field.options ?? []).map((opt: OptionItem) => (
+              <CzSelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </CzSelectItem>
+            ))}
+          </CzSelectContent>
+        </CzSelect>
       );
 
     case 'switch':
       return (
-        <label className="inline-flex items-center cursor-pointer">
-          <div
-            onClick={() => onChange(!value)}
-            className={clsx(
-              'w-10 h-[22px] rounded-full relative transition-colors duration-200 cursor-pointer',
-              value ? 'bg-primary' : 'bg-border-strong',
-            )}
-          >
-            <div
-              className={clsx(
-                'w-[18px] h-[18px] rounded-full bg-bg absolute top-0.5 transition-[left] duration-200',
-                value ? 'left-5' : 'left-0.5',
-              )}
-            />
-          </div>
-        </label>
+        <CzSwitch
+          checked={!!value}
+          onCheckedChange={(checked) => onChange(checked)}
+        />
       );
 
     case 'checkbox': {
@@ -341,11 +348,10 @@ function renderFieldInput(
           <div className="flex flex-col gap-1">
             {field.options.map((opt: OptionItem) => (
               <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
+                <CzCheckbox
                   checked={checked.includes(opt.value)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
+                  onCheckedChange={(c) => {
+                    if (c) {
                       onChange([...checked, opt.value]);
                     } else {
                       onChange(checked.filter((v) => v !== opt.value));
@@ -360,10 +366,9 @@ function renderFieldInput(
       }
       return (
         <label className="flex items-center gap-1.5 cursor-pointer text-sm">
-          <input
-            type="checkbox"
+          <CzCheckbox
             checked={!!value}
-            onChange={(e) => onChange(e.target.checked)}
+            onCheckedChange={(c) => onChange(!!c)}
           />
         </label>
       );
@@ -371,29 +376,24 @@ function renderFieldInput(
 
     case 'radio':
       return (
-        <div className="flex flex-col gap-1">
+        <CzRadioGroup
+          value={String(value ?? '')}
+          onValueChange={(v) => onChange(v)}
+        >
           {(field.options ?? []).map((opt: OptionItem) => (
             <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
-              <input
-                type="radio"
-                name={field.name}
-                value={opt.value}
-                checked={value === opt.value}
-                onChange={() => onChange(opt.value)}
-              />
+              <CzRadioGroupItem value={opt.value} />
               {opt.label}
             </label>
           ))}
-        </div>
+        </CzRadioGroup>
       );
 
     case 'date-picker':
       return (
-        <input
-          type="date"
+        <DatePickerField
           value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-          className={baseInputClass}
+          onChange={(v) => onChange(v)}
         />
       );
 
@@ -535,19 +535,7 @@ function SelectRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   useRegisterValue(s.id, value);
 
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    let newVal: string | string[];
-    if (s.multiple) {
-      const opts = e.target.options;
-      const selected: string[] = [];
-      for (let i = 0; i < opts.length; i++) {
-        if (opts[i].selected) selected.push(opts[i].value);
-      }
-      newVal = selected;
-    } else {
-      newVal = e.target.value;
-    }
-    setValue(newVal);
+  const dispatchSelectChange = (newVal: string | string[]) => {
     if (s.onChange) {
       dispatchAction(s.onChange, {
         ...actionCtx,
@@ -559,23 +547,54 @@ function SelectRenderer({ schema, exprContext }: SchemaComponentProps) {
     }
   };
 
+  // Multi-select: keep native <select multiple>
+  if (s.multiple) {
+    const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const opts = e.target.options;
+      const selected: string[] = [];
+      for (let i = 0; i < opts.length; i++) {
+        if (opts[i].selected) selected.push(opts[i].value);
+      }
+      setValue(selected);
+      dispatchSelectChange(selected);
+    };
+
+    return (
+      <select
+        value={value as string[]}
+        multiple
+        onChange={handleChange}
+        className={clsx(baseInputClass, 'bg-bg', s.className)}
+        style={s.style}
+      >
+        {s.options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  // Single-select: use CzSelect
+  const handleValueChange = (newVal: string) => {
+    setValue(newVal);
+    dispatchSelectChange(newVal);
+  };
+
   return (
-    <select
-      value={value as string}
-      multiple={s.multiple}
-      onChange={handleChange}
-      className={clsx(baseInputClass, 'bg-bg', s.className)}
-      style={s.style}
-    >
-      {!s.multiple && (
-        <option value="">{s.placeholder || '-- Select --'}</option>
-      )}
-      {s.options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    <CzSelect value={(value as string) || undefined} onValueChange={handleValueChange}>
+      <CzSelectTrigger className={s.className} style={s.style}>
+        <CzSelectValue placeholder={s.placeholder || '-- Select --'} />
+      </CzSelectTrigger>
+      <CzSelectContent>
+        {s.options.map((opt) => (
+          <CzSelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </CzSelectItem>
+        ))}
+      </CzSelectContent>
+    </CzSelect>
   );
 }
 
@@ -590,40 +609,26 @@ function SwitchRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   useRegisterValue(s.id, value);
 
-  const toggle = () => {
-    const newVal = !value;
-    setValue(newVal);
+  const handleCheckedChange = (checked: boolean) => {
+    setValue(checked);
     if (s.onChange) {
       dispatchAction(s.onChange, {
         ...actionCtx,
         expressionContext: {
           ...exprContext,
-          form: { value: newVal },
+          form: { value: checked },
         },
       });
     }
   };
 
   return (
-    <div
-      onClick={toggle}
-      className={clsx('inline-flex items-center cursor-pointer', s.className)}
+    <CzSwitch
+      checked={value}
+      onCheckedChange={handleCheckedChange}
+      className={s.className}
       style={s.style}
-    >
-      <div
-        className={clsx(
-          'w-10 h-[22px] rounded-full relative transition-colors duration-200',
-          value ? 'bg-primary' : 'bg-border-strong',
-        )}
-      >
-        <div
-          className={clsx(
-            'w-[18px] h-[18px] rounded-full bg-bg absolute top-0.5 transition-[left] duration-200',
-            value ? 'left-5' : 'left-0.5',
-          )}
-        />
-      </div>
-    </div>
+    />
   );
 }
 
@@ -663,11 +668,10 @@ function CheckboxRenderer({ schema, exprContext }: SchemaComponentProps) {
       <div className={clsx('flex flex-col gap-1', s.className)} style={s.style}>
         {s.options!.map((opt) => (
           <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
-            <input
-              type="checkbox"
+            <CzCheckbox
               checked={checked.includes(opt.value)}
-              onChange={(e) => {
-                const newVal = e.target.checked
+              onCheckedChange={(c) => {
+                const newVal = c
                   ? [...checked, opt.value]
                   : checked.filter((v) => v !== opt.value);
                 setValue(newVal);
@@ -683,11 +687,10 @@ function CheckboxRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   return (
     <label className={clsx('flex items-center gap-1.5 cursor-pointer text-sm', s.className)} style={s.style}>
-      <input
-        type="checkbox"
+      <CzCheckbox
         checked={value as boolean}
-        onChange={(e) => {
-          const newVal = e.target.checked;
+        onCheckedChange={(c) => {
+          const newVal = !!c;
           setValue(newVal);
           dispatchChange(newVal);
         }}
@@ -722,26 +725,67 @@ function RadioRenderer({ schema, exprContext }: SchemaComponentProps) {
   };
 
   return (
-    <div className={clsx('flex flex-col gap-1', s.className)} style={s.style}>
+    <CzRadioGroup
+      value={value}
+      onValueChange={handleChange}
+      className={s.className}
+      style={s.style}
+    >
       {s.options.map((opt) => (
         <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
-          <input
-            type="radio"
-            name={s.id ?? `radio-${s.options.map((o) => o.value).join('-')}`}
-            value={opt.value}
-            checked={value === opt.value}
-            onChange={() => handleChange(opt.value)}
-          />
+          <CzRadioGroupItem value={opt.value} />
           {opt.label}
         </label>
       ))}
-    </div>
+    </CzRadioGroup>
   );
 }
 
 // ============================================================
 // date-picker (standalone)
 // ============================================================
+
+function DatePickerField({
+  value,
+  onChange,
+  className,
+  style,
+}: {
+  value: string;
+  onChange: (date: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <CzPopover open={open} onOpenChange={setOpen}>
+      <CzPopoverTrigger asChild>
+        <button
+          type="button"
+          className={clsx(
+            baseInputClass,
+            'text-left bg-bg',
+            !value && 'text-text-placeholder',
+            className,
+          )}
+          style={style}
+        >
+          {value || 'Select date...'}
+        </button>
+      </CzPopoverTrigger>
+      <CzPopoverContent modal>
+        <CzCalendar
+          value={value}
+          onSelect={(date) => {
+            onChange(date);
+            setOpen(false);
+          }}
+        />
+      </CzPopoverContent>
+    </CzPopover>
+  );
+}
 
 function DatePickerRenderer({ schema, exprContext }: SchemaComponentProps) {
   const s = schema as DatePickerComponent;
@@ -750,8 +794,7 @@ function DatePickerRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   useRegisterValue(s.id, value);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVal = e.target.value;
+  const handleSelect = (newVal: string) => {
     setValue(newVal);
     if (s.onChange) {
       dispatchAction(s.onChange, {
@@ -765,11 +808,10 @@ function DatePickerRenderer({ schema, exprContext }: SchemaComponentProps) {
   };
 
   return (
-    <input
-      type="date"
+    <DatePickerField
       value={value}
-      onChange={handleChange}
-      className={clsx(baseInputClass, s.className)}
+      onChange={handleSelect}
+      className={s.className}
       style={s.style}
     />
   );

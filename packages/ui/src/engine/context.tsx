@@ -23,6 +23,11 @@ interface DialogEntry {
   width?: number | string;
 }
 
+interface ConfirmEntry {
+  message: string;
+  resolve: (result: boolean) => void;
+}
+
 interface PageContextValue {
   baseUrl: string;
   customComponents?: Record<string, CustomComponentSchema>;
@@ -41,6 +46,11 @@ interface PageContextValue {
   closeDialog: () => void;
   subscribeDialogs: (callback: () => void) => () => void;
   getDialogsSnapshot: () => DialogEntry[];
+  // Confirm
+  requestConfirm: (message: string) => Promise<boolean>;
+  resolveConfirm: (result: boolean) => void;
+  subscribeConfirm: (callback: () => void) => () => void;
+  getConfirmSnapshot: () => ConfirmEntry | null;
 }
 
 // ---- Context ----
@@ -86,6 +96,13 @@ export function useDialogs(): DialogEntry[] {
   return useSyncExternalStore(ctx.subscribeDialogs, ctx.getDialogsSnapshot);
 }
 
+// ---- Hook for confirm dialog ----
+
+export function useConfirm(): ConfirmEntry | null {
+  const ctx = usePageContext();
+  return useSyncExternalStore(ctx.subscribeConfirm, ctx.getConfirmSnapshot);
+}
+
 // ---- Provider ----
 
 export function PageProvider({
@@ -108,6 +125,10 @@ export function PageProvider({
   const dialogsListeners = useRef(new Set<() => void>());
   const dialogsSnapshotRef = useRef<DialogEntry[]>([]);
 
+  const confirmRef = useRef<ConfirmEntry | null>(null);
+  const confirmListeners = useRef(new Set<() => void>());
+  const confirmSnapshotRef = useRef<ConfirmEntry | null>(null);
+
   const notifyComponents = useCallback(() => {
     componentsSnapshotRef.current = { ...componentsRef.current };
     componentsListeners.current.forEach((l) => l());
@@ -116,6 +137,11 @@ export function PageProvider({
   const notifyDialogs = useCallback(() => {
     dialogsSnapshotRef.current = [...dialogsRef.current];
     dialogsListeners.current.forEach((l) => l());
+  }, []);
+
+  const notifyConfirm = useCallback(() => {
+    confirmSnapshotRef.current = confirmRef.current;
+    confirmListeners.current.forEach((l) => l());
   }, []);
 
   const value: PageContextValue = {
@@ -174,6 +200,26 @@ export function PageProvider({
       return () => dialogsListeners.current.delete(cb);
     },
     getDialogsSnapshot: () => dialogsSnapshotRef.current,
+
+    requestConfirm: (message: string) => {
+      return new Promise<boolean>((resolve) => {
+        confirmRef.current = { message, resolve };
+        notifyConfirm();
+      });
+    },
+    resolveConfirm: (result: boolean) => {
+      const entry = confirmRef.current;
+      if (entry) {
+        entry.resolve(result);
+        confirmRef.current = null;
+        notifyConfirm();
+      }
+    },
+    subscribeConfirm: (cb) => {
+      confirmListeners.current.add(cb);
+      return () => confirmListeners.current.delete(cb);
+    },
+    getConfirmSnapshot: () => confirmSnapshotRef.current,
   };
 
   return <PageCtx.Provider value={value}>{children}</PageCtx.Provider>;

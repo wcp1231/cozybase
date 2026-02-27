@@ -17,6 +17,7 @@ interface ActionContext {
   }) => void;
   closeDialog: () => void;
   navigate?: (url: string) => void;
+  requestConfirm?: (message: string) => Promise<boolean>;
 }
 
 let dialogCounter = 0;
@@ -139,7 +140,11 @@ async function handleConfirmAction(
     resolveExpression(action.message, ctx.expressionContext) ?? action.message,
   );
 
-  if (window.confirm(message)) {
+  const confirmed = ctx.requestConfirm
+    ? await ctx.requestConfirm(message)
+    : window.confirm(message);
+
+  if (confirmed) {
     await dispatchAction(action.onConfirm, ctx);
   } else if (action.onCancel) {
     await dispatchAction(action.onCancel, ctx);

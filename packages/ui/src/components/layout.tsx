@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
+import { CzTabs, CzTabsList, CzTabsTrigger, CzTabsContent } from '../primitives';
 import type {
   PageComponent,
   RowComponent,
@@ -145,40 +146,25 @@ function TabsComp({ schema, renderChild }: SchemaComponentProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, s.id]);
 
-  const activeItem = items.find((item) => item.value === activeTab);
-
   return (
-    <div className={s.className} style={s.style}>
-      {/* Tab bar */}
-      <div className="flex border-b border-border">
-        {items.map((item) => {
-          const isActive = item.value === activeTab;
-          return (
-            <button
-              key={item.value}
-              onClick={() => setActiveTab(item.value)}
-              className={clsx(
-                'px-4 py-2 cursor-pointer border-0 border-b-2 bg-transparent text-sm transition-colors',
-                isActive
-                  ? 'border-primary text-primary font-semibold'
-                  : 'border-transparent text-text-muted font-normal',
-              )}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Tab body (only rendered when items have body content) */}
-      {activeItem?.body && (
-        <div className="pt-4">
-          {activeItem.body.map((child: ComponentSchema, i: number) =>
-            renderChild(child, (child as { id?: string }).id ?? i),
-          )}
-        </div>
+    <CzTabs value={activeTab} onValueChange={setActiveTab} className={s.className} style={s.style}>
+      <CzTabsList>
+        {items.map((item) => (
+          <CzTabsTrigger key={item.value} value={item.value}>
+            {item.label}
+          </CzTabsTrigger>
+        ))}
+      </CzTabsList>
+      {items.map((item) =>
+        item.body ? (
+          <CzTabsContent key={item.value} value={item.value}>
+            {item.body.map((child: ComponentSchema, i: number) =>
+              renderChild(child, (child as { id?: string }).id ?? i),
+            )}
+          </CzTabsContent>
+        ) : null,
       )}
-    </div>
+    </CzTabs>
   );
 }
 

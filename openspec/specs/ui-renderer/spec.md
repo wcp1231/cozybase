@@ -8,12 +8,19 @@ Define the SchemaRenderer runtime contract, including component rendering, expre
 
 SchemaRenderer 的渲染职责不变。样式实现 SHALL 从 inline style 切换为 Tailwind utility class。
 
-SchemaRenderer 内部的 DialogLayer 遮罩、未知组件错误占位符、ErrorBoundary 等 SHALL 使用 Tailwind class 定义样式。
+SchemaRenderer 内部的 DialogLayer SHALL 使用 `CzDialog` Primitive 渲染弹窗，替代当前的手写 `<div>` 固定定位实现。未知组件错误占位符、ErrorBoundary 等 SHALL 继续使用 Tailwind class 定义样式。
 
-#### Scenario: DialogLayer 使用 Tailwind class
+DialogLayer SHALL 以受控模式使用 `CzDialog`：对 dialog stack 中的每个 entry，渲染 `<CzDialog open={true} onOpenChange={...}>`，其中 `onOpenChange(false)` 调用 `PageContext.closeDialog()`。
 
-- **WHEN** SchemaRenderer 渲染 DialogLayer 遮罩
-- **THEN** 遮罩元素 SHALL 使用 Tailwind class（如 `fixed inset-0`）渲染，不使用 inline style 定义位置和颜色
+#### Scenario: DialogLayer 使用 CzDialog Primitive
+
+- **WHEN** SchemaRenderer 渲染 DialogLayer 中的弹窗
+- **THEN** 每个弹窗 SHALL 使用 `CzDialogContent` 渲染，自动具有 focus trap、Escape 关闭、Portal 渲染和 `aria-modal="true"`
+
+#### Scenario: DialogLayer 多层弹窗
+
+- **WHEN** dialog stack 中有两个弹窗 [A, B]
+- **THEN** 两个弹窗 SHALL 各自使用独立的 `CzDialog` 渲染，B 在 A 之上显示，每个维护独立的 focus trap
 
 #### Scenario: 未知组件错误使用 Tailwind class
 
@@ -131,7 +138,7 @@ ActionDispatcher SHALL 依次处理以下 action 类型：
 
 **close**: 关闭当前弹窗上下文。
 
-**confirm**: 弹出浏览器或自定义确认对话框，用户确认后执行 `onConfirm`，取消后执行 `onCancel`（如有）。
+**confirm**: SHALL 使用 `CzAlertDialog` Primitive 渲染确认弹窗，替代当前的 `window.confirm()` 或手写弹窗。确认弹窗 SHALL 具有 `role="alertdialog"`，点击 Overlay 不关闭，用户 MUST 明确选择"确认"或"取消"。用户确认后执行 `onConfirm`，取消后执行 `onCancel`（如有）。
 
 当 action 为数组时，SHALL 按顺序依次执行。前一个 action 失败时 SHALL 中断后续执行（api action 的失败走 onError 路径，不中断数组执行）。
 
@@ -160,14 +167,19 @@ ActionDispatcher SHALL 依次处理以下 action 类型：
 - **WHEN** 执行 `{ "type": "dialog", "title": "编辑", "body": { "type": "form", ... } }`
 - **THEN** ActionDispatcher SHALL 打开一个弹窗，标题为"编辑"，内容为 body 中的 form 组件
 
+#### Scenario: confirm action 使用 CzAlertDialog
+
+- **WHEN** 执行 confirm action
+- **THEN** ActionDispatcher SHALL 使用 `CzAlertDialog` 渲染确认弹窗，弹窗具有 `role="alertdialog"`，点击 Overlay 不关闭
+
 #### Scenario: confirm action 用户确认
 
-- **WHEN** 执行 confirm action，用户点击"确认"
+- **WHEN** 执行 confirm action，用户点击"确认"按钮
 - **THEN** ActionDispatcher SHALL 执行 `onConfirm` 中的 action
 
 #### Scenario: confirm action 用户取消
 
-- **WHEN** 执行 confirm action，用户点击"取消"
+- **WHEN** 执行 confirm action，用户点击"取消"按钮
 - **THEN** ActionDispatcher SHALL 不执行 `onConfirm`，执行 `onCancel`（如有定义）
 
 #### Scenario: action 数组顺序执行

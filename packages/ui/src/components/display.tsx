@@ -277,6 +277,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
         triggerReload: ctx.triggerReload,
         openDialog: ctx.openDialog,
         closeDialog: ctx.closeDialog,
+        requestConfirm: ctx.requestConfirm,
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -351,7 +352,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
                       <button
                         key={actionIndex}
                         className="px-2 py-1 text-[13px] text-primary bg-transparent border-0 cursor-pointer underline"
-                        onClick={() => {
+                        onClick={async () => {
                           if (rowAction.confirm) {
                             const message = String(
                               resolveExpression(rowAction.confirm, {
@@ -359,7 +360,8 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
                                 row,
                               }) ?? rowAction.confirm,
                             );
-                            if (window.confirm(message)) {
+                            const confirmed = await ctx.requestConfirm(message);
+                            if (confirmed) {
                               handleRowAction(rowAction.action, row);
                             }
                           } else {

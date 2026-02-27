@@ -10,12 +10,25 @@ import {
   usePageContext,
   useComponentStates,
   useDialogs,
+  useConfirm,
 } from './engine/context';
 import { resolveExpression } from './engine/expression';
 import {
   builtinRegistry,
   type SchemaComponentProps,
 } from './engine/registry';
+import {
+  CzDialog,
+  CzDialogContent,
+  CzDialogTitle,
+  CzDialogClose,
+  CzAlertDialog,
+  CzAlertDialogContent,
+  CzAlertDialogTitle,
+  CzAlertDialogDescription,
+  CzAlertDialogAction,
+  CzAlertDialogCancel,
+} from './primitives';
 
 // ---- Public API ----
 
@@ -34,6 +47,7 @@ export function SchemaRenderer({
     <PageProvider baseUrl={baseUrl} customComponents={components}>
       <PageBody body={schema.body} customComponents={components} />
       <DialogLayer customComponents={components} />
+      <ConfirmLayer />
     </PageProvider>
   );
 }
@@ -72,35 +86,64 @@ function DialogLayer({
 
   return (
     <>
-      {dialogs.map((dialog) => (
-        <div
+      {dialogs.map((dialog, index) => (
+        <CzDialog
           key={dialog.id}
-          className="fixed inset-0 bg-overlay flex items-center justify-center z-[1000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) ctx.closeDialog();
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) ctx.closeDialog();
           }}
         >
-          <div
-            className="bg-bg rounded-md p-6 max-h-[80vh] overflow-auto"
+          <CzDialogContent
+            className="max-w-none"
             style={{ width: dialog.width ?? 480 }}
+            level={index}
+            aria-describedby={undefined}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="m-0">{dialog.title}</h3>
-              <button
-                onClick={() => ctx.closeDialog()}
-                className="border-0 bg-transparent text-lg cursor-pointer"
-              >
-                ✕
-              </button>
+              <CzDialogTitle className="m-0">{dialog.title}</CzDialogTitle>
+              <CzDialogClose className="border-0 bg-transparent text-lg cursor-pointer text-text-muted p-1">
+                &#x2715;
+              </CzDialogClose>
             </div>
             <NodeRenderer
               schema={dialog.body}
               customComponents={customComponents}
             />
-          </div>
-        </div>
+          </CzDialogContent>
+        </CzDialog>
       ))}
     </>
+  );
+}
+
+function ConfirmLayer() {
+  const confirm = useConfirm();
+  const dialogs = useDialogs();
+  const ctx = usePageContext();
+
+  if (!confirm) return null;
+
+  return (
+    <CzAlertDialog
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) ctx.resolveConfirm(false);
+      }}
+    >
+      <CzAlertDialogContent level={dialogs.length}>
+        <CzAlertDialogTitle>Confirm</CzAlertDialogTitle>
+        <CzAlertDialogDescription>{confirm.message}</CzAlertDialogDescription>
+        <div className="flex justify-end gap-2 mt-4">
+          <CzAlertDialogCancel onClick={() => ctx.resolveConfirm(false)}>
+            Cancel
+          </CzAlertDialogCancel>
+          <CzAlertDialogAction onClick={() => ctx.resolveConfirm(true)}>
+            Confirm
+          </CzAlertDialogAction>
+        </div>
+      </CzAlertDialogContent>
+    </CzAlertDialog>
   );
 }
 

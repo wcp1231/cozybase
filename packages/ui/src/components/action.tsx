@@ -23,6 +23,7 @@ function useActionContext() {
     triggerReload: ctx.triggerReload,
     openDialog: ctx.openDialog,
     closeDialog: ctx.closeDialog,
+    requestConfirm: ctx.requestConfirm,
   };
 }
 

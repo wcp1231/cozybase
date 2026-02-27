@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Ensure consumers scan this package's built JS for Tailwind class candidates.
+   Resolves to dist/ when consumed via dist/styles/base.css,
+   or to src/ when consumed directly from source. */
+@source "..";
+
 @theme {
   /* Core colors */
   --color-primary: var(--cz-primary, #2563EB);
