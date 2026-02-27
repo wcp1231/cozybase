@@ -5,7 +5,7 @@
  * and the cozybase backend (via AppSnapshot / FileEntry).
  */
 
-import { join, dirname, resolve, relative } from 'path';
+import { join, dirname, resolve } from 'path';
 import {
   existsSync,
   mkdirSync,

@@ -7,7 +7,6 @@
  */
 
 import { readFileSync } from 'fs';
-import { join } from 'path';
 
 import type { CozybaseBackend } from './types';
 import {

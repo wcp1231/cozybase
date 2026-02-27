@@ -76,6 +76,7 @@
         "tailwindcss": "^4.2.1",
       },
       "devDependencies": {
+        "@types/bun": "latest",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "typescript": "^5.7.0",

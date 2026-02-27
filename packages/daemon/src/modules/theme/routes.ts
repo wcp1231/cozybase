@@ -32,7 +32,7 @@ export function createThemeRoutes(workspace: Workspace, registry: AppRegistry) {
   });
 
   // GET /theme/css - return generated CSS
-  app.get('/theme/css', (c) => {
+  app.get('/theme/css', () => {
     const css = generateThemeCSS(workspace.getThemeConfig());
     return new Response(css, {
       headers: { 'Content-Type': 'text/css; charset=utf-8' },

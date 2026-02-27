@@ -30,7 +30,7 @@ function useApiData(
   expressionContext: ExpressionContext,
   extraParams?: Record<string, string | number>,
 ) {
-  const [data, setData] = useState<unknown[]>([]);
+  const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,16 +76,15 @@ function useApiData(
       }
 
       const response = await fetch(url, {
-        method: api.method || 'GET',
+        method: api.method ?? 'GET',
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      const json = await response.json();
-      // Support both array response and { data: [...] } / { items: [...] } response
-      const items = Array.isArray(json)
-        ? json
-        : (json.data ?? json.items ?? []);
+      const json = (await response.json()) as { data?: unknown };
+      const items = Array.isArray(json.data)
+        ? (json.data as Record<string, unknown>[])
+        : [];
       setData(items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -296,7 +295,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
     );
   }
 
-  const rows = Array.isArray(data) ? data : [];
+  const rows = data;
   const hasRowActions = s.rowActions && s.rowActions.length > 0;
   const totalColumns = s.columns.length + (hasRowActions ? 1 : 0);
   const isNextDisabled = rows.length < pageSize;
@@ -324,7 +323,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
           </tr>
         </thead>
         <tbody>
-          {rows.map((row: Record<string, unknown>, rowIndex: number) => (
+          {rows.map((row, rowIndex: number) => (
             <tr
               key={(row.id as string | number) ?? rowIndex}
               className="border-b border-border"
@@ -480,11 +479,11 @@ function ListComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps) 
     );
   }
 
-  const items = Array.isArray(data) ? data : [];
+  const items = data;
 
   return (
     <div className={s.className} style={s.style}>
-      {items.map((item: Record<string, unknown>, index: number) => (
+      {items.map((item, index: number) => (
         <NodeRenderer
           key={(item.id as string | number) ?? index}
           schema={s.itemRender}

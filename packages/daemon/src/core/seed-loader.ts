@@ -102,7 +102,7 @@ export class SeedLoader {
       const placeholders = columns.map(() => '?').join(', ');
       const values = columns.map((col) => row[col]);
       const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
-      db.query(sql).run(...values);
+      db.query(sql).run(...(values as any[]));
     }
   }
 }

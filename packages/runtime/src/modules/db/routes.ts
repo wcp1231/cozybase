@@ -141,7 +141,7 @@ export function createDbRoutes() {
     }
 
     try {
-      const query = buildQuery(table, params);
+      const query = buildQuery(params);
       const sql = `SELECT ${query.selectClause} FROM "${table}" ${query.whereClause} ${query.orderClause} ${query.limitClause}`;
       const rows = entry.db!.query(sql).all(...query.values);
 

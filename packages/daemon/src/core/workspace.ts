@@ -134,7 +134,7 @@ export class Workspace {
   }
 
   /** Update theme configuration in workspace.yaml (merge semantics) */
-  updateThemeConfig(partial: z.input<typeof ThemeConfigSchema>): void {
+  updateThemeConfig(partial: z.input<typeof ThemeConfigSchema> = {}): void {
     const configPath = join(this.root, 'workspace.yaml');
     const content = readFileSync(configPath, 'utf-8');
     const raw = parseYAML(content) ?? {};

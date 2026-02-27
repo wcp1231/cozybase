@@ -4,6 +4,10 @@ import type { ActionSchema } from '../../schema/types';
 
 // ---- Helpers ----
 
+type FetchMock = ReturnType<
+  typeof mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
+>;
+
 function makeCtx(overrides: Record<string, unknown> = {}) {
   return {
     baseUrl: 'http://localhost:3000',
@@ -17,15 +21,20 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
 }
 
 function mockFetchOk(data: unknown = {}) {
-  return mock(() =>
+  return mock((_input: RequestInfo | URL, _init?: RequestInit) =>
     Promise.resolve(new Response(JSON.stringify(data), { status: 200 })),
-  ) as typeof globalThis.fetch;
+  );
 }
 
 function mockFetchError(status: number, data: unknown = {}) {
-  return mock(() =>
+  return mock((_input: RequestInfo | URL, _init?: RequestInit) =>
     Promise.resolve(new Response(JSON.stringify(data), { status })),
-  ) as typeof globalThis.fetch;
+  );
+}
+
+function installFetchMock(fetchMock: FetchMock): FetchMock {
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
 }
 
 // ---- Setup / Teardown ----
@@ -60,8 +69,7 @@ describe('dispatchAction', () => {
 
   describe('api action', () => {
     test('auto-prefixes relative URL with baseUrl', async () => {
-      const fetchMock = mockFetchOk();
-      globalThis.fetch = fetchMock;
+      const fetchMock = installFetchMock(mockFetchOk());
 
       const ctx = makeCtx();
       await dispatchAction(
@@ -75,8 +83,7 @@ describe('dispatchAction', () => {
     });
 
     test('does not prefix absolute URL', async () => {
-      const fetchMock = mockFetchOk();
-      globalThis.fetch = fetchMock;
+      const fetchMock = installFetchMock(mockFetchOk());
 
       const ctx = makeCtx();
       await dispatchAction(
@@ -93,8 +100,7 @@ describe('dispatchAction', () => {
     });
 
     test('sends JSON body when body is provided', async () => {
-      const fetchMock = mockFetchOk();
-      globalThis.fetch = fetchMock;
+      const fetchMock = installFetchMock(mockFetchOk());
 
       const ctx = makeCtx();
       await dispatchAction(
@@ -117,7 +123,7 @@ describe('dispatchAction', () => {
 
     test('calls onSuccess chain after successful fetch', async () => {
       const responseData = { id: 1 };
-      globalThis.fetch = mockFetchOk(responseData);
+      installFetchMock(mockFetchOk(responseData));
 
       const triggerReload = mock(() => {});
       const ctx = makeCtx({ triggerReload });
@@ -136,7 +142,7 @@ describe('dispatchAction', () => {
     });
 
     test('calls onError chain after failed fetch', async () => {
-      globalThis.fetch = mockFetchError(500, { error: 'Server Error' });
+      installFetchMock(mockFetchError(500, { error: 'Server Error' }));
 
       const closeDialog = mock(() => {});
       const ctx = makeCtx({ closeDialog });
@@ -155,8 +161,7 @@ describe('dispatchAction', () => {
     });
 
     test('resolves expressions in URL', async () => {
-      const fetchMock = mockFetchOk();
-      globalThis.fetch = fetchMock;
+      const fetchMock = installFetchMock(mockFetchOk());
 
       const ctx = makeCtx({
         expressionContext: { row: { id: 42 } },
@@ -176,8 +181,7 @@ describe('dispatchAction', () => {
     });
 
     test('resolves expressions in body', async () => {
-      const fetchMock = mockFetchOk();
-      globalThis.fetch = fetchMock;
+      const fetchMock = installFetchMock(mockFetchOk());
 
       const ctx = makeCtx({
         expressionContext: { row: { id: 10, title: 'Updated' } },
@@ -233,7 +237,7 @@ describe('dispatchAction', () => {
 
   describe('dialog action', () => {
     test('calls openDialog with correct parameters', async () => {
-      const openDialog = mock(() => {});
+      const openDialog = mock((entry: unknown) => entry);
       const ctx = makeCtx({ openDialog });
 
       const body = { type: 'text', text: 'Hello' } as any;
@@ -256,7 +260,7 @@ describe('dispatchAction', () => {
     });
 
     test('resolves expressions in dialog title', async () => {
-      const openDialog = mock(() => {});
+      const openDialog = mock((entry: unknown) => entry);
       const ctx = makeCtx({
         openDialog,
         expressionContext: { row: { name: 'Item A' } },
@@ -363,7 +367,7 @@ describe('dispatchAction', () => {
 
   describe('action array', () => {
     test('executes multiple actions in sequence', async () => {
-      globalThis.fetch = mockFetchOk();
+      installFetchMock(mockFetchOk());
 
       const triggerReload = mock(() => {});
       const closeDialog = mock(() => {});

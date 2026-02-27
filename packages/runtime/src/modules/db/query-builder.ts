@@ -28,7 +28,7 @@ export interface BuiltQuery {
   values: any[];
 }
 
-export function buildQuery(table: string, params: QueryParams): BuiltQuery {
+export function buildQuery(params: QueryParams): BuiltQuery {
   const values: any[] = [];
 
   // SELECT

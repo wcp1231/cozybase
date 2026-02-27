@@ -9,10 +9,6 @@ export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type Ap
 export { type DaemonClient, createInProcessDaemonClient, createHttpDaemonClient } from './daemon-client';
 export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
 
-export interface RuntimeOptions {
-  // Reserved for future options (e.g., daemon client for auth delegation)
-}
-
 /**
  * Create a Runtime Hono app instance with all APP routes.
  *
@@ -22,7 +18,7 @@ export interface RuntimeOptions {
  *
  * NOTE: Internal management is done via registry directly — no /internal routes are exposed on the app.
  */
-export function createRuntime(options?: RuntimeOptions) {
+export function createRuntime() {
   const app = new Hono();
   const registry = new AppRegistry();
 

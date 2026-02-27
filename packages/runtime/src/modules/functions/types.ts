@@ -1,5 +1,3 @@
-import type { Database } from 'bun:sqlite';
-
 // --- DatabaseClient ---
 
 export interface DatabaseClient {

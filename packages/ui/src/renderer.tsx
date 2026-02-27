@@ -13,10 +13,7 @@ import {
   useConfirm,
 } from './engine/context';
 import { resolveExpression } from './engine/expression';
-import {
-  builtinRegistry,
-  type SchemaComponentProps,
-} from './engine/registry';
+import { builtinRegistry } from './engine/registry';
 import {
   CzDialog,
   CzDialogContent,

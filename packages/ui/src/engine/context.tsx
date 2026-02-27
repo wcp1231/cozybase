@@ -35,7 +35,6 @@ interface PageContextValue {
   registerComponent: (id: string, state: ComponentState) => void;
   unregisterComponent: (id: string) => void;
   updateComponent: (id: string, state: Partial<ComponentState>) => void;
-  getComponentState: (id: string) => ComponentState | undefined;
   subscribeComponents: (callback: () => void) => () => void;
   getComponentsSnapshot: () => Record<string, ComponentState>;
   // Reload
@@ -71,22 +70,6 @@ export function useComponentStates(): Record<string, ComponentState> {
     ctx.subscribeComponents,
     ctx.getComponentsSnapshot,
   );
-}
-
-// ---- Hook for listening to reload signals ----
-
-export function useReloadSignal(id: string, callback: () => void): void {
-  const ctx = usePageContext();
-  const callbackRef = useRef(callback);
-  callbackRef.current = callback;
-
-  // Subscribe on mount, unsub on unmount
-  const stableCb = useCallback(() => callbackRef.current(), []);
-  // We use useRef + manual subscribe to avoid re-subscribing on every render
-  const unsubRef = useRef<(() => void) | null>(null);
-  if (unsubRef.current === null) {
-    unsubRef.current = ctx.subscribeReload(id, stableCb);
-  }
 }
 
 // ---- Hook for dialog stack ----
@@ -163,7 +146,6 @@ export function PageProvider({
         notifyComponents();
       }
     },
-    getComponentState: (id) => componentsRef.current[id],
     subscribeComponents: (cb) => {
       componentsListeners.current.add(cb);
       return () => componentsListeners.current.delete(cb);

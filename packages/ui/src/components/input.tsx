@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
@@ -30,7 +30,6 @@ import type {
   RadioComponent,
   DatePickerComponent,
   OptionItem,
-  ExpressionContext,
 } from '../schema/types';
 
 // ============================================================
@@ -66,22 +65,6 @@ function useRegisterValue(id: string | undefined, value: unknown) {
 const labelClass = 'block mb-1 text-sm font-medium text-text-secondary';
 const baseInputClass = 'block w-full px-2.5 py-1.5 text-sm border border-border-strong rounded-sm outline-none box-border';
 const errorClass = 'text-danger text-xs mt-0.5';
-
-// ============================================================
-// FormContext - allows child components to connect to a form
-// ============================================================
-
-interface FormContextValue {
-  values: Record<string, unknown>;
-  setValue: (name: string, value: unknown) => void;
-  errors: Record<string, string>;
-}
-
-const FormContext = createContext<FormContextValue | null>(null);
-
-function useFormContext() {
-  return useContext(FormContext);
-}
 
 // ============================================================
 // form
@@ -196,44 +179,42 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
   const isHorizontal = s.layout === 'horizontal';
 
   return (
-    <FormContext.Provider value={{ values, setValue, errors }}>
-      <form
-        onSubmit={handleSubmit}
-        className={clsx(
-          'flex',
-          isInline
-            ? 'flex-row gap-4 flex-wrap items-end'
-            : 'flex-col gap-3',
-          s.className,
-        )}
-        style={s.style}
-      >
-        {s.fields.map((field) => (
-          <FormField
-            key={field.name}
-            field={field}
-            value={values[field.name]}
-            onChange={(v) => setValue(field.name, v)}
-            error={errors[field.name]}
-            horizontal={isHorizontal}
-          />
-        ))}
-        <div className={clsx(!isInline && 'mt-2')}>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={clsx(
-              'px-5 py-2 text-sm font-medium text-white border-0 rounded-sm',
-              submitting
-                ? 'bg-primary-light cursor-not-allowed'
-                : 'bg-primary cursor-pointer',
-            )}
-          >
-            {submitting ? 'Submitting...' : 'Submit'}
-          </button>
-        </div>
-      </form>
-    </FormContext.Provider>
+    <form
+      onSubmit={handleSubmit}
+      className={clsx(
+        'flex',
+        isInline
+          ? 'flex-row gap-4 flex-wrap items-end'
+          : 'flex-col gap-3',
+        s.className,
+      )}
+      style={s.style}
+    >
+      {s.fields.map((field) => (
+        <FormField
+          key={field.name}
+          field={field}
+          value={values[field.name]}
+          onChange={(v) => setValue(field.name, v)}
+          error={errors[field.name]}
+          horizontal={isHorizontal}
+        />
+      ))}
+      <div className={clsx(!isInline && 'mt-2')}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className={clsx(
+            'px-5 py-2 text-sm font-medium text-white border-0 rounded-sm',
+            submitting
+              ? 'bg-primary-light cursor-not-allowed'
+              : 'bg-primary cursor-pointer',
+          )}
+        >
+          {submitting ? 'Submitting...' : 'Submit'}
+        </button>
+      </div>
+    </form>
   );
 }
 
