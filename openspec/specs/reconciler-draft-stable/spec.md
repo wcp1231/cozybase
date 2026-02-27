@@ -353,13 +353,11 @@ Draft 数据库 SHALL 不维护 `_migrations` 表（每次销毁重建）。
 
 ### Requirement: HTTP API 路由分离
 
-系统 SHALL 将 HTTP API 拆分为 Stable 和 Draft 两套路由前缀，分别服务不同版本的 App。
+系统 SHALL 将 Runtime 对外路由拆分为 Stable 和 Draft 两套路由前缀，分别服务不同版本的 App。所有 Runtime 路由统一使用 `/{mode}/apps/:appName/*` 前缀（`mode ∈ {stable, draft}`）。
 
-路由结构：
-- `/stable/apps/:appName/db/*` — Stable 版本的数据库 CRUD 操作
-- `/stable/apps/:appName/functions/:name` — Stable 版本的 function 调用
-- `/draft/apps/:appName/db/*` — Draft 版本的数据库 CRUD 操作
-- `/draft/apps/:appName/functions/:name` — Draft 版本的 function 调用
+Runtime 路由（如 `/db/*`、`/fn/*`、`/assets/*`）的具体契约 SHALL 以 `app-runtime` 与 `function-runtime` capabilities 为准，本 Requirement 不重复定义同一接口细节。
+
+本 capability 额外定义 Reconciler 管理端点：
 - `POST /draft/apps/:appName/reconcile` — Draft Reconcile
 - `POST /draft/apps/:appName/verify` — Verify
 - `POST /draft/apps/:appName/publish` — Publish

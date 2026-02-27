@@ -1,4 +1,10 @@
-## ADDED Requirements
+# UI Renderer
+
+## Purpose
+
+Define the SchemaRenderer runtime contract, including component rendering, expression resolution, action dispatching, page context orchestration, and theming for APP UI execution.
+
+## Requirements
 
 ### Requirement: SchemaRenderer 入口组件
 
@@ -15,14 +21,7 @@ SchemaRenderer SHALL 作为 `@cozybase/ui` npm 包发布，供每个 APP 的 UI 
 SchemaRenderer SHALL 初始化 PageContext，将 `baseUrl` 和 `components` 注入上下文，然后递归渲染 `schema.body` 中的组件树。
 
 SchemaRenderer SHALL 不依赖 cozybase server 的任何内部模块，仅通过 `baseUrl` + HTTP 请求与后端通信。
-
-#### Scenario: APP UI 打包 SchemaRenderer
-- **WHEN** APP 的 UI 构建执行
-- **THEN** 构建工具将 `@cozybase/ui` 的 SchemaRenderer 及其依赖（React、组件库等）打包到 APP 的 `assets/` 目录中
-
-#### Scenario: SchemaRenderer 在 APP iframe 中运行
-- **WHEN** APP UI 在浏览器中加载（无论是独立访问还是 iframe 嵌入）
-- **THEN** SchemaRenderer 从 APP 自身的 bundle 中加载运行，不依赖 Admin SPA 的 SchemaRenderer 实例
+APP UI 构建产物与 iframe 运行协议由 `app-ui-independent` capability 规范，本 Requirement 仅定义 SchemaRenderer 的渲染职责。
 
 #### Scenario: 基本渲染
 

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# UI Components
+
+## Purpose
+
+Define the built-in UI component set, including layout, data display, data input, and interaction components, plus their schema fields and expected runtime behavior.
+
+## Requirements
 
 ### Requirement: 布局组件 — page
 

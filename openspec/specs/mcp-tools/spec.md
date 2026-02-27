@@ -213,7 +213,7 @@ Agent 使用自身文件工具读取工作目录中的文件内容。
 - 每个 page 包含 `id`、`title`、`body` 字段（`id` 同时作为路由路径段）
 - body 中的组件通过 `type` 指定类型，可用的内置组件类型包括：`page`、`row`、`col`、`card`、`tabs`、`divider`、`table`、`list`、`text`、`heading`、`tag`、`stat`、`form`、`input`、`textarea`、`number`、`select`、`switch`、`checkbox`、`radio`、`date-picker`、`button`、`link`、`dialog`、`alert`、`empty`
 - 交互行为通过 action 声明，支持的 action 类型：`api`、`reload`、`dialog`、`link`、`close`、`confirm`
-- API URL 使用 App 相对路径（如 `/db/todo`、`/functions/todos`），渲染器自动补全
+- API URL 使用 App 相对路径（如 `/db/todo`、`/fn/todos`），渲染器自动补全
 
 #### Scenario: Agent 更新 UI 文件
 - **WHEN** Agent 在工作目录中修改了 `ui/pages.json` 后调用 `update_app_file(app_name: "welcome", path: "ui/pages.json")`
@@ -310,61 +310,22 @@ Agent 使用自身文件工具读取工作目录中的文件内容。
 | `sql` | string | 是 | SQL 语句 |
 | `mode` | string | 否 | `"draft"`（默认）或 `"stable"` |
 
-**SQL 语句分类检查：**
+工具 SHALL 通过 Backend Adapter 调用 Runtime SQL 端点 `POST /{mode}/apps/{appName}/db/_sql`。
+SQL 语句分类、权限矩阵、安全措施（多语句限制、1000 行结果上限、5 秒超时）与错误码语义 SHALL 以 `management-api` capability 的 `SQL 查询端点（POST /{mode}/apps/{appName}/db/_sql）` Requirement 为唯一规范来源，本 Requirement 不重复定义同一规则。
 
-工具 SHALL 根据 SQL 语句的第一个关键字对语句进行分类：
-- `SELECT`、`WITH`、`EXPLAIN` → `select`
-- `PRAGMA`（只读类）→ `pragma_read`；`PRAGMA ... = ...`（赋值类）→ `pragma_write`
-- `INSERT`、`UPDATE`、`DELETE`、`REPLACE` → `dml`
-- `CREATE`、`DROP`、`ALTER`、`ATTACH`、`DETACH` → `ddl`
-- 其他 → `unknown`
+工具 SHALL 透传后端响应：
+- 查询类结果返回 `{ columns, rows, rowCount }`
+- DML 结果返回 `{ changes, lastInsertRowid }`
 
-**权限矩阵：**
-
-| 语句类型 | Draft | Stable |
-|---------|-------|--------|
-| select | 允许 | 允许 |
-| pragma_read | 允许 | 允许 |
-| pragma_write | 允许 | 禁止 |
-| dml | 允许 | 禁止 |
-| ddl | 禁止 | 禁止 |
-| unknown | 禁止 | 禁止 |
-
-**安全措施：**
-- 工具 SHALL 拒绝包含分号分隔的多条语句
-- 结果集 SHALL 最多返回 1000 行
-- 执行超时 SHALL 为 5 秒
-
-**返回格式：**
-```json
-{
-  "columns": ["id", "title", "completed"],
-  "rows": [[1, "Buy milk", 0], [2, "Read book", 1]],
-  "rowCount": 2
-}
-```
-
-#### Scenario: Draft 模式执行 SELECT
+#### Scenario: execute_sql 转发到 Runtime SQL 端点
 - **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "SELECT * FROM tasks", mode: "draft")`
-- **THEN** 工具 SHALL 返回查询结果，包含 columns、rows 和 rowCount
+- **THEN** 工具 SHALL 调用 `POST /draft/apps/todo/db/_sql` 并返回后端结果
 
-#### Scenario: Draft 模式执行 DML
-- **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "INSERT INTO tasks (title) VALUES ('test')", mode: "draft")`
-- **THEN** 工具 SHALL 执行插入操作并返回结果
-
-#### Scenario: Stable 模式拒绝 DML
+#### Scenario: execute_sql 透传后端 SQL 权限错误
 - **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "DELETE FROM tasks WHERE id = 1", mode: "stable")`
-- **THEN** 工具 SHALL 拒绝执行并返回权限错误
+- **THEN** 工具 SHALL 返回后端的拒绝结果（如 `403` 与 `SQL_NOT_ALLOWED`）
 
-#### Scenario: 拒绝 DDL 语句
-- **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "DROP TABLE tasks")`
-- **THEN** 工具 SHALL 拒绝执行并返回错误，提示 schema 变更必须通过 migration 文件
-
-#### Scenario: 拒绝多语句
-- **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "SELECT 1; DROP TABLE tasks")`
-- **THEN** 工具 SHALL 拒绝执行并返回错误
-
-#### Scenario: 默认 mode 为 draft
+#### Scenario: execute_sql 默认 mode 为 draft
 - **WHEN** Agent 调用 `execute_sql(app_name: "todo", sql: "SELECT * FROM tasks")` 未指定 mode
 - **THEN** 工具 SHALL 默认使用 draft 模式
 
@@ -376,13 +337,13 @@ Agent 使用自身文件工具读取工作目录中的文件内容。
 |------|------|------|------|
 | `app_name` | string | 是 | APP 名称 |
 | `method` | string | 是 | HTTP 方法（GET/POST/PUT/DELETE 等） |
-| `path` | string | 是 | API 路径（如 `/db/tasks`、`/functions/hello`） |
+| `path` | string | 是 | API 路径（如 `/db/tasks`、`/fn/hello`） |
 | `body` | object | 否 | 请求体 |
 | `mode` | string | 否 | `"draft"`（默认）或 `"stable"` |
 
 工具 SHALL 以用户视角调用 APP 的 HTTP 端点，涵盖：
 - 数据库 REST API：`GET/POST/PUT/DELETE /db/{table}`
-- TypeScript 函数：`ANY /functions/{name}`
+- TypeScript 函数：`ANY /fn/{name}`
 
 返回 HTTP 响应的 status、headers 和 body。
 
@@ -391,10 +352,10 @@ Agent 使用自身文件工具读取工作目录中的文件内容。
 - **THEN** 工具 SHALL 返回 APP 的 `/db/tasks` API 响应
 
 #### Scenario: Agent 调用函数
-- **WHEN** Agent 调用 `call_api(app_name: "todo", method: "POST", path: "/functions/process", body: {"data": "test"})`
+- **WHEN** Agent 调用 `call_api(app_name: "todo", method: "POST", path: "/fn/process", body: {"data": "test"})`
 - **THEN** 工具 SHALL 返回函数的 HTTP 响应
 
-#### Scenario: 默认 mode 为 draft
+#### Scenario: call_api 默认 mode 为 draft
 - **WHEN** Agent 调用 `call_api` 未指定 mode
 - **THEN** 工具 SHALL 默认使用 draft 模式
 

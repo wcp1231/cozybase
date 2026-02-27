@@ -29,6 +29,7 @@ Define the architecture for APP UI independence, enabling each APP to run its ow
 ### Requirement: iframe 嵌入协议
 
 Admin SPA SHALL 通过 iframe 嵌入 APP UI，并通过 `window.postMessage` 进行双向通信。
+本 Requirement SHALL 作为 Admin 与 APP iframe 之间 postMessage 协议（消息类型、payload 语义、交互时序）的唯一规范来源；其他 capability 仅引用本协议，不重复定义消息结构。
 
 #### Scenario: Admin 嵌入 APP UI
 - **WHEN** 用户在 Admin 中访问 `/apps/todo/tasks`
@@ -89,6 +90,7 @@ APP UI 和 Admin SHALL 验证 postMessage 来源，防止跨域消息注入。
 ### Requirement: APP UI 构建产物
 
 每个 APP 的 UI 构建产物 SHALL 包含完整的运行所需文件，由 Daemon 在 Reconcile/Publish 时生成到对应目录。
+APP UI 打包产物结构（`index.html`、`assets/`、`ui.json`）与 SchemaRenderer 打包要求 SHALL 以本 Requirement 为准。
 
 #### Scenario: UI 构建产物结构
 - **WHEN** Daemon 完成 APP 的 Reconcile 或 Publish
