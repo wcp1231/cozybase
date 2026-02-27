@@ -7,9 +7,21 @@ import { AppContext } from './app-context';
 
 // --- YAML Schema Definitions ---
 
+// Strict CSS value pattern: disallow characters that could break out of CSS/HTML context
+const safeCSSValue = z.string().regex(/^[^{}<>]*$/);
+const safeCSSKey = z.string().regex(/^[a-zA-Z0-9-]+$/);
+
+const ThemeConfigSchema = z.object({
+  mode: z.enum(['light', 'dark', 'system']).default('light'),
+  primaryColor: safeCSSValue.optional(),
+  fontFamily: safeCSSValue.optional(),
+  tokens: z.record(safeCSSKey, safeCSSValue).optional(),
+}).default({});
+
 const WorkspaceConfigSchema = z.object({
   name: z.string(),
   version: z.number().int().positive(),
+  theme: ThemeConfigSchema.optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
@@ -114,6 +126,31 @@ export class Workspace {
       throw new Error('Workspace not loaded. Call load() first.');
     }
     return this._config;
+  }
+
+  /** Get the theme configuration (safe for passing to generateThemeCSS) */
+  getThemeConfig(): { mode?: 'light' | 'dark' | 'system'; primaryColor?: string; fontFamily?: string; tokens?: Record<string, string> } {
+    return this._config?.theme ?? {};
+  }
+
+  /** Update theme configuration in workspace.yaml (merge semantics) */
+  updateThemeConfig(partial: z.input<typeof ThemeConfigSchema>): void {
+    const configPath = join(this.root, 'workspace.yaml');
+    const content = readFileSync(configPath, 'utf-8');
+    const raw = parseYAML(content) ?? {};
+    const existing = raw.theme ?? {};
+    // Shallow merge top-level fields; deep merge tokens
+    raw.theme = {
+      ...existing,
+      ...partial,
+      tokens: partial.tokens !== undefined
+        ? { ...existing.tokens, ...partial.tokens }
+        : existing.tokens,
+    };
+    writeFileSync(configPath, stringifyYAML(raw), 'utf-8');
+
+    // Reload config
+    this._config = WorkspaceConfigSchema.parse(raw);
   }
 
   // --- Platform DB ---

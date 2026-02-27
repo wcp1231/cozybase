@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { clsx } from 'clsx';
 
 interface App {
   name: string;
@@ -13,25 +14,20 @@ interface App {
   has_ui: boolean;
 }
 
-const stateBadgeStyles: Record<string, { background: string; color: string }> = {
-  draft_only: { background: '#f3f4f6', color: '#374151' },
-  stable: { background: '#d1fae5', color: '#065f46' },
-  stable_draft: { background: '#fef3c7', color: '#92400e' },
+const stateBadgeClasses: Record<string, string> = {
+  draft_only: 'bg-bg-muted text-text-secondary',
+  stable: 'bg-success-bg text-success-text',
+  stable_draft: 'bg-warning-bg text-warning-text',
 };
 
 function StateBadge({ state }: { state: string }) {
-  const style = stateBadgeStyles[state] ?? stateBadgeStyles.draft_only;
+  const cls = stateBadgeClasses[state] ?? stateBadgeClasses.draft_only;
   return (
     <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 8px',
-        borderRadius: 9999,
-        fontSize: 12,
-        fontWeight: 500,
-        background: style.background,
-        color: style.color,
-      }}
+      className={clsx(
+        'inline-block px-2 py-0.5 rounded-full text-xs font-medium',
+        cls,
+      )}
     >
       {state}
     </span>
@@ -61,7 +57,7 @@ export function AppListPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: '#6b7280' }}>
+      <div className="p-12 text-center text-text-muted">
         Loading...
       </div>
     );
@@ -69,111 +65,46 @@ export function AppListPage() {
 
   if (error) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: '#dc2626' }}>
+      <div className="p-12 text-center text-danger">
         Error: {error}
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
-      <div
-        style={{
-          maxWidth: 1024,
-          margin: '0 auto',
-          padding: '32px 24px',
-        }}
-      >
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 600,
-            color: '#111827',
-            margin: '0 0 24px 0',
-          }}
-        >
+    <div className="min-h-screen bg-bg-subtle">
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <h1 className="text-2xl font-semibold text-text m-0 mb-6">
           Apps
         </h1>
 
         {apps.length === 0 ? (
-          <div style={{ color: '#6b7280', textAlign: 'center', padding: 48 }}>
+          <div className="text-text-muted text-center p-12">
             No apps found.
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: 16,
-            }}
-          >
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
             {apps.map((app) => (
               <Link
                 key={app.name}
                 to={`/apps/${app.name}`}
-                style={{ textDecoration: 'none', color: 'inherit' }}
+                className="no-underline text-inherit"
               >
-                <div
-                  style={{
-                    background: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 8,
-                    padding: 20,
-                    cursor: 'pointer',
-                    transition: 'box-shadow 0.15s',
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.boxShadow =
-                      '0 1px 3px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.boxShadow = 'none';
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 600,
-                        color: '#111827',
-                      }}
-                    >
+                <div className="bg-bg border border-border rounded-md p-5 cursor-pointer transition-shadow hover:shadow-md">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-base font-semibold text-text">
                       {app.name}
                     </span>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div className="flex gap-1.5 items-center">
                       {!app.has_ui && (
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '2px 8px',
-                            borderRadius: 9999,
-                            fontSize: 12,
-                            fontWeight: 500,
-                            background: '#fee2e2',
-                            color: '#991b1b',
-                          }}
-                        >
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-error-bg text-error-text">
                           No UI
                         </span>
                       )}
                       <StateBadge state={app.state} />
                     </div>
                   </div>
-                  <p
-                    style={{
-                      fontSize: 14,
-                      color: '#6b7280',
-                      margin: 0,
-                      lineHeight: 1.5,
-                    }}
-                  >
+                  <p className="text-sm text-text-muted m-0 leading-normal">
                     {app.description || 'No description'}
                   </p>
                 </div>

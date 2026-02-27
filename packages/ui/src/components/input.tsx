@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
@@ -46,30 +47,9 @@ function useRegisterValue(id: string | undefined, value: unknown) {
   }, [value]);
 }
 
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  marginBottom: 4,
-  fontSize: 14,
-  fontWeight: 500,
-  color: '#374151',
-};
-
-const baseInputStyle: React.CSSProperties = {
-  display: 'block',
-  width: '100%',
-  padding: '6px 10px',
-  fontSize: 14,
-  border: '1px solid #D1D5DB',
-  borderRadius: 4,
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-
-const errorStyle: React.CSSProperties = {
-  color: '#DC2626',
-  fontSize: 12,
-  marginTop: 2,
-};
+const labelClass = 'block mb-1 text-sm font-medium text-text-secondary';
+const baseInputClass = 'block w-full px-2.5 py-1.5 text-sm border border-border-strong rounded-sm outline-none box-border';
+const errorClass = 'text-danger text-xs mt-0.5';
 
 // ============================================================
 // FormContext - allows child components to connect to a form
@@ -203,14 +183,14 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
     <FormContext.Provider value={{ values, setValue, errors }}>
       <form
         onSubmit={handleSubmit}
-        style={{
-          display: 'flex',
-          flexDirection: isInline ? 'row' : 'column',
-          gap: isInline ? 16 : 12,
-          flexWrap: isInline ? 'wrap' : undefined,
-          alignItems: isInline ? 'flex-end' : undefined,
-          ...s.style,
-        }}
+        className={clsx(
+          'flex',
+          isInline
+            ? 'flex-row gap-4 flex-wrap items-end'
+            : 'flex-col gap-3',
+          s.className,
+        )}
+        style={s.style}
       >
         {s.fields.map((field) => (
           <FormField
@@ -222,20 +202,16 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
             horizontal={isHorizontal}
           />
         ))}
-        <div style={{ marginTop: isInline ? 0 : 8 }}>
+        <div className={clsx(!isInline && 'mt-2')}>
           <button
             type="submit"
             disabled={submitting}
-            style={{
-              padding: '8px 20px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: '#fff',
-              backgroundColor: submitting ? '#93C5FD' : '#2563EB',
-              border: 'none',
-              borderRadius: 4,
-              cursor: submitting ? 'not-allowed' : 'pointer',
-            }}
+            className={clsx(
+              'px-5 py-2 text-sm font-medium text-white border-0 rounded-sm',
+              submitting
+                ? 'bg-primary-light cursor-not-allowed'
+                : 'bg-primary cursor-pointer',
+            )}
           >
             {submitting ? 'Submitting...' : 'Submit'}
           </button>
@@ -260,26 +236,22 @@ function FormField({
   error?: string;
   horizontal?: boolean;
 }) {
-  const wrapperStyle: React.CSSProperties = horizontal
-    ? { display: 'flex', alignItems: 'center', gap: 8 }
-    : {};
-
   const label = field.label ?? field.name;
 
   return (
-    <div style={wrapperStyle}>
+    <div className={clsx(horizontal && 'flex items-center gap-2')}>
       {label && (
-        <label style={{
-          ...labelStyle,
-          ...(horizontal ? { marginBottom: 0, minWidth: 80 } : {}),
-        }}>
+        <label className={clsx(
+          labelClass,
+          horizontal && 'mb-0 min-w-[80px]',
+        )}>
           {label}
-          {field.required && <span style={{ color: '#DC2626', marginLeft: 2 }}>*</span>}
+          {field.required && <span className="text-danger ml-0.5">*</span>}
         </label>
       )}
-      <div style={{ flex: horizontal ? 1 : undefined }}>
+      <div className={clsx(horizontal && 'flex-1')}>
         {renderFieldInput(field, value, onChange)}
-        {error && <div style={errorStyle}>{error}</div>}
+        {error && <div className={errorClass}>{error}</div>}
       </div>
     </div>
   );
@@ -300,7 +272,7 @@ function renderFieldInput(
           value={String(value ?? '')}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          style={baseInputStyle}
+          className={baseInputClass}
         />
       );
 
@@ -311,7 +283,7 @@ function renderFieldInput(
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
-          style={{ ...baseInputStyle, resize: 'vertical' }}
+          className={clsx(baseInputClass, 'resize-y')}
         />
       );
 
@@ -322,7 +294,7 @@ function renderFieldInput(
           value={value !== undefined && value !== null ? String(value) : ''}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-          style={baseInputStyle}
+          className={baseInputClass}
         />
       );
 
@@ -331,7 +303,7 @@ function renderFieldInput(
         <select
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
-          style={{ ...baseInputStyle, backgroundColor: '#fff' }}
+          className={clsx(baseInputClass, 'bg-bg')}
         >
           <option value="">{placeholder || '-- Select --'}</option>
           {(field.options ?? []).map((opt: OptionItem) => (
@@ -344,30 +316,19 @@ function renderFieldInput(
 
     case 'switch':
       return (
-        <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+        <label className="inline-flex items-center cursor-pointer">
           <div
             onClick={() => onChange(!value)}
-            style={{
-              width: 40,
-              height: 22,
-              borderRadius: 11,
-              backgroundColor: value ? '#2563EB' : '#D1D5DB',
-              position: 'relative',
-              transition: 'background-color 0.2s',
-              cursor: 'pointer',
-            }}
+            className={clsx(
+              'w-10 h-[22px] rounded-full relative transition-colors duration-200 cursor-pointer',
+              value ? 'bg-primary' : 'bg-border-strong',
+            )}
           >
             <div
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                backgroundColor: '#fff',
-                position: 'absolute',
-                top: 2,
-                left: value ? 20 : 2,
-                transition: 'left 0.2s',
-              }}
+              className={clsx(
+                'w-[18px] h-[18px] rounded-full bg-bg absolute top-0.5 transition-[left] duration-200',
+                value ? 'left-5' : 'left-0.5',
+              )}
             />
           </div>
         </label>
@@ -377,9 +338,9 @@ function renderFieldInput(
       if (field.options && field.options.length > 0) {
         const checked = Array.isArray(value) ? (value as string[]) : [];
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div className="flex flex-col gap-1">
             {field.options.map((opt: OptionItem) => (
-              <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+              <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
                 <input
                   type="checkbox"
                   checked={checked.includes(opt.value)}
@@ -398,7 +359,7 @@ function renderFieldInput(
         );
       }
       return (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+        <label className="flex items-center gap-1.5 cursor-pointer text-sm">
           <input
             type="checkbox"
             checked={!!value}
@@ -410,9 +371,9 @@ function renderFieldInput(
 
     case 'radio':
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="flex flex-col gap-1">
           {(field.options ?? []).map((opt: OptionItem) => (
-            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+            <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
               <input
                 type="radio"
                 name={field.name}
@@ -432,7 +393,7 @@ function renderFieldInput(
           type="date"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
-          style={baseInputStyle}
+          className={baseInputClass}
         />
       );
 
@@ -443,7 +404,7 @@ function renderFieldInput(
           value={String(value ?? '')}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          style={baseInputStyle}
+          className={baseInputClass}
         />
       );
   }
@@ -480,7 +441,8 @@ function InputRenderer({ schema, exprContext }: SchemaComponentProps) {
       value={value}
       placeholder={s.placeholder ?? ''}
       onChange={handleChange}
-      style={{ ...baseInputStyle, ...s.style }}
+      className={clsx(baseInputClass, s.className)}
+      style={s.style}
     />
   );
 }
@@ -516,7 +478,8 @@ function TextareaRenderer({ schema, exprContext }: SchemaComponentProps) {
       placeholder={s.placeholder ?? ''}
       rows={s.rows ?? 3}
       onChange={handleChange}
-      style={{ ...baseInputStyle, resize: 'vertical', ...s.style }}
+      className={clsx(baseInputClass, 'resize-y', s.className)}
+      style={s.style}
     />
   );
 }
@@ -555,7 +518,8 @@ function NumberRenderer({ schema, exprContext }: SchemaComponentProps) {
       max={s.max}
       step={s.step}
       onChange={handleChange}
-      style={{ ...baseInputStyle, ...s.style }}
+      className={clsx(baseInputClass, s.className)}
+      style={s.style}
     />
   );
 }
@@ -600,7 +564,8 @@ function SelectRenderer({ schema, exprContext }: SchemaComponentProps) {
       value={value as string}
       multiple={s.multiple}
       onChange={handleChange}
-      style={{ ...baseInputStyle, backgroundColor: '#fff', ...s.style }}
+      className={clsx(baseInputClass, 'bg-bg', s.className)}
+      style={s.style}
     >
       {!s.multiple && (
         <option value="">{s.placeholder || '-- Select --'}</option>
@@ -642,34 +607,20 @@ function SwitchRenderer({ schema, exprContext }: SchemaComponentProps) {
   return (
     <div
       onClick={toggle}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        cursor: 'pointer',
-        ...s.style,
-      }}
+      className={clsx('inline-flex items-center cursor-pointer', s.className)}
+      style={s.style}
     >
       <div
-        style={{
-          width: 40,
-          height: 22,
-          borderRadius: 11,
-          backgroundColor: value ? '#2563EB' : '#D1D5DB',
-          position: 'relative',
-          transition: 'background-color 0.2s',
-        }}
+        className={clsx(
+          'w-10 h-[22px] rounded-full relative transition-colors duration-200',
+          value ? 'bg-primary' : 'bg-border-strong',
+        )}
       >
         <div
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            backgroundColor: '#fff',
-            position: 'absolute',
-            top: 2,
-            left: value ? 20 : 2,
-            transition: 'left 0.2s',
-          }}
+          className={clsx(
+            'w-[18px] h-[18px] rounded-full bg-bg absolute top-0.5 transition-[left] duration-200',
+            value ? 'left-5' : 'left-0.5',
+          )}
         />
       </div>
     </div>
@@ -709,9 +660,9 @@ function CheckboxRenderer({ schema, exprContext }: SchemaComponentProps) {
   if (isGroup) {
     const checked = value as string[];
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...s.style }}>
+      <div className={clsx('flex flex-col gap-1', s.className)} style={s.style}>
         {s.options!.map((opt) => (
-          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+          <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
             <input
               type="checkbox"
               checked={checked.includes(opt.value)}
@@ -731,7 +682,7 @@ function CheckboxRenderer({ schema, exprContext }: SchemaComponentProps) {
   }
 
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, ...s.style }}>
+    <label className={clsx('flex items-center gap-1.5 cursor-pointer text-sm', s.className)} style={s.style}>
       <input
         type="checkbox"
         checked={value as boolean}
@@ -771,9 +722,9 @@ function RadioRenderer({ schema, exprContext }: SchemaComponentProps) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...s.style }}>
+    <div className={clsx('flex flex-col gap-1', s.className)} style={s.style}>
       {s.options.map((opt) => (
-        <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+        <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
           <input
             type="radio"
             name={s.id ?? `radio-${s.options.map((o) => o.value).join('-')}`}
@@ -818,7 +769,8 @@ function DatePickerRenderer({ schema, exprContext }: SchemaComponentProps) {
       type="date"
       value={value}
       onChange={handleChange}
-      style={{ ...baseInputStyle, ...s.style }}
+      className={clsx(baseInputClass, s.className)}
+      style={s.style}
     />
   );
 }

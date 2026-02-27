@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { resolveExpression } from '../engine/expression';
@@ -29,27 +30,11 @@ function useActionContext() {
 // button
 // ============================================================
 
-const variantStyles: Record<string, React.CSSProperties> = {
-  primary: {
-    backgroundColor: '#2563EB',
-    color: '#fff',
-    border: 'none',
-  },
-  secondary: {
-    backgroundColor: '#6B7280',
-    color: '#fff',
-    border: 'none',
-  },
-  danger: {
-    backgroundColor: '#DC2626',
-    color: '#fff',
-    border: 'none',
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-    color: '#374151',
-    border: '1px solid #D1D5DB',
-  },
+const variantClasses: Record<string, string> = {
+  primary: 'bg-primary text-white border-0',
+  secondary: 'bg-secondary text-white border-0',
+  danger: 'bg-danger text-white border-0',
+  ghost: 'bg-transparent text-text-secondary border border-border-strong',
 };
 
 function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
@@ -69,7 +54,6 @@ function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
   const isLoading = !!isLoadingExpr || busy;
 
   const variant = s.variant ?? 'primary';
-  const vstyle = variantStyles[variant] ?? variantStyles.primary;
 
   const handleClick = async () => {
     if (isDisabled) return;
@@ -86,37 +70,19 @@ function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
       type="button"
       disabled={isDisabled}
       onClick={handleClick}
-      style={{
-        padding: '8px 16px',
-        fontSize: 14,
-        fontWeight: 500,
-        borderRadius: 4,
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
-        opacity: isDisabled ? 0.6 : 1,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        transition: 'opacity 0.15s',
-        ...vstyle,
-        ...s.style,
-      }}
+      className={clsx(
+        'px-4 py-2 text-sm font-medium rounded-sm inline-flex items-center gap-1.5 transition-opacity',
+        variantClasses[variant] ?? variantClasses.primary,
+        isDisabled && 'opacity-60 cursor-not-allowed',
+        !isDisabled && 'cursor-pointer',
+        s.className,
+      )}
+      style={s.style}
     >
       {isLoading && (
-        <span
-          style={{
-            display: 'inline-block',
-            width: 14,
-            height: 14,
-            border: '2px solid currentColor',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'spin 0.6s linear infinite',
-          }}
-        />
+        <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
       )}
       {isLoading ? '...' : s.label}
-      {/* Inject keyframes for spinner */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </button>
   );
 }
@@ -138,19 +104,8 @@ function LinkRenderer({ schema, exprContext }: SchemaComponentProps) {
     <a
       href="#"
       onClick={handleClick}
-      style={{
-        color: '#2563EB',
-        textDecoration: 'none',
-        fontSize: 14,
-        cursor: 'pointer',
-        ...s.style,
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'underline';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'none';
-      }}
+      className={clsx('text-primary no-underline text-sm cursor-pointer hover:underline', s.className)}
+      style={s.style}
     >
       {s.text}
     </a>
@@ -167,52 +122,23 @@ function DialogRenderer({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 bg-overlay flex items-center justify-center z-[1000]"
       onClick={(e) => {
         if (e.target === e.currentTarget) ctx.closeDialog();
       }}
     >
       <div
-        style={{
-          backgroundColor: '#fff',
-          borderRadius: 8,
-          padding: 24,
-          width: s.width ?? 480,
-          maxHeight: '80vh',
-          overflow: 'auto',
-          ...s.style,
-        }}
+        className={clsx('bg-bg rounded-md p-6 max-h-[80vh] overflow-auto', s.className)}
+        style={{ width: s.width ?? 480, ...s.style }}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#111827' }}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="m-0 text-lg font-semibold text-text">
             {s.title}
           </h3>
           <button
             onClick={() => ctx.closeDialog()}
-            style={{
-              border: 'none',
-              background: 'none',
-              fontSize: 18,
-              cursor: 'pointer',
-              color: '#6B7280',
-              padding: 4,
-            }}
+            className="border-0 bg-transparent text-lg cursor-pointer text-text-muted p-1"
           >
             &#x2715;
           </button>
@@ -230,56 +156,41 @@ function DialogRenderer({ schema, renderChild }: SchemaComponentProps) {
 // alert
 // ============================================================
 
-const alertTypeStyles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+const alertTypeClasses: Record<string, { classes: string; icon: string }> = {
   info: {
-    bg: '#EFF6FF',
-    border: '#BFDBFE',
-    text: '#1E40AF',
-    icon: '\u2139',  // i
+    classes: 'bg-info-bg border-info-border text-info-text',
+    icon: '\u2139',
   },
   success: {
-    bg: '#F0FDF4',
-    border: '#BBF7D0',
-    text: '#166534',
-    icon: '\u2713',  // checkmark
+    classes: 'bg-success-bg border-success-border text-success-text',
+    icon: '\u2713',
   },
   warning: {
-    bg: '#FFFBEB',
-    border: '#FDE68A',
-    text: '#92400E',
-    icon: '\u26A0',  // warning sign
+    classes: 'bg-warning-bg border-warning-border text-warning-text',
+    icon: '\u26A0',
   },
   error: {
-    bg: '#FEF2F2',
-    border: '#FECACA',
-    text: '#991B1B',
-    icon: '\u2717',  // x mark
+    classes: 'bg-error-bg border-error-border text-error-text',
+    icon: '\u2717',
   },
 };
 
 function AlertRenderer({ schema }: SchemaComponentProps) {
   const s = schema as AlertComponent;
   const alertType = s.alertType ?? 'info';
-  const colors = alertTypeStyles[alertType] ?? alertTypeStyles.info;
+  const config = alertTypeClasses[alertType] ?? alertTypeClasses.info;
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        padding: '10px 14px',
-        borderRadius: 4,
-        backgroundColor: colors.bg,
-        border: `1px solid ${colors.border}`,
-        color: colors.text,
-        fontSize: 14,
-        lineHeight: '1.5',
-        ...s.style,
-      }}
+      className={clsx(
+        'flex items-start gap-2.5 px-3.5 py-2.5 rounded-sm border text-sm leading-relaxed',
+        config.classes,
+        s.className,
+      )}
+      style={s.style}
     >
-      <span style={{ fontSize: 16, lineHeight: '1.4', flexShrink: 0 }}>
-        {colors.icon}
+      <span className="text-base leading-snug shrink-0">
+        {config.icon}
       </span>
       <span>{s.message}</span>
     </div>
@@ -295,18 +206,10 @@ function EmptyRenderer({ schema }: SchemaComponentProps) {
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px 20px',
-        color: '#9CA3AF',
-        fontSize: 14,
-        ...s.style,
-      }}
+      className={clsx('flex flex-col items-center justify-center py-10 px-5 text-text-placeholder text-sm', s.className)}
+      style={s.style}
     >
-      <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.5 }}>
+      <div className="text-[32px] mb-2 opacity-50">
         &#x1F4AD;
       </div>
       <span>{s.message ?? '\u6682\u65E0\u6570\u636E'}</span>

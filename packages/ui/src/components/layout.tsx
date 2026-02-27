@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import type {
@@ -20,13 +21,8 @@ function PageComp({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
-      style={{
-        width: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        ...s.style,
-      }}
+      className={clsx('w-full flex flex-col gap-4', s.className)}
+      style={s.style}
     >
       {s.children?.map((child: ComponentSchema, i: number) =>
         renderChild(child, (child as { id?: string }).id ?? i),
@@ -46,13 +42,11 @@ function RowComp({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
+      className={clsx('flex flex-row', s.wrap && 'flex-wrap', s.className)}
       style={{
-        display: 'flex',
-        flexDirection: 'row',
         justifyContent: s.justify ?? 'start',
         alignItems: s.align ?? 'stretch',
         gap: s.gap ?? 8,
-        flexWrap: s.wrap ? 'wrap' : 'nowrap',
         ...s.style,
       }}
     >
@@ -74,9 +68,8 @@ function ColComp({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
+      className={clsx('flex flex-col', s.className)}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
         alignItems: s.align ?? 'stretch',
         gap: s.gap ?? 8,
         ...s.style,
@@ -101,23 +94,13 @@ function CardComp({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
-      style={{
-        border: '1px solid #e5e7eb',
-        borderRadius: 8,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-        backgroundColor: '#fff',
-        overflow: 'hidden',
-        ...s.style,
-      }}
+      className={clsx('border border-border rounded-md shadow-sm bg-bg overflow-hidden', s.className)}
+      style={s.style}
     >
       {s.title && (
         <div
-          style={{
-            padding: `${padding}px ${padding}px 0`,
-            fontWeight: 600,
-            fontSize: 16,
-            color: '#111827',
-          }}
+          className="font-semibold text-base text-text"
+          style={{ padding: `${padding}px ${padding}px 0` }}
         >
           {s.title}
         </div>
@@ -165,32 +148,21 @@ function TabsComp({ schema, renderChild }: SchemaComponentProps) {
   const activeItem = items.find((item) => item.value === activeTab);
 
   return (
-    <div style={{ ...s.style }}>
+    <div className={s.className} style={s.style}>
       {/* Tab bar */}
-      <div
-        style={{
-          display: 'flex',
-          borderBottom: '1px solid #e5e7eb',
-          gap: 0,
-        }}
-      >
+      <div className="flex border-b border-border">
         {items.map((item) => {
           const isActive = item.value === activeTab;
           return (
             <button
               key={item.value}
               onClick={() => setActiveTab(item.value)}
-              style={{
-                padding: '8px 16px',
-                cursor: 'pointer',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
-                backgroundColor: 'transparent',
-                color: isActive ? '#3b82f6' : '#6b7280',
-                fontWeight: isActive ? 600 : 400,
-                fontSize: 14,
-                transition: 'color 0.15s, border-color 0.15s',
-              }}
+              className={clsx(
+                'px-4 py-2 cursor-pointer border-0 border-b-2 bg-transparent text-sm transition-colors',
+                isActive
+                  ? 'border-primary text-primary font-semibold'
+                  : 'border-transparent text-text-muted font-normal',
+              )}
             >
               {item.label}
             </button>
@@ -200,7 +172,7 @@ function TabsComp({ schema, renderChild }: SchemaComponentProps) {
 
       {/* Tab body (only rendered when items have body content) */}
       {activeItem?.body && (
-        <div style={{ paddingTop: 16 }}>
+        <div className="pt-4">
           {activeItem.body.map((child: ComponentSchema, i: number) =>
             renderChild(child, (child as { id?: string }).id ?? i),
           )}
@@ -222,31 +194,22 @@ function DividerComp({ schema }: SchemaComponentProps) {
   if (s.label) {
     return (
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          margin: '8px 0',
-          ...s.style,
-        }}
+        className={clsx('flex items-center gap-3 my-2', s.className)}
+        style={s.style}
       >
-        <div style={{ flex: 1, height: 1, backgroundColor: '#e5e7eb' }} />
-        <span style={{ fontSize: 13, color: '#9ca3af', whiteSpace: 'nowrap' }}>
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-[13px] text-text-placeholder whitespace-nowrap">
           {s.label}
         </span>
-        <div style={{ flex: 1, height: 1, backgroundColor: '#e5e7eb' }} />
+        <div className="flex-1 h-px bg-border" />
       </div>
     );
   }
 
   return (
     <hr
-      style={{
-        border: 'none',
-        borderTop: '1px solid #e5e7eb',
-        margin: '8px 0',
-        ...s.style,
-      }}
+      className={clsx('border-0 border-t border-border my-2', s.className)}
+      style={s.style}
     />
   );
 }

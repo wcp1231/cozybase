@@ -10,7 +10,7 @@ export function AppPageView() {
   if (!pageId) {
     if (pagesJson.pages.length === 0) {
       return (
-        <div style={{ padding: 24, color: '#6b7280' }}>
+        <div className="p-6 text-text-muted">
           No pages defined in this app.
         </div>
       );
@@ -22,7 +22,7 @@ export function AppPageView() {
 
   if (!page) {
     return (
-      <div style={{ padding: 24, color: '#dc2626' }}>
+      <div className="p-6 text-danger">
         页面不存在
       </div>
     );

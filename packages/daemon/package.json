@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cozybase/runtime": "workspace:*",
+    "@cozybase/ui": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "croner": "^9.0.0",
     "hono": "^4.7.0",

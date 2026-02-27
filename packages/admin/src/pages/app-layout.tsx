@@ -5,6 +5,7 @@ import {
   Link,
   NavLink,
 } from 'react-router-dom';
+import { clsx } from 'clsx';
 import type { PagesJson } from '@cozybase/ui';
 
 interface AppInfo {
@@ -78,7 +79,7 @@ export function AppLayout() {
 
   if (loading) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: '#6b7280' }}>
+      <div className="p-12 text-center text-text-muted">
         Loading...
       </div>
     );
@@ -86,7 +87,7 @@ export function AppLayout() {
 
   if (error || !app || !pagesJson) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: '#dc2626' }}>
+      <div className="p-12 text-center text-danger">
         Error: {error || 'Unknown error'}
       </div>
     );
@@ -94,80 +95,40 @@ export function AppLayout() {
 
   return (
     <AppContext.Provider value={{ app, pagesJson }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <div className="flex flex-col min-h-screen">
         {/* Top bar */}
-        <div
-          style={{
-            height: 48,
-            background: '#fff',
-            borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0 16px',
-            flexShrink: 0,
-          }}
-        >
+        <div className="h-12 bg-bg border-b border-border flex items-center px-4 shrink-0">
           <Link
             to="/apps"
-            style={{
-              color: '#2563EB',
-              textDecoration: 'none',
-              fontSize: 14,
-              marginRight: 12,
-            }}
+            className="text-primary no-underline text-sm mr-3"
           >
             &larr; Back to apps
           </Link>
-          <span
-            style={{
-              color: '#d1d5db',
-              marginRight: 12,
-            }}
-          >
-            /
-          </span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>
+          <span className="text-border mr-3">/</span>
+          <span className="font-semibold text-sm text-text">
             {app.name}
           </span>
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', flex: 1 }}>
+        <div className="flex flex-1">
           {/* Sidebar */}
-          <div
-            style={{
-              width: 240,
-              background: '#f9fafb',
-              borderRight: '1px solid #e5e7eb',
-              padding: '12px 0',
-              flexShrink: 0,
-            }}
-          >
-            <div
-              style={{
-                padding: '8px 16px',
-                fontSize: 11,
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                color: '#9ca3af',
-                letterSpacing: '0.05em',
-              }}
-            >
+          <div className="w-60 bg-bg-subtle border-r border-border py-3 shrink-0">
+            <div className="px-4 py-2 text-[11px] font-semibold uppercase text-text-placeholder tracking-wide">
               Pages
             </div>
             {pagesJson.pages.map((page) => (
               <NavLink
                 key={page.id}
                 to={`/apps/${appName}/${page.id}`}
-                style={({ isActive }) => ({
-                  display: 'block',
-                  padding: '8px 16px',
-                  fontSize: 14,
-                  color: isActive ? '#2563EB' : '#374151',
-                  background: isActive ? '#eff6ff' : 'transparent',
-                  textDecoration: 'none',
-                  borderRight: isActive ? '2px solid #2563EB' : '2px solid transparent',
-                })}
+                className={({ isActive }) =>
+                  clsx(
+                    'block px-4 py-2 text-sm no-underline border-r-2',
+                    isActive
+                      ? 'text-primary bg-info-bg border-primary'
+                      : 'text-text-secondary bg-transparent border-transparent',
+                  )
+                }
               >
                 {page.title}
               </NavLink>
@@ -175,7 +136,7 @@ export function AppLayout() {
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, background: '#fff', padding: 24 }}>
+          <div className="flex-1 bg-bg p-6">
             <Outlet />
           </div>
         </div>

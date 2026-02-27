@@ -8,6 +8,7 @@ export interface AuthVerifyResult {
 
 export interface DaemonClient {
   verifyAuth(authorizationHeader: string): Promise<AuthVerifyResult>;
+  getThemeCSS(): Promise<string>;
 }
 
 /**
@@ -21,6 +22,10 @@ export function createInProcessDaemonClient(daemonApp: Hono): DaemonClient {
         headers: { Authorization: authorizationHeader },
       });
       return res.json();
+    },
+    async getThemeCSS(): Promise<string> {
+      const res = await daemonApp.request('/api/v1/theme/css');
+      return res.text();
     },
   };
 }
@@ -36,6 +41,10 @@ export function createHttpDaemonClient(baseUrl: string): DaemonClient {
         headers: { Authorization: authorizationHeader },
       });
       return res.json();
+    },
+    async getThemeCSS(): Promise<string> {
+      const res = await fetch(`${baseUrl}/api/v1/theme/css`);
+      return res.text();
     },
   };
 }

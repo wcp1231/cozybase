@@ -3,40 +3,27 @@
 ## Purpose
 
 Define the SchemaRenderer runtime contract, including component rendering, expression resolution, action dispatching, page context orchestration, and theming for APP UI execution.
-
 ## Requirements
-
 ### Requirement: SchemaRenderer 入口组件
 
-SchemaRenderer SHALL 作为 `@cozybase/ui` npm 包发布，供每个 APP 的 UI 构建时打包使用，而非嵌入在 Admin SPA 中。
+SchemaRenderer 的渲染职责不变。样式实现 SHALL 从 inline style 切换为 Tailwind utility class。
 
-系统 SHALL 提供 `SchemaRenderer` 作为渲染引擎的入口 React 组件。SchemaRenderer SHALL 接受以下 props：
+SchemaRenderer 内部的 DialogLayer 遮罩、未知组件错误占位符、ErrorBoundary 等 SHALL 使用 Tailwind class 定义样式。
 
-| Prop | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `schema` | `PageSchema` | 是 | 页面的 JSON schema 定义 |
-| `baseUrl` | `string` | 是 | API 基址（如 `/stable/apps/welcome`） |
-| `components` | `Record<string, CustomComponentSchema>` | 否 | 自定义组件注册表 |
+#### Scenario: DialogLayer 使用 Tailwind class
 
-SchemaRenderer SHALL 初始化 PageContext，将 `baseUrl` 和 `components` 注入上下文，然后递归渲染 `schema.body` 中的组件树。
+- **WHEN** SchemaRenderer 渲染 DialogLayer 遮罩
+- **THEN** 遮罩元素 SHALL 使用 Tailwind class（如 `fixed inset-0`）渲染，不使用 inline style 定义位置和颜色
 
-SchemaRenderer SHALL 不依赖 cozybase server 的任何内部模块，仅通过 `baseUrl` + HTTP 请求与后端通信。
-APP UI 构建产物与 iframe 运行协议由 `app-ui-independent` capability 规范，本 Requirement 仅定义 SchemaRenderer 的渲染职责。
+#### Scenario: 未知组件错误使用 Tailwind class
 
-#### Scenario: 基本渲染
+- **WHEN** 遇到未注册的组件类型
+- **THEN** 错误占位符 SHALL 使用语义色 Tailwind class（如 `bg-error-bg text-error-text border border-error-border`）渲染
 
-- **WHEN** 传入 schema 包含 `body: [{ "type": "text", "text": "Hello" }]`，baseUrl 为 `/stable/apps/welcome`
-- **THEN** SchemaRenderer SHALL 渲染出一个显示 "Hello" 的文本组件
+#### Scenario: ErrorBoundary 使用 Tailwind class
 
-#### Scenario: 嵌套组件渲染
-
-- **WHEN** schema.body 包含 `{ "type": "card", "children": [{ "type": "text", "text": "内容" }] }`
-- **THEN** SchemaRenderer SHALL 递归渲染 card 组件及其子组件 text
-
-#### Scenario: 渲染出错不崩溃
-
-- **WHEN** schema.body 中某个组件渲染时抛出异常
-- **THEN** SchemaRenderer SHALL 捕获该异常，渲染一个错误提示占位符，其他组件不受影响
+- **WHEN** 组件渲染抛出异常
+- **THEN** ErrorBoundary 的 fallback UI SHALL 使用 Tailwind class 渲染
 
 ### Requirement: ComponentRegistry 组件注册表
 
@@ -246,12 +233,19 @@ PageContext SHALL 提供以下能力：
 
 ### Requirement: 主题支持
 
-SchemaRenderer SHALL 支持通过 CSS Variables 接收主题配置，以便在 iframe 嵌入时与 Admin 保持视觉一致。
+SchemaRenderer SHALL 通过 Tailwind utility class 消费 `@theme` 中定义的 design token，token 底层引用 `--cz-*` CSS Variables。
 
-#### Scenario: 接收 postMessage 主题更新
-- **WHEN** APP UI 运行在 iframe 中，收到 Admin 发送的 `theme-update` postMessage
-- **THEN** SchemaRenderer 更新根元素的 CSS Variables，所有使用 CSS Variables 的组件样式自动更新
+`<style id="cz-theme">` 注入机制 SHALL 继续作为运行时 theme 自定义入口。Tailwind `@theme` 中的 `var(--cz-*, fallback)` 确保有无注入都能正常渲染。
 
-#### Scenario: 默认主题
-- **WHEN** APP UI 独立运行（非 iframe）
-- **THEN** SchemaRenderer 使用内置的默认主题 CSS Variables 渲染
+`generateThemeCSS()` 函数 SHALL 保持不变，继续生成 `:root { --cz-*: value }` CSS 变量声明。
+
+#### Scenario: 有 theme 注入时 Tailwind 跟随
+
+- **WHEN** HTML 中注入了 `<style id="cz-theme">` 覆盖 `--cz-primary`
+- **THEN** SchemaRenderer 中使用 `bg-primary` 的组件 SHALL 渲染为注入的颜色值
+
+#### Scenario: 无 theme 注入时使用 fallback
+
+- **WHEN** SchemaRenderer 在无 `<style id="cz-theme">` 的环境中渲染
+- **THEN** 所有组件 SHALL 使用 `@theme` 中的 fallback 默认值正常渲染
+

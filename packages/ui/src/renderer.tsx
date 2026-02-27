@@ -75,46 +75,20 @@ function DialogLayer({
       {dialogs.map((dialog) => (
         <div
           key={dialog.id}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 bg-overlay flex items-center justify-center z-[1000]"
           onClick={(e) => {
             if (e.target === e.currentTarget) ctx.closeDialog();
           }}
         >
           <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 8,
-              padding: 24,
-              width: dialog.width ?? 480,
-              maxHeight: '80vh',
-              overflow: 'auto',
-            }}
+            className="bg-bg rounded-md p-6 max-h-[80vh] overflow-auto"
+            style={{ width: dialog.width ?? 480 }}
           >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 16,
-              }}
-            >
-              <h3 style={{ margin: 0 }}>{dialog.title}</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="m-0">{dialog.title}</h3>
               <button
                 onClick={() => ctx.closeDialog()}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  fontSize: 18,
-                  cursor: 'pointer',
-                }}
+                className="border-0 bg-transparent text-lg cursor-pointer"
               >
                 ✕
               </button>
@@ -174,16 +148,7 @@ export function NodeRenderer({
   const Comp = builtinRegistry.get(schemaType);
   if (!Comp) {
     return (
-      <div
-        style={{
-          padding: 8,
-          backgroundColor: '#FEE2E2',
-          border: '1px solid #FCA5A5',
-          borderRadius: 4,
-          color: '#991B1B',
-          fontSize: 12,
-        }}
-      >
+      <div className="p-2 bg-error-bg border border-error-border rounded-sm text-error-text text-xs">
         未知组件: {schemaType}
       </div>
     );
@@ -265,16 +230,7 @@ class ErrorBoundary extends Component<
   render() {
     if (this.state.error) {
       return (
-        <div
-          style={{
-            padding: 8,
-            backgroundColor: '#FEF3C7',
-            border: '1px solid #FCD34D',
-            borderRadius: 4,
-            color: '#92400E',
-            fontSize: 12,
-          }}
-        >
+        <div className="p-2 bg-warning-bg border border-warning-border rounded-sm text-warning-text text-xs">
           组件 "{this.props.type}" 渲染出错: {this.state.error.message}
         </div>
       );

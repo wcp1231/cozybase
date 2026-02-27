@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve, join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
@@ -11,7 +11,9 @@ import { Publisher } from './core/publisher';
 import { AppError, BadRequestError } from './core/errors';
 import { logger } from './middleware/logger';
 import { createAppRoutes } from './modules/apps/routes';
+import { createThemeRoutes } from './modules/theme/routes';
 import { createRuntime, type AppRegistry } from '@cozybase/runtime';
+import { generateThemeCSS } from '@cozybase/ui';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -64,6 +66,13 @@ export function createServer(config: Config) {
 
   // --- Platform API (app listing / status) ---
   app.route('/api/v1', createAppRoutes(workspace, registry));
+
+  // --- Theme API ---
+  app.route('/api/v1', createThemeRoutes(workspace, registry));
+
+  // --- Generate initial theme CSS and propagate to runtime ---
+  const themeCSS = generateThemeCSS(workspace.getThemeConfig());
+  registry.setThemeCSS(themeCSS);
 
   // --- Draft management routes: /draft/apps/:appName/(reconcile|verify|publish) ---
   // These MUST be registered BEFORE the runtime catch-all at /draft/apps/:name
@@ -152,12 +161,24 @@ export function createServer(config: Config) {
   });
 
   // --- Admin SPA static files ---
-  const adminDistDir = resolve(import.meta.dir, '..', '..', '..', 'admin', 'dist');
+  const adminDistDir = resolve(import.meta.dir, '..', '..', 'admin', 'dist');
 
   if (existsSync(adminDistDir)) {
     app.use('/assets/*', serveStatic({ root: adminDistDir }));
     app.use('/favicon.ico', serveStatic({ root: adminDistDir }));
-    app.get('*', serveStatic({ root: adminDistDir, path: '/index.html' }));
+
+    // Serve index.html with theme CSS injected
+    app.get('*', (c) => {
+      const indexPath = join(adminDistDir, 'index.html');
+      const html = readFileSync(indexPath, 'utf-8');
+      const css = registry.getThemeCSS();
+      if (css) {
+        // Escape </style sequences to prevent breaking out of the style tag
+        const safeCSS = css.replace(/<\/style/gi, '<\\/style');
+        return c.html(html.replace('</head>', `<style id="cz-theme">${safeCSS}</style>\n</head>`));
+      }
+      return c.html(html);
+    });
   }
 
   return { app, workspace, registry, draftReconciler, verifier, publisher, startup };

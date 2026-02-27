@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { clsx } from 'clsx';
 import {
   registerBuiltinComponent,
   type SchemaComponentProps,
@@ -110,7 +111,7 @@ function TextComp({ schema, exprContext }: SchemaComponentProps) {
   const resolved = resolveExpression(s.text, exprContext);
 
   return (
-    <span style={s.style} className={s.className}>
+    <span className={s.className} style={s.style}>
       {String(resolved ?? '')}
     </span>
   );
@@ -127,7 +128,7 @@ function HeadingComp({ schema, exprContext }: SchemaComponentProps) {
 
   return React.createElement(
     `h${level}`,
-    { style: { margin: '0 0 8px 0', ...s.style }, className: s.className },
+    { className: clsx('mb-2', s.className), style: s.style },
     String(resolved ?? ''),
   );
 }
@@ -136,12 +137,12 @@ function HeadingComp({ schema, exprContext }: SchemaComponentProps) {
 // Tag Component
 // ============================================================
 
-const TAG_COLORS: Record<string, { bg: string; color: string }> = {
-  default: { bg: '#f0f0f0', color: '#333333' },
-  success: { bg: '#D1FAE5', color: '#065F46' },
-  warning: { bg: '#FEF3C7', color: '#92400E' },
-  error: { bg: '#FEE2E2', color: '#991B1B' },
-  info: { bg: '#DBEAFE', color: '#1E40AF' },
+const TAG_CLASSES: Record<string, string> = {
+  default: 'bg-bg-muted text-text-secondary',
+  success: 'bg-success-bg text-success-text',
+  warning: 'bg-warning-bg text-warning-text',
+  error: 'bg-error-bg text-error-text',
+  info: 'bg-info-bg text-info-text',
 };
 
 function TagComp({ schema, exprContext }: SchemaComponentProps) {
@@ -150,21 +151,16 @@ function TagComp({ schema, exprContext }: SchemaComponentProps) {
   const resolvedColor = s.color
     ? String(resolveExpression(s.color, exprContext) ?? 'default')
     : 'default';
-  const colors = TAG_COLORS[resolvedColor] ?? TAG_COLORS.default;
+  const colorClass = TAG_CLASSES[resolvedColor] ?? TAG_CLASSES.default;
 
   return (
     <span
-      style={{
-        display: 'inline-block',
-        backgroundColor: colors.bg,
-        color: colors.color,
-        borderRadius: 4,
-        padding: '2px 8px',
-        fontSize: 12,
-        lineHeight: '18px',
-        ...s.style,
-      }}
-      className={s.className}
+      className={clsx(
+        'inline-block rounded-sm px-2 py-0.5 text-xs leading-[18px]',
+        colorClass,
+        s.className,
+      )}
+      style={s.style}
     >
       {String(resolved ?? '')}
     </span>
@@ -188,27 +184,21 @@ function StatComp({ schema, exprContext }: SchemaComponentProps) {
 
   return (
     <div
-      style={{
-        padding: 16,
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        border: '1px solid #e5e7eb',
-        ...s.style,
-      }}
-      className={s.className}
+      className={clsx('p-4 bg-bg rounded-md border border-border', s.className)}
+      style={s.style}
     >
-      <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
+      <div className="text-[13px] text-text-muted mb-1">
         {String(resolvedLabel ?? '')}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 600, color: '#111827' }}>
+      <div className="text-2xl font-semibold text-text">
         {resolvedPrefix != null && (
-          <span style={{ fontSize: 14, fontWeight: 400, marginRight: 4 }}>
+          <span className="text-sm font-normal mr-1">
             {String(resolvedPrefix)}
           </span>
         )}
         {String(resolvedValue ?? '')}
         {resolvedSuffix != null && (
-          <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>
+          <span className="text-sm font-normal ml-1">
             {String(resolvedSuffix)}
           </span>
         )}
@@ -294,19 +284,12 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
   );
 
   if (loading) {
-    return <div style={{ padding: 16, color: '#6b7280' }}>加载中...</div>;
+    return <div className="p-4 text-text-muted">加载中...</div>;
   }
 
   if (error) {
     return (
-      <div
-        style={{
-          padding: 16,
-          color: '#991B1B',
-          backgroundColor: '#FEE2E2',
-          borderRadius: 4,
-        }}
-      >
+      <div className="p-4 text-error-text bg-error-bg rounded-sm">
         加载失败: {error}
       </div>
     );
@@ -315,47 +298,25 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
   const rows = Array.isArray(data) ? data : [];
   const hasRowActions = s.rowActions && s.rowActions.length > 0;
   const totalColumns = s.columns.length + (hasRowActions ? 1 : 0);
+  const isNextDisabled = rows.length < pageSize;
+  const isPrevDisabled = currentPage === 0;
 
   return (
-    <div style={s.style} className={s.className}>
-      <table
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: 14,
-        }}
-      >
+    <div className={s.className} style={s.style}>
+      <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
             {s.columns.map((col) => (
               <th
                 key={col.name}
-                style={{
-                  textAlign: 'left',
-                  padding: '8px 12px',
-                  backgroundColor: '#f9fafb',
-                  borderBottom: '1px solid #e5e7eb',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: '#374151',
-                  width: col.width,
-                }}
+                className="text-left px-3 py-2 bg-bg-subtle border-b border-border font-semibold text-[13px] text-text-secondary"
+                style={{ width: col.width }}
               >
                 {col.label}
               </th>
             ))}
             {hasRowActions && (
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '8px 12px',
-                  backgroundColor: '#f9fafb',
-                  borderBottom: '1px solid #e5e7eb',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: '#374151',
-                }}
-              >
+              <th className="text-left px-3 py-2 bg-bg-subtle border-b border-border font-semibold text-[13px] text-text-secondary">
                 操作
               </th>
             )}
@@ -365,15 +326,12 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
           {rows.map((row: Record<string, unknown>, rowIndex: number) => (
             <tr
               key={(row.id as string | number) ?? rowIndex}
-              style={{ borderBottom: '1px solid #e5e7eb' }}
+              className="border-b border-border"
             >
               {s.columns.map((col) => (
                 <td
                   key={col.name}
-                  style={{
-                    padding: '8px 12px',
-                    color: '#111827',
-                  }}
+                  className="px-3 py-2 text-text"
                 >
                   {col.render ? (
                     <NodeRenderer
@@ -387,20 +345,12 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
                 </td>
               ))}
               {hasRowActions && (
-                <td style={{ padding: '8px 12px' }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                <td className="px-3 py-2">
+                  <div className="flex gap-2">
                     {s.rowActions!.map((rowAction, actionIndex) => (
                       <button
                         key={actionIndex}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: 13,
-                          color: '#2563eb',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                        }}
+                        className="px-2 py-1 text-[13px] text-primary bg-transparent border-0 cursor-pointer underline"
                         onClick={() => {
                           if (rowAction.confirm) {
                             const message = String(
@@ -429,11 +379,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
             <tr>
               <td
                 colSpan={totalColumns}
-                style={{
-                  padding: 24,
-                  textAlign: 'center',
-                  color: '#9ca3af',
-                }}
+                className="p-6 text-center text-text-placeholder"
               >
                 暂无数据
               </td>
@@ -443,44 +389,29 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
       </table>
 
       {paginationEnabled && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: 8,
-            padding: '12px 0',
-            fontSize: 13,
-          }}
-        >
+        <div className="flex justify-end items-center gap-2 py-3 text-[13px]">
           <button
-            disabled={currentPage === 0}
+            disabled={isPrevDisabled}
             onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-            style={{
-              padding: '4px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: 4,
-              backgroundColor: currentPage === 0 ? '#f3f4f6' : '#fff',
-              color: currentPage === 0 ? '#9ca3af' : '#374151',
-              cursor: currentPage === 0 ? 'not-allowed' : 'pointer',
-            }}
+            className={clsx(
+              'px-3 py-1 border border-border-strong rounded-sm',
+              isPrevDisabled
+                ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
+                : 'bg-bg text-text-secondary cursor-pointer',
+            )}
           >
             上一页
           </button>
-          <span style={{ color: '#6b7280' }}>第 {currentPage + 1} 页</span>
+          <span className="text-text-muted">第 {currentPage + 1} 页</span>
           <button
-            disabled={rows.length < pageSize}
+            disabled={isNextDisabled}
             onClick={() => setCurrentPage((p) => p + 1)}
-            style={{
-              padding: '4px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: 4,
-              backgroundColor:
-                rows.length < pageSize ? '#f3f4f6' : '#fff',
-              color: rows.length < pageSize ? '#9ca3af' : '#374151',
-              cursor:
-                rows.length < pageSize ? 'not-allowed' : 'pointer',
-            }}
+            className={clsx(
+              'px-3 py-1 border border-border-strong rounded-sm',
+              isNextDisabled
+                ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
+                : 'bg-bg text-text-secondary cursor-pointer',
+            )}
           >
             下一页
           </button>
@@ -536,19 +467,12 @@ function ListComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps) 
   }, [schemaId, refetch]);
 
   if (loading) {
-    return <div style={{ padding: 16, color: '#6b7280' }}>加载中...</div>;
+    return <div className="p-4 text-text-muted">加载中...</div>;
   }
 
   if (error) {
     return (
-      <div
-        style={{
-          padding: 16,
-          color: '#991B1B',
-          backgroundColor: '#FEE2E2',
-          borderRadius: 4,
-        }}
-      >
+      <div className="p-4 text-error-text bg-error-bg rounded-sm">
         加载失败: {error}
       </div>
     );
@@ -557,7 +481,7 @@ function ListComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps) 
   const items = Array.isArray(data) ? data : [];
 
   return (
-    <div style={s.style} className={s.className}>
+    <div className={s.className} style={s.style}>
       {items.map((item: Record<string, unknown>, index: number) => (
         <NodeRenderer
           key={(item.id as string | number) ?? index}
@@ -567,7 +491,7 @@ function ListComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps) 
         />
       ))}
       {items.length === 0 && (
-        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
+        <div className="p-6 text-center text-text-muted">
           暂无数据
         </div>
       )}
