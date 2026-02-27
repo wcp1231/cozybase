@@ -39,11 +39,15 @@ Workspace (~/.cozybase)
          │                               ▲
          ▼                               │
    ┌───────────────────────────────────┐ │
-   │ cozybase daemon                   │ │
+   │ cozybase daemon (@cozybase/daemon)│ │
    │  Workspace → AppContext (per-app) │ │
-   │  DraftReconciler / Verifier /     │─┘
-   │  Publisher → SQLite               │
-   │  Management API + Admin UI        │
+   │  DraftReconciler / Verifier /     │ │
+   │  Publisher → SQLite               │ │
+   │  Management API + Admin UI        │ │
+   ├───────────────────────────────────┤ │
+   │ runtime (@cozybase/runtime)       │ │
+   │  AppRegistry (per-app lifecycle)  │─┘
+   │  DB / Functions / UI routes       │
    └───────────────────────────────────┘
 ```
 
@@ -54,7 +58,8 @@ Workspace (~/.cozybase)
 bun install
 
 # Start the daemon (workspace auto-initializes at ~/.cozybase)
-bun run packages/server/src/index.ts
+bun run dev
+# or directly: bun packages/daemon/src/cli.ts daemon
 ```
 
 On first run, Cozybase auto-creates the workspace with an example `welcome` app (a TODO list with UI):
@@ -182,7 +187,7 @@ curl -X PATCH http://localhost:3000/stable/apps/todo-app/db/todos/1 \
 curl -X DELETE http://localhost:3000/stable/apps/todo-app/db/todos/1
 
 # Raw SQL
-curl -X POST http://localhost:3000/stable/apps/todo-app/db/sql \
+curl -X POST http://localhost:3000/stable/apps/todo-app/db/_sql \
   -H 'Content-Type: application/json' \
   -d '{"sql": "SELECT * FROM todos WHERE completed = 0"}'
 ```
@@ -249,22 +254,22 @@ Every handler receives a `ctx` object with:
 
 ```bash
 # Draft mode (hot-reloads on every request)
-curl http://localhost:3000/draft/apps/todo-app/functions/health
+curl http://localhost:3000/draft/apps/todo-app/fn/health
 # {"status":"ok","app":"todo-app","mode":"draft"}
 
 # Stable mode (cached modules, reloaded on publish)
-curl http://localhost:3000/stable/apps/todo-app/functions/health
+curl http://localhost:3000/stable/apps/todo-app/fn/health
 # {"status":"ok","app":"todo-app","mode":"stable"}
 
 # POST to a function
-curl -X POST http://localhost:3000/draft/apps/todo-app/functions/items \
+curl -X POST http://localhost:3000/draft/apps/todo-app/fn/items \
   -H 'Content-Type: application/json' \
   -d '{"title": "New item"}'
 ```
 
 ### Function Conventions
 
-- File paths map to route names: `functions/health.ts` -> `/functions/health`
+- File paths map to route names: `functions/health.ts` -> `/fn/health`
 - Files prefixed with `_` (e.g. `functions/_utils.ts`) are not exposed as endpoints
 - Functions are stored in Platform DB and exported to the filesystem during Reconcile/Publish for Bun `import()`
 - Draft mode: functions are re-imported on every request (hot-reload)
@@ -359,7 +364,7 @@ Interactive behaviors are declared via actions:
 | `close` | Close the current dialog |
 | `confirm` | Show confirmation dialog before proceeding |
 
-API URLs in actions use app-relative paths (e.g. `/db/todo`, `/functions/hello`) — the renderer auto-completes them.
+API URLs in actions use app-relative paths (e.g. `/db/todo`, `/fn/hello`) — the renderer auto-completes them.
 
 ### Admin Routes
 
@@ -385,14 +390,33 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/reconcile
 curl -X POST http://localhost:3000/draft/apps/todo-app/publish
 ```
 
-## CLI Options
+## CLI
 
 ```
-bun run packages/server/src/index.ts [options]
+cozybase <command> [options]
+
+Commands:
+  daemon              Manage the HTTP server
+    start             Start the daemon (default)
+    stop              Stop the running daemon
+    restart           Restart the daemon
+    status            Show daemon status
+  mcp                 Start the MCP server (stdio)
 
 Options:
-  --workspace <path>   Workspace directory (default: ~/.cozybase)
-  --port <number>      Server port (default: 3000)
+  --help, -h          Show this help message
+  --version, -v       Show version number
+```
+
+```bash
+# Start the daemon
+bun run dev
+# or: bun packages/daemon/src/cli.ts daemon
+
+# Daemon management
+bun packages/daemon/src/cli.ts daemon stop
+bun packages/daemon/src/cli.ts daemon status
+bun packages/daemon/src/cli.ts daemon restart
 ```
 
 Environment variables `COZYBASE_WORKSPACE`, `COZYBASE_PORT` are also supported.
@@ -403,10 +427,10 @@ The `cozybase mcp` command starts an MCP Server for AI Agent integration (stdio 
 
 ```bash
 # Local mode (embedded, no daemon needed)
-cozybase mcp --apps-dir /path/to/workspace
+bun packages/daemon/src/cli.ts mcp --apps-dir /path/to/workspace
 
 # Remote mode (connects to a running cozybase daemon)
-cozybase mcp --url http://homelab.local:3000 --apps-dir /path/to/workspace
+bun packages/daemon/src/cli.ts mcp --url http://homelab.local:3000 --apps-dir /path/to/workspace
 ```
 
 | Option | Env Var | Description |
@@ -437,8 +461,7 @@ All paths prefixed with `/stable/apps/:appName/db`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/schema` | Introspect all tables |
-| POST | `/sql` | Execute raw SQL |
-| POST | `/_sql` | Execute SQL with safety checks (used by MCP RemoteBackend) |
+| POST | `/_sql` | Execute raw SQL (with safety checks) |
 | GET | `/:table` | List records |
 | GET | `/:table/:id` | Get single record |
 | POST | `/:table` | Create record |
@@ -461,15 +484,15 @@ Same endpoints as Stable, prefixed with `/draft/apps/:appName/db`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| * | `/stable/apps/:appName/functions/:name` | Execute stable function |
-| * | `/draft/apps/:appName/functions/:name` | Execute draft function (hot-reload) |
+| * | `/stable/apps/:appName/fn/:name` | Execute stable function |
+| * | `/draft/apps/:appName/fn/:name` | Execute draft function (hot-reload) |
 
 ### UI
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/stable/apps/:appName/ui` | Get published UI definition |
-| GET | `/draft/apps/:appName/ui` | Get draft UI definition |
+| GET | `/stable/apps/:appName/ui.json` | Get published UI definition |
+| GET | `/draft/apps/:appName/ui.json` | Get draft UI definition |
 
 ## Workspace Structure
 
@@ -549,15 +572,16 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 
 - **Workspace**: Self-contained directory (`~/.cozybase`) with `data/` (Platform DB + stable runtime) and `draft/` (draft runtime). Auto-initializes on first startup with template apps loaded into the Platform DB.
 - **Platform DB**: Central `platform.sqlite` stores all app definitions (`apps` + `app_files` tables). Acts as the single source of truth — Management API is the only entry point for modifications.
-- **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request.
+- **AppContext**: Per-app resource container with separate Stable and Draft database connections. Created lazily on first request. Lives in the Daemon layer.
 - **DraftReconciler**: Reads migrations, seeds, functions, and UI definitions from Platform DB, destroys and rebuilds the draft database. Exports function and UI files to disk.
 - **Verifier**: Checks that published migrations are marked immutable, then tests new migrations against a copy of the stable database.
 - **Publisher**: Backs up the stable database, applies new migrations incrementally, records them in `_migrations` table, marks migration files as `immutable`, exports functions and UI definitions, reloads function cache, and cleans up draft.
 - **Management API**: RESTful HTTP API (`/api/v1/apps/*`) for app CRUD and file management. Supports single-file updates and batch Checkout-Edit-Push with optimistic locking (`base_version`).
+- **AppRegistry** (`@cozybase/runtime`): In-process registry that manages per-app lifecycle. Each entry holds the app's DB connection, module cache, and runtime config. The Daemon calls `registry.start()`, `.stop()`, `.restart()`, and `.shutdownAll()` to control app instances.
+- **Runtime** (`@cozybase/runtime`): Separate package providing the app execution layer — DB CRUD, function execution, and UI serving. Mounted as Hono sub-routes under `/stable/apps/:name` and `/draft/apps/:name`. No internal management endpoints are exposed.
 - **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Uses a Backend Adapter pattern (`CozybaseBackend` interface) with two implementations: `EmbeddedBackend` (local, direct module calls) and `RemoteBackend` (HTTP client to a running daemon). Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
-- **FunctionRuntime**: Abstraction for loading and executing user TypeScript functions. `DirectRuntime` (MVP) runs functions in the main process via `import()`. Draft mode uses cache-busting for hot-reload; Stable mode caches modules.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
-- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the server. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
+- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the daemon. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
 - **App States**: Derived from DB fields — `published_version = 0` → `draft_only`, `current_version = published_version` → `stable`, `current_version > published_version` → `stable_draft`, `status = deleted` → `deleted`.
 
 ### Project Structure
@@ -565,11 +589,13 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 ```
 cozybase/
 ├── packages/
-│   ├── server/                 # Daemon server
+│   ├── daemon/                # Daemon (management layer, @cozybase/daemon)
 │   │   ├── src/
-│   │   │   ├── index.ts              # Entry point
-│   │   │   ├── server.ts             # Hono app factory + static file serving
-│   │   │   ├── config.ts             # Configuration
+│   │   │   ├── cli.ts               # CLI entry point (daemon/mcp commands)
+│   │   │   ├── index.ts             # Daemon startup (Bun.serve)
+│   │   │   ├── server.ts            # Hono app factory + route setup
+│   │   │   ├── config.ts            # Configuration
+│   │   │   ├── daemon-ctl.ts        # Daemon process control (start/stop/status)
 │   │   │   ├── core/
 │   │   │   │   ├── workspace.ts      # Workspace + Platform DB + app state
 │   │   │   │   ├── app-context.ts    # Per-app resource container
@@ -593,31 +619,48 @@ cozybase/
 │   │   │   │   ├── handlers.ts        # MCP tool handler implementations
 │   │   │   │   ├── embedded-backend.ts # Local mode (direct module calls)
 │   │   │   │   ├── remote-backend.ts  # Remote mode (HTTP API client)
+│   │   │   │   ├── mcp-entry.ts       # MCP Server entry point
 │   │   │   │   └── server.ts          # MCP Server (stdio transport)
 │   │   │   └── modules/
-│   │   │       ├── apps/
-│   │   │       │   ├── routes.ts     # Management API routes (CRUD + files)
-│   │   │       │   ├── manager.ts    # App CRUD + file management operations
-│   │   │       │   └── mcp-types.ts  # MCP tool type definitions
-│   │   │       ├── db/
-│   │   │       │   ├── routes.ts         # Auto CRUD
-│   │   │       │   ├── query-builder.ts  # URL → SQL
-│   │   │       │   ├── schema.ts         # Schema introspection
-│   │   │       │   └── sql.ts            # Raw SQL execution
-│   │   │       └── functions/
-│   │   │           ├── types.ts          # FunctionRuntime, FunctionContext interfaces
-│   │   │           ├── direct-runtime.ts # Module loading + execution
-│   │   │           ├── context.ts        # FunctionContext builder
-│   │   │           ├── database-client.ts # SQLite wrapper for functions
-│   │   │           ├── logger.ts         # Structured function logger
-│   │   │           └── routes.ts         # Function HTTP routes
-│   │   └── tests/                  # Automated tests (Bun test runner)
+│   │   │       └── apps/
+│   │   │           ├── routes.ts     # Management API routes (CRUD + files)
+│   │   │           ├── manager.ts    # App CRUD + file management operations
+│   │   │           └── mcp-types.ts  # MCP tool type definitions
+│   │   ├── templates/                # Template apps for workspace init
+│   │   │   └── welcome/             # Welcome TODO app
+│   │   └── tests/                    # Automated tests (Bun test runner)
 │   │       ├── helpers/
 │   │       │   └── test-workspace.ts
 │   │       ├── core/               # Unit + integration tests
 │   │       ├── modules/            # Module integration tests (functions, etc.)
 │   │       ├── mcp/                # MCP tool tests (SQL safety, app-dir, backend, endpoints)
 │   │       └── scenarios/          # End-to-end tests
+│   ├── runtime/               # App execution layer (@cozybase/runtime)
+│   │   └── src/
+│   │       ├── index.ts              # createRuntime() — Hono app + AppRegistry
+│   │       ├── registry.ts           # AppRegistry (start/stop/restart lifecycle)
+│   │       ├── daemon-client.ts      # In-process + HTTP daemon client
+│   │       ├── middleware/
+│   │       │   ├── app-entry-resolver.ts  # Resolve AppEntry from registry
+│   │       │   └── auth-delegation.ts     # Auth delegation to daemon
+│   │       ├── modules/
+│   │       │   ├── db/
+│   │       │   │   ├── routes.ts         # Auto CRUD
+│   │       │   │   ├── query-builder.ts  # URL → SQL
+│   │       │   │   ├── schema.ts         # Schema introspection
+│   │       │   │   ├── sql-safety.ts     # SQL classification + permission checks
+│   │       │   │   └── sql.ts            # Raw SQL execution
+│   │       │   ├── functions/
+│   │       │   │   ├── types.ts          # FunctionContext interfaces
+│   │       │   │   ├── executor.ts       # Module loading + execution
+│   │       │   │   ├── context.ts        # FunctionContext builder
+│   │       │   │   ├── database-client.ts # SQLite wrapper for functions
+│   │       │   │   ├── logger.ts         # Structured function logger
+│   │       │   │   └── routes.ts         # Function HTTP routes (/fn/:name)
+│   │       │   └── ui/
+│   │       │       └── routes.ts         # UI routes (/ui.json, /assets, /)
+│   │       └── routes/
+│   │           └── internal.ts           # Reserved for internal routes
 │   ├── ui/                    # JSON-to-React UI renderer (@cozybase/ui)
 │   │   └── src/
 │   │       ├── index.ts              # Public exports
@@ -649,15 +692,15 @@ cozybase/
 ## Testing
 
 ```bash
-# Run all server tests
-bun test packages/server/
+# Run all daemon tests
+bun test packages/daemon/
 
 # Run by category
-cd packages/server
-bun run test:unit          # MigrationRunner, SeedLoader, AppContext
-bun run test:integration   # Workspace, DraftReconciler, Verifier, Publisher, Functions
-bun run test:e2e           # Full workflow scenarios
-bun test tests/mcp/        # MCP tools (SQL safety, app-dir, backend, SQL endpoint)
+cd packages/daemon
+bun test tests/core/             # Unit: MigrationRunner, SeedLoader, AppContext, etc.
+bun test tests/mcp/              # MCP tools: SQL safety, app-dir, backend, SQL endpoint
+bun test tests/modules/          # Integration: functions, apps API
+bun test tests/scenarios/        # End-to-end: full workflow scenarios
 
 # Run UI renderer tests (expression engine, action dispatcher, component registry)
 bun test packages/ui/src/
@@ -694,6 +737,7 @@ cd packages/admin && bun run build
 - [x] JSON-to-UI renderer (26 built-in components, expression engine, action system)
 - [x] Admin UI (React SPA with app management and page rendering)
 - [x] MCP Server (AI Agent integration via Model Context Protocol)
+- [x] Daemon/Runtime split (management layer + app execution layer)
 - [ ] Storage module (file uploads + buckets)
 - [ ] Worker runtime (per-app Bun Worker isolation)
 - [ ] Cron scheduler

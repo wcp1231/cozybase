@@ -22,6 +22,39 @@
         "vite": "^6.0.0",
       },
     },
+    "packages/daemon": {
+      "name": "@cozybase/daemon",
+      "version": "0.1.0",
+      "bin": {
+        "cozybase": "./src/cli.ts",
+      },
+      "dependencies": {
+        "@cozybase/runtime": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.27.1",
+        "croner": "^9.0.0",
+        "hono": "^4.7.0",
+        "jose": "^6.0.0",
+        "nanoid": "^5.1.0",
+        "yaml": "^2.8.2",
+        "zod": "^3.24.0",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.7.0",
+      },
+    },
+    "packages/runtime": {
+      "name": "@cozybase/runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "hono": "^4.7.0",
+        "nanoid": "^5.1.0",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/server": {
       "name": "@cozybase/server",
       "version": "0.1.0",
@@ -97,6 +130,10 @@
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
 
     "@cozybase/admin": ["@cozybase/admin@workspace:packages/admin"],
+
+    "@cozybase/daemon": ["@cozybase/daemon@workspace:packages/daemon"],
+
+    "@cozybase/runtime": ["@cozybase/runtime@workspace:packages/runtime"],
 
     "@cozybase/server": ["@cozybase/server@workspace:packages/server"],
 

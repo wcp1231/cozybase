@@ -54,70 +54,43 @@ Handler 解析优先级：
 - **WHEN** 收到 `GET /functions/nonexistent` 请求，但 `functions/nonexistent.ts` 不存在
 - **THEN** 系统 SHALL 返回 `404 Not Found`
 
-### Requirement: FunctionRuntime 接口抽象
+### Requirement: FunctionRuntime 接口移除
 
-系统 SHALL 通过 `FunctionRuntime` 接口抽象函数的加载与执行，使执行环境可替换。
+DirectRuntime 实现 SHALL 被移除，函数执行逻辑迁移到 `packages/runtime` 包中，由 Runtime 的 APP 注册表驱动。
 
-`FunctionRuntime` 接口 SHALL 包含以下方法：
-- `execute(app: AppContext, functionName: string, request: Request): Promise<Response>` — 执行指定函数
-- `reload(appName: string): Promise<void>` — 重新加载指定 APP 的所有函数模块缓存
-- `shutdown(): Promise<void>` — 关闭运行时，释放所有资源
+#### Scenario: 函数执行由 Runtime 注册表驱动
 
-系统 SHALL 在启动时初始化一个 `FunctionRuntime` 实例，并在所有函数路由中共享使用。
+- **WHEN** 函数执行请求到达 Runtime（如 `POST /stable/apps/todo/fn/create`）
+- **THEN** Runtime 从注册表中查找 `todo:stable` 条目，使用其 `functionsDir` 加载函数模块并执行
+- **THEN** 不再使用 DirectRuntime 类，Runtime 直接管理函数模块加载
 
-#### Scenario: 通过接口执行函数
+### Requirement: 函数模块加载方式
 
-- **WHEN** 函数路由收到请求
-- **THEN** 系统 SHALL 调用 `FunctionRuntime.execute()` 处理请求，而非直接 `import()` 函数文件
+函数模块加载 SHALL 基于 APP 注册表条目的 `functionsDir` 路径，而非通过 appResolver 中间件获取 APP 上下文。
 
-#### Scenario: 运行时关闭
+#### Scenario: 函数文件定位
+- **WHEN** Runtime 收到函数执行请求 `POST /apps/todo/fn/create`
+- **THEN** Runtime 从注册表的 `todo:{mode}` 条目获取 `functionsDir`，拼接为 `{functionsDir}/create.ts` 加载
 
-- **WHEN** 服务器关闭时
-- **THEN** 系统 SHALL 调用 `FunctionRuntime.shutdown()` 释放资源
+#### Scenario: Draft 模式函数缓存
+- **WHEN** Draft 模式下执行函数
+- **THEN** Runtime 每次请求重新加载函数模块（使用 cache bust），确保代码变更立即生效
 
-### Requirement: DirectRuntime 实现
-
-系统 SHALL 提供 `DirectRuntime` 作为 `FunctionRuntime` 的 MVP 实现，在主进程内通过 Bun 的 `import()` 动态加载并执行 TypeScript 函数文件。
-
-加载与缓存策略：
-- **Draft 模式**：每次请求 SHALL 从 `draft/apps/{appName}/functions/` 目录加载函数文件（通过 query string cache bust 绕过模块缓存）。函数文件由 Reconcile 流程复制到该目录，修改源码后需 Reconcile 才生效。
-- **Stable 模式**：首次 `import()` 后 SHALL 缓存模块引用，后续请求复用缓存。从 `data/apps/{appName}/functions/` 目录加载。调用 `reload()` SHALL 清除指定 APP 的模块缓存
-
-> Draft Functions 的生命周期与 Draft DB 一致：编辑源码 → Reconcile → Draft 可用 → Publish → Stable 可用。
-
-#### Scenario: Draft 模式从 draft 目录加载函数
-
-- **WHEN** Draft 模式下请求执行函数 `orders`
-- **THEN** 系统 SHALL 从 `draft/apps/{appName}/functions/orders.ts` 加载函数文件，而非从 `apps/{appName}/functions/orders.ts`
-
-#### Scenario: Draft 函数修改需 Reconcile 生效
-
-- **WHEN** 开发者修改了 `apps/{appName}/functions/orders.ts` 的源码，但未执行 Reconcile
-- **THEN** Draft 模式下请求该函数 SHALL 仍执行旧版本代码（来自 `draft/apps/{appName}/functions/orders.ts` 的副本）
-
-#### Scenario: Reconcile 后 Draft 函数更新
-
-- **WHEN** 开发者修改源码后执行 Reconcile
-- **THEN** Reconcile 将新版本函数复制到 draft 目录，后续 Draft 模式请求 SHALL 执行新版本代码
-
-#### Scenario: Stable 模式缓存
-
-- **WHEN** Stable 模式下连续两次请求同一函数
-- **THEN** 系统 SHALL 复用首次加载的模块，不重新 `import()`
-
-#### Scenario: reload 清除缓存
-
-- **WHEN** 调用 `reload('my-app')` 后再次请求 `my-app` 的某个 Stable 函数
-- **THEN** 系统 SHALL 重新 `import()` 该函数文件
+#### Scenario: Stable 模式函数缓存
+- **WHEN** Stable 模式下执行函数
+- **THEN** Runtime 使用 `moduleCache`（存储在注册表条目中）缓存已加载的函数模块
+- **AND** 当 APP restart 时，缓存被清除并重新加载
 
 ### Requirement: FunctionContext 运行时上下文
+
+FunctionContext SHALL 从 Runtime 的 APP 注册表条目获取 DB 连接和其他上下文信息，而非从 Daemon 的 AppContext 获取。
 
 系统 SHALL 为每次函数调用构建 `FunctionContext` 对象，提供以下运行时能力：
 
 - `req: Request` — 标准 Web Request 对象
-- `db: DatabaseClient` — 当前模式（Stable 或 Draft）的数据库客户端
+- `db: DatabaseClient` — 注册表条目的数据库客户端（启动时由 Runtime 打开的 SQLite 连接）
 - `env: Record<string, string>` — 环境变量（来源于 `process.env`）
-- `app: { name: string }` — 当前 APP 信息
+- `app: { name: string }` — 当前 APP 信息（APP 名称和模式）
 - `mode: 'stable' | 'draft'` — 当前运行模式
 - `log: Logger` — 结构化日志工具
 - `fetch: typeof globalThis.fetch` — HTTP 客户端
@@ -135,10 +108,20 @@ Handler 解析优先级：
 
 日志输出 SHALL 包含 APP 名称、函数名称和运行模式，便于 AI Agent 调试追踪。
 
+#### Scenario: FunctionContext 构建
+
+- **WHEN** Runtime 准备执行函数
+- **THEN** 从注册表条目构建 FunctionContext，包括 `req`（原始请求）、`db`（注册表条目的 DB 连接）、`env`（环境变量）、`app`（APP 名称和模式）、`mode`（stable/draft）、`log`（Logger 实例）
+
 #### Scenario: 函数访问数据库
 
 - **WHEN** Draft 模式下函数调用 `ctx.db.query('SELECT * FROM todos')`
 - **THEN** 系统 SHALL 从 `draft/apps/{appName}/db.sqlite` 查询数据并返回结果数组
+
+#### Scenario: DatabaseClient 使用注册表 DB 连接
+
+- **WHEN** 函数通过 `ctx.db.query()` 执行数据库查询
+- **THEN** DatabaseClient 使用注册表条目中的 `db` 连接（启动时由 Runtime 打开的 SQLite 连接）
 
 #### Scenario: 函数访问数据库 — Stable 模式
 
@@ -157,29 +140,37 @@ Handler 解析优先级：
 
 ### Requirement: 函数 HTTP 路由注册
 
+函数路由 SHALL 从 `packages/server` 迁移到 `packages/runtime`，路由路径结构保持不变。
+
 系统 SHALL 注册以下路由用于调用用户自定义函数：
 
-- `/stable/apps/:appName/functions/:name` — Stable 版本的函数调用
-- `/draft/apps/:appName/functions/:name` — Draft 版本的函数调用
+- `/stable/apps/:appName/fn/:name` — Stable 版本的函数调用
+- `/draft/apps/:appName/fn/:name` — Draft 版本的函数调用
 
 路由 SHALL 接受所有 HTTP 方法（GET、POST、PUT、PATCH、DELETE、HEAD、OPTIONS），由函数文件的导出决定哪些方法被处理。
 
-路由 SHALL 复用现有的 `appResolver` 中间件获取 `AppContext` 和运行模式。
+路由 SHALL 使用 Runtime 注册表查找替代原有的 `appResolver` 中间件，通过 URL 中的 `:name` 参数和请求路径中的 mode 前缀定位 APP 条目。
 
 #### Scenario: 调用 Stable 函数
 
-- **WHEN** 发送 `POST /stable/apps/my-app/functions/create-order`
-- **THEN** 系统 SHALL 加载 `apps/my-app/functions/create-order.ts`，以 Stable 模式执行，使用 Stable 数据库
+- **WHEN** 发送 `POST /stable/apps/my-app/fn/create-order`
+- **THEN** 请求经 Daemon mount 到达 Runtime，Runtime 在 `/apps/:name/fn/:fnName` 路由中处理
+- **THEN** 路由支持所有 HTTP 方法（GET、POST、PUT、PATCH、DELETE 等）
 
 #### Scenario: 调用 Draft 函数
 
-- **WHEN** 发送 `POST /draft/apps/my-app/functions/create-order`
+- **WHEN** 发送 `POST /draft/apps/my-app/fn/create-order`
 - **THEN** 系统 SHALL 加载 `apps/my-app/functions/create-order.ts`，以 Draft 模式执行，使用 Draft 数据库
+
+#### Scenario: appResolver 中间件替换
+
+- **WHEN** 函数请求到达 Runtime
+- **THEN** Runtime 使用注册表查找替代原有的 appResolver 中间件，通过 URL 中的 `:name` 参数和请求路径中的 mode 前缀定位 APP 条目
 
 #### Scenario: 访问不存在的 Stable 函数（App 为 Draft only）
 
-- **WHEN** 发送 `GET /stable/apps/new-app/functions/health`，但 `new-app` 处于 Draft only 状态
-- **THEN** 系统 SHALL 返回 `404 Not Found`（由 `appResolver` 拦截）
+- **WHEN** 发送 `GET /stable/apps/new-app/fn/health`，但 `new-app` 处于 Draft only 状态
+- **THEN** 系统 SHALL 返回 `404 Not Found`（由注册表查找拦截）
 
 ### Requirement: 函数返回值处理
 

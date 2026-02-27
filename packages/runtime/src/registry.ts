@@ -1,0 +1,135 @@
+import { Database } from 'bun:sqlite';
+import { mkdirSync } from 'fs';
+import { dirname } from 'path';
+
+export type AppMode = 'stable' | 'draft';
+export type AppStatus = 'running' | 'stopped';
+
+export interface AppEntry {
+  name: string;
+  mode: AppMode;
+  status: AppStatus;
+  dbPath: string;
+  functionsDir: string;
+  uiDir: string;
+
+  // Runtime resources
+  db: Database | null;
+  moduleCache: Map<string, any>;
+}
+
+export interface AppStartRequest {
+  mode: AppMode;
+  dbPath: string;
+  functionsDir: string;
+  uiDir: string;
+}
+
+function registryKey(name: string, mode: AppMode): string {
+  return `${name}:${mode}`;
+}
+
+export class AppRegistry {
+  private apps = new Map<string, AppEntry>();
+
+  /** Get an app entry by name and mode */
+  get(name: string, mode: AppMode): AppEntry | undefined {
+    return this.apps.get(registryKey(name, mode));
+  }
+
+  /** Get all app entries */
+  getAll(): AppEntry[] {
+    return Array.from(this.apps.values());
+  }
+
+  /** Start an app — open DB, init module cache, set status to running */
+  start(name: string, config: AppStartRequest): AppEntry {
+    const key = registryKey(name, config.mode);
+    const existing = this.apps.get(key);
+
+    if (existing && existing.status === 'running') {
+      throw new AppRegistryError(409, `App '${name}:${config.mode}' is already running`);
+    }
+
+    // Open DB connection
+    mkdirSync(dirname(config.dbPath), { recursive: true });
+    const db = new Database(config.dbPath);
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
+
+    const entry: AppEntry = {
+      name,
+      mode: config.mode,
+      status: 'running',
+      dbPath: config.dbPath,
+      functionsDir: config.functionsDir,
+      uiDir: config.uiDir,
+      db,
+      moduleCache: new Map(),
+    };
+
+    this.apps.set(key, entry);
+    return entry;
+  }
+
+  /** Stop an app — close DB, clear module cache, set status to stopped */
+  stop(name: string, mode: AppMode): void {
+    const key = registryKey(name, mode);
+    const entry = this.apps.get(key);
+
+    if (!entry) {
+      throw new AppRegistryError(404, `App '${name}:${mode}' not found`);
+    }
+
+    this.releaseResources(entry);
+    entry.status = 'stopped';
+  }
+
+  /** Restart an app — stop (release resources) then start with new config */
+  restart(name: string, config: AppStartRequest): AppEntry {
+    const key = registryKey(name, config.mode);
+    const existing = this.apps.get(key);
+
+    // If exists, release old resources
+    if (existing) {
+      this.releaseResources(existing);
+      this.apps.delete(key);
+    }
+
+    // Start with new config
+    return this.start(name, config);
+  }
+
+  /** Shutdown all apps — stop everything */
+  shutdownAll(): void {
+    for (const entry of this.apps.values()) {
+      if (entry.status === 'running') {
+        this.releaseResources(entry);
+        entry.status = 'stopped';
+      }
+    }
+    this.apps.clear();
+  }
+
+  private releaseResources(entry: AppEntry): void {
+    if (entry.db) {
+      try {
+        entry.db.close();
+      } catch {
+        // ignore close errors
+      }
+      entry.db = null;
+    }
+    entry.moduleCache.clear();
+  }
+}
+
+export class AppRegistryError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AppRegistryError';
+  }
+}

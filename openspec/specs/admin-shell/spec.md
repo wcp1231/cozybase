@@ -11,12 +11,17 @@ Admin SHALL 作为单页应用（SPA），提供以下路由结构：
 | `/apps/:appName` | App 详情页，重定向到 App 的第一个 UI 页面 |
 | `/apps/:appName/:pageId` | App 的具体 UI 页面 |
 
-Admin 的所有路由 SHALL 在客户端处理（client-side routing），Server 对于未匹配的非 API 路径 SHALL 返回 `index.html`（SPA fallback）。
+Admin 的所有路由 SHALL 在客户端处理（client-side routing），Server 对于未匹配的非 API 路径 SHALL 返回 `index.html`（SPA fallback）。APP 视图页面从直接渲染 SchemaRenderer 变为通过 iframe 嵌入 APP UI。
 
-#### Scenario: 访问 App 页面
+#### Scenario: APP 页面路由
 
-- **WHEN** 用户访问 `/apps/welcome/todo-list`
-- **THEN** Admin SHALL 加载 `welcome` App 的 UI 定义，渲染 id 为 `todo-list` 的页面
+- **WHEN** 用户访问 `/apps/:appName/:pageId`
+- **THEN** Admin 渲染 iframe 容器，设置 `src` 为 APP 的 Runtime UI 地址（`/stable/apps/:appName/`），而非直接在 Admin 内渲染 SchemaRenderer
+
+#### Scenario: APP 列表页不变
+
+- **WHEN** 用户访问 `/apps`
+- **THEN** Admin 仍通过 `GET /api/v1/apps` 获取 APP 列表并渲染，逻辑不变
 
 #### Scenario: 访问 App 默认页面
 
@@ -52,55 +57,59 @@ Admin SHALL 提供 App 列表页，显示所有可用的 App。
 
 ### Requirement: App 视图加载
 
-Admin SHALL 在进入 App 页面时从 Stable 环境加载该 App 的 UI 定义，并传递给 `SchemaRenderer` 渲染。
+Admin SHALL 通过 iframe 加载 APP UI，不再直接调用 SchemaRenderer。
 
-加载流程：
-1. 调用 `GET /stable/apps/:appName/ui` 获取已 reconcile 的 UI 定义
-2. 若返回 200，解析 response body 中的 `data` 字段为 `PagesJson`
-3. 根据当前路由的 `pageId` 找到对应的 `PageSchema`
-4. 构造 `baseUrl`（`/stable/apps/:appName`），传给 `SchemaRenderer`
+#### Scenario: iframe 加载 APP UI
 
-加载过程中 SHALL 显示 loading 状态。
+- **WHEN** 用户在 Admin 中选择某个 APP
+- **THEN** Admin 创建 `<iframe src="/stable/apps/:appName/"></iframe>`
+- **AND** iframe 加载 APP 自身的完整 UI（包含 SchemaRenderer、UI Schema 和所有静态资源）
 
-错误处理：
-- 若 API 返回 404（UI 定义未找到），SHALL 显示提示信息："该 App 的 UI 尚未发布，请先执行 reconcile 和 publish"
-- 若 API 返回其他错误或 JSON 解析失败，SHALL 显示错误信息
+#### Scenario: iframe 加载状态
 
-App 元数据（name、description、state 等）仍通过 `GET /api/v1/apps/:appName` 获取，但 UI 定义 SHALL 从 Stable UI 端点获取。
+- **WHEN** iframe 正在加载 APP UI
+- **THEN** Admin 显示 loading 状态
+- **AND** iframe 的 `onload` 事件触发后，Admin 通过 postMessage 发送 `auth-token` 和 `theme-update`
 
-#### Scenario: 正常加载 App UI
+#### Scenario: iframe 加载失败
 
-- **WHEN** 进入 `/apps/welcome/todo-list`
-- **THEN** Admin SHALL 调用 `GET /stable/apps/welcome/ui` 获取 UI 定义，找到 `todo-list` 页面，构造 baseUrl 为 `/stable/apps/welcome`，渲染 SchemaRenderer
-
-#### Scenario: UI 未发布
-
-- **WHEN** 进入 `/apps/new-app`，但 `GET /stable/apps/new-app/ui` 返回 404
-- **THEN** Admin SHALL 显示 "该 App 的 UI 尚未发布，请先执行 reconcile 和 publish" 的提示
+- **WHEN** APP UI 加载失败（如 APP 未启动或不存在）
+- **THEN** Admin 显示错误提示信息
 
 #### Scenario: 页面不存在
 
 - **WHEN** 进入 `/apps/welcome/nonexistent`，但 pages.json 中没有 id 为 `nonexistent` 的页面
 - **THEN** Admin SHALL 显示 "页面不存在" 的错误提示
 
-#### Scenario: API 请求失败
-
-- **WHEN** `GET /stable/apps/todo-app/ui` 返回 500 或网络错误
-- **THEN** Admin SHALL 显示 "加载 UI 定义失败" 的错误信息
-
 ### Requirement: Admin 导航布局
 
-Admin SHALL 提供基础导航布局，包含：
+Admin 导航布局 SHALL 通过 postMessage 与 iframe 中的 APP UI 同步页面导航和标题。
 
 **侧边栏**：
-- 显示当前 App 的所有页面列表（来自 `pages.json` 的 pages 数组）
+- 显示当前 App 的所有页面列表（通过 `GET /stable/apps/:appName/ui.json` 获取）
 - 当前页面高亮
-- 可点击切换页面
+- 可点击切换页面（通过 postMessage 通知 iframe）
 - 在 App 列表页时显示 App 列表
 
 **顶部栏**：
 - 显示当前 App 名称和页面标题
 - 返回 App 列表的入口
+
+#### Scenario: 侧边栏页面列表
+
+- **WHEN** Admin 加载 APP 视图
+- **THEN** Admin 通过 `GET /stable/apps/:appName/ui.json` 获取 APP 的页面列表，在侧边栏显示
+
+#### Scenario: 侧边栏页面切换
+
+- **WHEN** 用户在 Admin 侧边栏点击某个页面
+- **THEN** Admin 通过 `postMessage({ type: 'navigate', payload: { pageId: '...' } })` 通知 iframe 中的 APP UI 切换页面
+
+#### Scenario: APP 通知页面变更
+
+- **WHEN** APP UI 在 iframe 内部发生页面切换
+- **THEN** APP UI 通过 `postMessage({ type: 'navigation-changed', payload: 'pageId' })` 通知 Admin
+- **AND** Admin 更新侧边栏的高亮状态和顶部栏标题
 
 #### Scenario: 多页面 App 导航
 
@@ -114,22 +123,17 @@ Admin SHALL 提供基础导航布局，包含：
 
 ### Requirement: Server 静态文件 Serve
 
-`packages/server` 的 Hono 应用 SHALL 配置静态文件中间件，serve `packages/admin` 的 build 产物。
+Admin SPA 的静态文件 serve SHALL 保留在 Daemon 中，APP 的 UI 静态文件 serve 迁移到 Runtime。
 
-静态文件路由规则：
-- API 路由（`/api/*`、`/stable/*`、`/draft/*`）优先匹配
-- 静态文件（`.js`、`.css`、`.html`、`.ico` 等）从 admin build 目录 serve
-- 其他未匹配路径 SHALL 返回 `index.html`（SPA fallback）
+#### Scenario: Daemon serve Admin SPA
 
-#### Scenario: serve 静态资源
+- **WHEN** 客户端请求 `/admin/*` 或未匹配 API 路由的路径
+- **THEN** Daemon 返回 Admin SPA 的静态文件，SPA fallback 逻辑不变
 
-- **WHEN** 浏览器请求 `/assets/index.js`
-- **THEN** Server SHALL 从 admin build 目录返回对应的 JS 文件
+#### Scenario: Runtime serve APP UI
 
-#### Scenario: SPA fallback
-
-- **WHEN** 浏览器请求 `/apps/welcome/todo-list`（非 API 路径、非静态文件）
-- **THEN** Server SHALL 返回 `index.html`，由 Admin 的客户端路由处理
+- **WHEN** 客户端请求 `/stable/apps/:name/` 或 `/stable/apps/:name/assets/*`
+- **THEN** 请求经 Daemon mount 到达 Runtime，Runtime 从 APP 注册表条目的 `uiDir` serve 静态文件
 
 #### Scenario: API 路由优先
 
@@ -138,22 +142,34 @@ Admin SHALL 提供基础导航布局，包含：
 
 ### Requirement: 构建流程
 
+构建顺序 SHALL 调整为 `ui → admin → runtime → daemon`，新增 `packages/runtime` 的构建步骤。
+
 monorepo 的构建 SHALL 按以下顺序执行：
 
-1. `packages/ui` → build 为 ESM 库（输出到 `packages/ui/dist/`）
+1. `packages/ui` → build 为 ESM 库（输出到 `packages/ui/dist/`）— SchemaRenderer 组件库
 2. `packages/admin` → build 为静态 SPA（输出到 `packages/admin/dist/`），依赖 `@cozybase/ui`
-3. `packages/server` → build 时将 `packages/admin/dist/` 嵌入
+3. `packages/runtime` → APP Runtime
+4. `packages/daemon` → Daemon（依赖 runtime）
 
 `packages/admin` 的 `package.json` SHALL 声明对 `@cozybase/ui` 的 workspace 依赖。
 
-开发模式下，`packages/admin` SHALL 可独立启动 dev server（如 Vite），通过代理将 API 请求转发到 `packages/server`。
+开发模式下，`packages/admin` SHALL 可独立启动 dev server（如 Vite），通过代理将 API 请求转发到 `packages/daemon`。
 
-#### Scenario: 完整构建
+#### Scenario: 构建顺序
 
-- **WHEN** 执行项目构建命令
-- **THEN** 系统 SHALL 按 ui → admin → server 顺序构建，最终产物中包含 admin 的静态文件
+- **WHEN** 执行全量构建
+- **THEN** 按照如下顺序构建：
+  1. `packages/ui` — SchemaRenderer 组件库
+  2. `packages/admin` — Admin SPA
+  3. `packages/runtime` — APP Runtime
+  4. `packages/daemon` — Daemon（依赖 runtime）
+
+#### Scenario: Admin 不再依赖 SchemaRenderer 渲染
+
+- **WHEN** Admin SPA 构建
+- **THEN** Admin 不再打包 SchemaRenderer 组件（只需要 iframe 容器），构建产物体积减小
 
 #### Scenario: 开发模式
 
 - **WHEN** 开发者启动 admin dev server
-- **THEN** admin SHALL 在独立端口运行，API 请求代理到运行中的 server 进程
+- **THEN** admin SHALL 在独立端口运行，API 请求代理到运行中的 daemon 进程

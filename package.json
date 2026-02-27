@@ -3,8 +3,8 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun packages/server/src/cli.ts daemon",
-    "mcp": "bun packages/server/src/cli.ts mcp",
+    "dev": "bun packages/daemon/src/cli.ts daemon",
+    "mcp": "bun packages/daemon/src/cli.ts mcp",
     "build:ui": "cd packages/ui && bun run build",
     "build:admin": "cd packages/admin && bun run build",
     "build:all": "bun run build:ui && bun run build:admin"
