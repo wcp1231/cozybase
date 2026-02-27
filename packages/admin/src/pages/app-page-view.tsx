@@ -1,40 +1,45 @@
 import { useParams, Navigate } from 'react-router-dom';
 import { SchemaRenderer } from '@cozybase/ui';
 import { useAppContext } from './app-layout';
+import { resolveContentSlotState } from './content-slot';
 
 export function AppPageView() {
   const { appName, pageId } = useParams<{ appName: string; pageId: string }>();
-  const { pagesJson } = useAppContext();
+  const { appLoading, appError, pagesJson } = useAppContext();
 
-  // If no pageId (index route), redirect to the first page
-  if (!pageId) {
-    if (pagesJson.pages.length === 0) {
-      return (
-        <div className="p-6 text-text-muted">
-          No pages defined in this app.
-        </div>
-      );
-    }
-    return <Navigate to={`/apps/${appName}/${pagesJson.pages[0].id}`} replace />;
+  const slotState = resolveContentSlotState({
+    appName,
+    pageId,
+    pagesJson,
+    appLoading,
+    appError,
+  });
+
+  if (slotState.type === 'loading') {
+    return <div className="p-6 text-text-muted">Loading page...</div>;
   }
 
-  const page = pagesJson.pages.find((p) => p.id === pageId);
-
-  if (!page) {
-    return (
-      <div className="p-6 text-danger">
-        页面不存在
-      </div>
-    );
+  if (slotState.type === 'error') {
+    return <div className="p-6 text-danger">Error: {slotState.message}</div>;
   }
 
-  const baseUrl = `/stable/apps/${appName}`;
+  if (slotState.type === 'no-ui') {
+    return <div className="p-6 text-text-muted">{slotState.message}</div>;
+  }
+
+  if (slotState.type === 'not-found') {
+    return <div className="p-6 text-danger">{slotState.message}</div>;
+  }
+
+  if (slotState.type === 'redirect') {
+    return <Navigate to={slotState.to} replace />;
+  }
 
   return (
     <SchemaRenderer
-      schema={page}
-      baseUrl={baseUrl}
-      components={pagesJson.components}
+      schema={slotState.page}
+      baseUrl={slotState.baseUrl}
+      components={pagesJson?.components}
     />
   );
 }

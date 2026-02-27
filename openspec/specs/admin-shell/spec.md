@@ -3,41 +3,31 @@
 ## Purpose
 
 Define the Admin SPA behavior for routing, app list and app view rendering, iframe embedding of APP UI, navigation synchronization, static file serving, and build/runtime integration with daemon and runtime packages.
-
 ## Requirements
-
 ### Requirement: Admin SPA 路由结构
 
 Admin SHALL 作为单页应用（SPA），提供以下路由结构：
 
 | 路由 | 说明 |
 |------|------|
-| `/` | 首页，重定向到 App 列表或默认 App |
+| `/` | 首页，重定向到 `/apps` |
 | `/apps` | App 列表页 |
-| `/apps/:appName` | App 详情页，重定向到 App 的第一个 UI 页面 |
-| `/apps/:appName/:pageId` | App 的具体 UI 页面 |
+| `/apps/:appName` | App 详情页，重定向到该 App 的第一个 UI 页面 |
+| `/apps/:appName/:pageId` | 在 Admin Shell 的中心 content slot 中渲染指定 App 页面 |
 
-Admin 的所有路由 SHALL 在客户端处理（client-side routing），Server 对于未匹配的非 API 路径 SHALL 返回 `index.html`（SPA fallback）。APP 视图页面从直接渲染 SchemaRenderer 变为通过 iframe 嵌入 APP UI。
+Admin 的所有路由 SHALL 在客户端处理（client-side routing）。Server 对于未匹配的非 API 路径 SHALL 返回 `index.html`（SPA fallback）。
 
-#### Scenario: APP 页面路由
-
-- **WHEN** 用户访问 `/apps/:appName/:pageId`
-- **THEN** Admin 渲染 iframe 容器，设置 `src` 为 APP 的 Runtime UI 地址（`/stable/apps/:appName/`），而非直接在 Admin 内渲染 SchemaRenderer
-
-#### Scenario: APP 列表页不变
-
-- **WHEN** 用户访问 `/apps`
-- **THEN** Admin 仍通过 `GET /api/v1/apps` 获取 APP 列表并渲染，逻辑不变
+#### Scenario: 访问首页
+- **WHEN** 用户访问 `/`
+- **THEN** Admin SHALL 重定向到 `/apps`
 
 #### Scenario: 访问 App 默认页面
-
-- **WHEN** 用户访问 `/apps/welcome`，welcome App 的第一个页面为 `todo-list`
+- **WHEN** 用户访问 `/apps/welcome`，welcome 的第一个页面为 `todo-list`
 - **THEN** Admin SHALL 重定向到 `/apps/welcome/todo-list`
 
-#### Scenario: App 无 UI
-
-- **WHEN** 用户访问 `/apps/my-app`，但 `my-app` 没有 `ui/pages.json`
-- **THEN** Admin SHALL 显示 "该 App 暂无 UI 界面" 的空状态提示
+#### Scenario: 访问 App 指定页面
+- **WHEN** 用户访问 `/apps/welcome/todo-list`
+- **THEN** Admin SHALL 在中心 content slot 渲染 `todo-list` 页面
 
 ### Requirement: App 列表页
 
@@ -63,70 +53,40 @@ Admin SHALL 提供 App 列表页，显示所有可用的 App。
 
 ### Requirement: App 视图加载
 
-Admin SHALL 通过 iframe 加载 APP UI，不再直接调用 SchemaRenderer。iframe 与 APP UI 的 postMessage 协议（如 `auth-token`、`theme-update`、`navigate` 等）SHALL 遵循 `app-ui-independent` capability 定义。
+Admin SHALL 在 Shell 的中心 content slot 中加载 APP 页面内容。App 页面数据 SHALL 通过 `GET /stable/apps/:appName/ui` 获取，并由 SchemaRenderer 渲染指定 `pageId`。
 
-#### Scenario: iframe 加载 APP UI
+当 App 不存在、无 UI 配置或 pageId 不存在时，Admin SHALL 在 content slot 内显示错误/空状态，不得导致整个 Shell 崩溃。
 
-- **WHEN** 用户在 Admin 中选择某个 APP
-- **THEN** Admin 创建 `<iframe src="/stable/apps/:appName/"></iframe>`
-- **AND** iframe 加载 APP 自身的完整 UI（包含 SchemaRenderer、UI Schema 和所有静态资源）
+#### Scenario: 在 content slot 渲染 App 页面
+- **WHEN** 路由为 `/apps/myapp/overview`
+- **THEN** Admin SHALL 请求 `/stable/apps/myapp/ui`
+- **AND** 在 content slot 中渲染 `overview` 页面
 
-#### Scenario: iframe 加载状态
-
-- **WHEN** iframe 正在加载 APP UI
-- **THEN** Admin 显示 loading 状态
-- **AND** iframe 的 `onload` 事件触发后，Admin SHALL 按 `app-ui-independent` 协议发送初始化消息
-
-#### Scenario: iframe 加载失败
-
-- **WHEN** APP UI 加载失败（如 APP 未启动或不存在）
-- **THEN** Admin 显示错误提示信息
+#### Scenario: App 无 UI
+- **WHEN** 路由为 `/apps/myapp/overview`，但 `myapp` 没有 `ui/pages.json`
+- **THEN** Admin SHALL 在 content slot 显示“该 App 暂无 UI 界面”提示
 
 #### Scenario: 页面不存在
-
-- **WHEN** 进入 `/apps/welcome/nonexistent`，但 pages.json 中没有 id 为 `nonexistent` 的页面
-- **THEN** Admin SHALL 显示 "页面不存在" 的错误提示
+- **WHEN** 路由为 `/apps/myapp/nonexistent`，但 pages 中不存在该 pageId
+- **THEN** Admin SHALL 在 content slot 显示“页面不存在”错误提示
 
 ### Requirement: Admin 导航布局
 
-Admin 导航布局 SHALL 通过 postMessage 与 iframe 中的 APP UI 同步页面导航和标题。
-消息类型、payload 结构与来源校验 SHALL 遵循 `app-ui-independent`，本 Requirement 仅定义 Admin 侧可见行为和状态变化。
+Admin 顶层导航布局 SHALL 保持硬编码实现，并采用固定三栏结构：
+- 左侧 sidebar：显示 App/页面导航
+- 中间 content slot：显示当前目标页面
+- 右侧 chat window：显示辅助对话区（首期可为占位实现）
 
-**侧边栏**：
-- 显示当前 App 的所有页面列表（通过 `GET /stable/apps/:appName/ui.json` 获取）
-- 当前页面高亮
-- 可点击切换页面（通过 postMessage 通知 iframe）
-- 在 App 列表页时显示 App 列表
+路由切换时，Shell 外层布局 SHALL 保持稳定，仅替换中心 content slot 的内容。
 
-**顶部栏**：
-- 显示当前 App 名称和页面标题
-- 返回 App 列表的入口
+#### Scenario: 固定三栏布局
+- **WHEN** 用户进入任意 `/apps/*` 路由
+- **THEN** Admin SHALL 渲染左侧 sidebar、中心 content slot、右侧 chat window 三栏结构
 
-#### Scenario: 侧边栏页面列表
-
-- **WHEN** Admin 加载 APP 视图
-- **THEN** Admin 通过 `GET /stable/apps/:appName/ui.json` 获取 APP 的页面列表，在侧边栏显示
-
-#### Scenario: 侧边栏页面切换
-
-- **WHEN** 用户在 Admin 侧边栏点击某个页面
-- **THEN** Admin 通过协议定义的导航消息通知 iframe 中的 APP UI 切换页面
-
-#### Scenario: APP 通知页面变更
-
-- **WHEN** APP UI 在 iframe 内部发生页面切换
-- **THEN** APP UI 通过协议定义的导航变更消息通知 Admin
-- **AND** Admin 更新侧边栏的高亮状态和顶部栏标题
-
-#### Scenario: 多页面 App 导航
-
-- **WHEN** App 有 3 个页面：首页、设置、关于
-- **THEN** 侧边栏 SHALL 显示这 3 个页面的标题，点击可切换
-
-#### Scenario: 单页面 App
-
-- **WHEN** App 只有 1 个页面
-- **THEN** 侧边栏 SHALL 仍显示该页面，但可折叠或简化
+#### Scenario: 路由切换仅更新 slot
+- **WHEN** 用户从 `/apps/a/page-1` 切换到 `/apps/b/page-2`
+- **THEN** Admin SHALL 保持 sidebar/chat 不重建
+- **AND** 仅更新中心 content slot 内容
 
 ### Requirement: Server 静态文件 Serve
 
@@ -180,3 +140,4 @@ monorepo 的构建 SHALL 按以下顺序执行：
 
 - **WHEN** 开发者启动 admin dev server
 - **THEN** admin SHALL 在独立端口运行，API 请求代理到运行中的 daemon 进程
+

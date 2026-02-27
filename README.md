@@ -292,7 +292,7 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/fn/items \
 
 ## Admin UI
 
-Cozybase includes a built-in Admin UI that renders app interfaces from declarative JSON definitions. Apps define their UI in `ui/pages.json`, and the Admin SPA renders them automatically.
+Cozybase includes a built-in Admin UI with a hardcoded three-column shell: left sidebar, center content slot, and right chat window. Apps define their UI in `ui/pages.json`, and the center slot renders selected pages with `SchemaRenderer`.
 
 Access the Admin at `http://localhost:3000/` after starting the server.
 
@@ -373,9 +373,9 @@ API URLs in actions use app-relative paths (e.g. `/db/todo`, `/fn/hello`) — th
 | Path | Description |
 |------|-------------|
 | `/` | Redirect to app list |
-| `/apps` | List all apps |
-| `/apps/:appName` | Redirect to first page of an app |
-| `/apps/:appName/:pageId` | Render a specific page |
+| `/apps` | Show app list in content slot |
+| `/apps/:appName` | Redirect to first page of an app in content slot |
+| `/apps/:appName/:pageId` | Render a specific app page in content slot |
 
 ### UI Changes
 
@@ -591,7 +591,7 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Runtime** (`@cozybase/runtime`): Separate package providing the app execution layer — DB CRUD, function execution, and UI serving. Mounted as Hono sub-routes under `/stable/apps/:name` and `/draft/apps/:name`. No internal management endpoints are exposed.
 - **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Uses a Backend Adapter pattern (`CozybaseBackend` interface) with two implementations: `EmbeddedBackend` (local, direct module calls) and `RemoteBackend` (HTTP client to a running daemon). Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
-- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the daemon. Lists apps, renders page UIs via `SchemaRenderer`, handles routing and navigation.
+- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the daemon. Uses a hardcoded three-column shell (sidebar / content slot / chat window), lists apps, and renders selected app pages in the center slot via `SchemaRenderer`.
 - **App States**: Derived from DB fields — `published_version = 0` → `draft_only`, `current_version = published_version` → `stable`, `current_version > published_version` → `stable_draft`, `status = deleted` → `deleted`.
 
 ### Project Structure
