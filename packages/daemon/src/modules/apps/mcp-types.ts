@@ -180,9 +180,7 @@ export const TOOL_DESCRIPTIONS = {
     'Interactions use action declarations. Action types: ' +
     'api, reload, dialog, link, close, confirm.\n\n' +
     'API URLs use App-relative paths (e.g. `/fn/_db/tables/todo`, `/fn/todos`); ' +
-    'the renderer auto-completes them to full URLs.\n\n' +
-    '**When only modifying `ui/pages.json`, reconcile / verify / publish are NOT needed.** ' +
-    'Just call `update_app_file` directly.',
+    'the renderer auto-completes them to full URLs.\n\n',
 
   delete_app:
     'Delete an APP and all its associated data. This also removes the Agent working directory.\n\n' +

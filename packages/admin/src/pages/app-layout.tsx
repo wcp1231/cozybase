@@ -57,7 +57,7 @@ export function AppLayout() {
 
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [chatVisible, setChatVisible] = useState(true);
+  const [chatVisible, setChatVisible] = useState(false);
   const iconBtnClass =
     'inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#E2E8F0] bg-white text-[#475569] transition-colors hover:bg-[#F8FAFC]';
 

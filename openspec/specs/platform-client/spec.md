@@ -34,7 +34,7 @@ interface PlatformClient {
 - **AND** 返回包含 tasks 表数据的 `Response` 对象
 
 #### Scenario: 调用 Daemon 平台服务
-- **WHEN** Runtime 中间件执行 `platformClient.call('_platform', 'auth/verify', { method: 'POST', headers: { Authorization: 'Bearer xxx' } })`
+- **WHEN** Runtime 中间件执行 `platformClient.call('_platform', 'auth/verify', { method: 'POST' })`
 - **THEN** PlatformClient SHALL 将请求路由到 Daemon 的 `_platform` 处理器
 - **AND** 返回认证结果的 `Response` 对象
 
