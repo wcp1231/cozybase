@@ -14,6 +14,7 @@ interface ActionContext {
     title: string;
     body: ComponentSchema;
     width?: number | string;
+    expressionContext?: Partial<ExpressionContext>;
   }) => void;
   closeDialog: () => void;
   navigate?: (url: string) => void;
@@ -52,6 +53,7 @@ async function dispatchSingle(
         ),
         body: action.body,
         width: action.width,
+        expressionContext: ctx.expressionContext,
       });
       return;
     case 'link':

@@ -261,7 +261,7 @@ export class Workspace {
     this._appStates.clear();
 
     const db = this.getPlatformDb();
-    const rows = db.query('SELECT name FROM apps WHERE status != ?').all('deleted') as { name: string }[];
+    const rows = db.query('SELECT name FROM apps').all() as { name: string }[];
     for (const row of rows) {
       this.refreshAppState(row.name);
     }

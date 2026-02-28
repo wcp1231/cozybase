@@ -1,10 +1,11 @@
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { SchemaRenderer } from '@cozybase/ui';
 import { useAppContext } from './app-layout';
 import { resolveContentSlotState } from './content-slot';
 
 export function AppPageView() {
   const { appName, pageId } = useParams<{ appName: string; pageId: string }>();
+  const [searchParams] = useSearchParams();
   const { appLoading, appError, pagesJson } = useAppContext();
 
   const slotState = resolveContentSlotState({
@@ -35,11 +36,14 @@ export function AppPageView() {
     return <Navigate to={slotState.to} replace />;
   }
 
+  const params = Object.fromEntries(searchParams.entries());
+
   return (
     <SchemaRenderer
       schema={slotState.page}
       baseUrl={slotState.baseUrl}
       components={pagesJson?.components}
+      params={params}
     />
   );
 }

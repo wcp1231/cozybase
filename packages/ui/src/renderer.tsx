@@ -33,16 +33,19 @@ export interface SchemaRendererProps {
   schema: PageSchema;
   baseUrl: string;
   components?: Record<string, CustomComponentSchema>;
+  params?: Record<string, string>;
 }
 
 export function SchemaRenderer({
   schema,
   baseUrl,
   components,
+  params,
 }: SchemaRendererProps) {
+  const extraContext = params ? { params } : undefined;
   return (
     <PageProvider baseUrl={baseUrl} customComponents={components}>
-      <PageBody body={schema.body} customComponents={components} />
+      <PageBody body={schema.body} customComponents={components} extraContext={extraContext} />
       <DialogLayer customComponents={components} />
       <ConfirmLayer />
     </PageProvider>
@@ -54,9 +57,11 @@ export function SchemaRenderer({
 function PageBody({
   body,
   customComponents,
+  extraContext,
 }: {
   body: ComponentSchema[];
   customComponents?: Record<string, CustomComponentSchema>;
+  extraContext?: Partial<ExpressionContext>;
 }) {
   return (
     <>
@@ -65,6 +70,7 @@ function PageBody({
           key={(child as { id?: string }).id ?? i}
           schema={child}
           customComponents={customComponents}
+          extraContext={extraContext}
         />
       ))}
     </>
@@ -106,6 +112,7 @@ function DialogLayer({
             <NodeRenderer
               schema={dialog.body}
               customComponents={customComponents}
+              extraContext={dialog.expressionContext}
             />
           </CzDialogContent>
         </CzDialog>

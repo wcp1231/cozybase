@@ -278,6 +278,32 @@ describe('dispatchAction', () => {
       const arg = openDialog.mock.calls[0][0] as any;
       expect(arg.title).toBe('Edit Item A');
     });
+
+    test('passes expressionContext to openDialog for row context propagation', async () => {
+      const openDialog = mock((entry: unknown) => entry);
+      const exprCtx = { row: { id: 42, title: 'Buy milk' } };
+      const ctx = makeCtx({
+        openDialog,
+        expressionContext: exprCtx,
+      });
+
+      await dispatchAction(
+        {
+          type: 'dialog',
+          title: 'Edit Todo',
+          body: {
+            type: 'form',
+            fields: [{ name: 'title', type: 'input', defaultValue: '${row.title}' }],
+            api: { method: 'PATCH', url: '/db/todo/${row.id}' },
+          },
+        } as ActionSchema,
+        ctx,
+      );
+
+      const arg = openDialog.mock.calls[0][0] as any;
+      expect(arg.expressionContext).toBe(exprCtx);
+      expect(arg.expressionContext.row).toEqual({ id: 42, title: 'Buy milk' });
+    });
   });
 
   // ---- Confirm action ----

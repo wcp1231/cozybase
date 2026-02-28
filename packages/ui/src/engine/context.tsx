@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import type { ComponentSchema, CustomComponentSchema } from '../schema/types';
+import type { ComponentSchema, CustomComponentSchema, ExpressionContext } from '../schema/types';
 
 // ---- Types ----
 
@@ -21,6 +21,7 @@ interface DialogEntry {
   title: string;
   body: ComponentSchema;
   width?: number | string;
+  expressionContext?: Partial<ExpressionContext>;
 }
 
 interface ConfirmEntry {

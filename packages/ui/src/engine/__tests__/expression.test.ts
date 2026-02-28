@@ -218,6 +218,21 @@ describe('resolveExpression', () => {
     expect(resolveExpression('${params.id}', ctx)).toBe('123');
   });
 
+  test('resolves params embedded in template string', () => {
+    const ctx: ExpressionContext = { params: { baby_id: '42' } };
+    expect(resolveExpression('id.eq.${params.baby_id}', ctx)).toBe('id.eq.42');
+  });
+
+  test('returns undefined for missing params property', () => {
+    const ctx: ExpressionContext = { params: { a: '1' } };
+    expect(resolveExpression('${params.missing}', ctx)).toBeUndefined();
+  });
+
+  test('resolves params in template with undefined to empty', () => {
+    const ctx: ExpressionContext = {};
+    expect(resolveExpression('id.eq.${params.baby_id}', ctx)).toBe('id.eq.');
+  });
+
   test('resolves props context values', () => {
     const ctx: ExpressionContext = { props: { color: 'red' } };
     expect(resolveExpression('${props.color}', ctx)).toBe('red');

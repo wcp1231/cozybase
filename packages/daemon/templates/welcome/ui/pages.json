@@ -85,6 +85,33 @@
           ],
           "rowActions": [
             {
+              "label": "Edit",
+              "action": {
+                "type": "dialog",
+                "title": "Edit Todo",
+                "body": {
+                  "type": "form",
+                  "fields": [
+                    {
+                      "name": "title",
+                      "label": "Title",
+                      "type": "input",
+                      "required": true,
+                      "defaultValue": "${row.title}"
+                    }
+                  ],
+                  "api": {
+                    "method": "PATCH",
+                    "url": "/fn/_db/tables/todo/${row.id}"
+                  },
+                  "onSuccess": [
+                    { "type": "reload", "target": "todo-table" },
+                    { "type": "close" }
+                  ]
+                }
+              }
+            },
+            {
               "label": "${row.completed === 1 ? 'Mark Pending' : 'Mark Completed'}",
               "action": {
                 "type": "api",

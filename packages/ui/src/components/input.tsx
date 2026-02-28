@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
+import { resolveExpression } from '../engine/expression';
 import {
   CzSwitch,
   CzCheckbox,
@@ -80,7 +81,7 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
     const init: Record<string, unknown> = { ...(s.initialValues ?? {}) };
     for (const field of s.fields) {
       if (init[field.name] === undefined && field.defaultValue !== undefined) {
-        init[field.name] = field.defaultValue;
+        init[field.name] = resolveExpression(field.defaultValue, exprContext);
       }
     }
     return init;
@@ -125,9 +126,10 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
 
     setSubmitting(true);
     try {
-      const url = s.api.url.startsWith('http')
-        ? s.api.url
-        : ctx.baseUrl + s.api.url;
+      const resolvedUrl = String(resolveExpression(s.api.url, exprContext) ?? s.api.url);
+      const url = resolvedUrl.startsWith('http')
+        ? resolvedUrl
+        : ctx.baseUrl + resolvedUrl;
 
       const response = await fetch(url, {
         method: s.api.method ?? 'POST',

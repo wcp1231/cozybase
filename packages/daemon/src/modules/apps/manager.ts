@@ -77,7 +77,7 @@ export class AppManager {
   list(): (App & { state: AppState | 'unknown'; has_ui: boolean })[] {
     const db = this.workspace.getPlatformDb();
     const apps = db.query(
-      'SELECT name, description, status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
+      "SELECT name, description, status, current_version, published_version, created_at, updated_at FROM apps WHERE status != 'deleted' ORDER BY created_at DESC",
     ).all() as App[];
 
     // Batch-check which apps have ui/pages.json
@@ -363,6 +363,7 @@ export class AppManager {
     values.push(name);
 
     db.query(`UPDATE apps SET ${fields.join(', ')} WHERE name = ?`).run(...values);
+    this.workspace.refreshAppState(name);
     return this.get(name);
   }
 }
