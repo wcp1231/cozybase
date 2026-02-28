@@ -10,7 +10,12 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
 
   // GET /apps - List all apps with derived states
   app.get('/apps', (c) => {
-    const apps = manager.list();
+    const mode = c.req.query('mode');
+    if (mode !== undefined && mode !== 'stable' && mode !== 'draft') {
+      throw new BadRequestError('Query parameter "mode" must be "stable" or "draft"');
+    }
+
+    const apps = manager.list(mode);
     return c.json({ data: apps });
   });
 

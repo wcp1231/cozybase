@@ -48,7 +48,7 @@ export interface AppDefinition {
 // --- Constants ---
 
 const SUPPORTED_VERSION = 1;
-const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates');
+const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates', 'apps');
 
 // --- Workspace ---
 

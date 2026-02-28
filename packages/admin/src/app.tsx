@@ -7,8 +7,8 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/apps" replace />} />
-        <Route path="/apps" element={<AppLayout />}>
+        <Route path="/" element={<Navigate to="/stable/apps" replace />} />
+        <Route path="/:mode/apps" element={<AppLayout />}>
           <Route index element={<AppListPage />} />
           <Route path=":appName" element={<AppPageView />} />
           <Route path=":appName/:pageId" element={<AppPageView />} />

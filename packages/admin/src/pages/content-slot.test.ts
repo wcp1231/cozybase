@@ -64,7 +64,7 @@ describe('resolveContentSlotState', () => {
 
     expect(result.type).toBe('redirect');
     if (result.type === 'redirect') {
-      expect(result.to).toBe('/apps/welcome/todo-list?mode=draft');
+      expect(result.to).toBe('/draft/apps/welcome/todo-list');
     }
   });
 

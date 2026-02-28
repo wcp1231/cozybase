@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { useParams, Outlet, Link, NavLink, useSearchParams } from 'react-router-dom';
+import { useParams, Outlet, Link, NavLink, Navigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { PagesJson } from '@cozybase/ui';
+import { isAppMode, toAppListPath, toAppPagePath, type AppMode } from './content-slot';
 
 interface AppSummary {
   name: string;
@@ -26,6 +27,7 @@ interface AppInfo {
 }
 
 interface AppContextValue {
+  mode: AppMode;
   apps: AppSummary[];
   appsLoading: boolean;
   appsError: string | null;
@@ -45,8 +47,8 @@ export function useAppContext(): AppContextValue {
 }
 
 export function AppLayout() {
-  const { appName } = useParams<{ appName: string }>();
-  const [searchParams] = useSearchParams();
+  const { appName, mode: modeParam } = useParams<{ appName: string; mode: string }>();
+  const selectedMode = isAppMode(modeParam) ? modeParam : null;
 
   const [apps, setApps] = useState<AppSummary[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
@@ -60,7 +62,6 @@ export function AppLayout() {
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [chatVisible, setChatVisible] = useState(false);
-  const selectedMode = searchParams.get('mode') === 'draft' ? 'draft' : 'stable';
   const iconBtnClass =
     'inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#E2E8F0] bg-white text-[#475569] transition-colors hover:bg-[#F8FAFC]';
 
@@ -83,11 +84,18 @@ export function AppLayout() {
   };
 
   useEffect(() => {
+    if (!selectedMode) {
+      setApps([]);
+      setAppsError(null);
+      setAppsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setAppsLoading(true);
     setAppsError(null);
 
-    fetch('/api/v1/apps')
+    fetch(`/api/v1/apps?mode=${selectedMode}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -108,7 +116,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedMode]);
 
   useEffect(() => {
     setSidebarDrawerOpen(false);
@@ -119,7 +127,7 @@ export function AppLayout() {
   }, [sidebarVisible]);
 
   useEffect(() => {
-    if (!appName) {
+    if (!appName || !selectedMode) {
       setApp(null);
       setPagesJson(null);
       setAppError(null);
@@ -173,7 +181,12 @@ export function AppLayout() {
     };
   }, [appName, selectedMode]);
 
+  if (!selectedMode) {
+    return <Navigate to="/stable/apps" replace />;
+  }
+
   const ctxValue: AppContextValue = {
+    mode: selectedMode,
     apps,
     appsLoading,
     appsError,
@@ -283,7 +296,7 @@ function SidebarContent({
 }: {
   collapsed: boolean;
 }) {
-  const { appName, pagesJson, appLoading } = useAppContext();
+  const { appName, pagesJson, appLoading, mode } = useAppContext();
   const navItemBase = clsx(
     'flex h-[42px] rounded-[10px] text-sm font-semibold no-underline transition-colors',
     collapsed ? 'items-center justify-center px-0' : 'items-center gap-3 px-3.5',
@@ -298,7 +311,7 @@ function SidebarContent({
     >
       <div className={clsx('flex h-10 items-center gap-2', collapsed ? 'justify-center' : 'justify-between')}>
         <Link
-          to="/apps"
+          to={toAppListPath(mode)}
           title="CozyBase"
           className={clsx(
             'flex items-center text-inherit no-underline',
@@ -320,7 +333,7 @@ function SidebarContent({
           {!collapsed && <span>首页</span>}
         </div>
         <NavLink
-          to="/apps"
+          to={toAppListPath(mode)}
           title={collapsed ? 'APP 列表' : undefined}
           end
           className={({ isActive }) =>
@@ -359,7 +372,7 @@ function SidebarContent({
                 {pagesJson.pages.map((page) => (
                   <NavLink
                     key={page.id}
-                    to={`/apps/${appName}/${page.id}`}
+                    to={toAppPagePath(appName, page.id, mode)}
                     title={collapsed ? page.title : undefined}
                     className={({ isActive }) =>
                       clsx(

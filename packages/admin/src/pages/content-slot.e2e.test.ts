@@ -12,7 +12,7 @@ const pagesJson: PagesJson = {
 describe('content slot navigation flow', () => {
   test('list -> app -> first page redirect flow is continuous', () => {
     const appPath = toAppPagePath('welcome', undefined, 'draft');
-    expect(appPath).toBe('/apps/welcome?mode=draft');
+    expect(appPath).toBe('/draft/apps/welcome');
 
     const result = resolveContentSlotState({
       appName: 'welcome',
@@ -25,7 +25,7 @@ describe('content slot navigation flow', () => {
 
     expect(result.type).toBe('redirect');
     if (result.type === 'redirect') {
-      expect(result.to).toBe('/apps/welcome/todo-list?mode=draft');
+      expect(result.to).toBe('/draft/apps/welcome/todo-list');
     }
   });
 

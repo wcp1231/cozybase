@@ -417,7 +417,7 @@ describe('dispatchAction', () => {
   // ---- Link action ----
 
   describe('link action', () => {
-    test('calls navigate when navigate function is provided', async () => {
+    test('auto-prefixes relative URL with baseUrl', async () => {
       const navigate = mock(() => {});
       const ctx = makeCtx({ navigate });
 
@@ -426,7 +426,19 @@ describe('dispatchAction', () => {
         ctx,
       );
 
-      expect(navigate).toHaveBeenCalledWith('/settings');
+      expect(navigate).toHaveBeenCalledWith('http://localhost:3000/settings');
+    });
+
+    test('does not prefix absolute URL', async () => {
+      const navigate = mock(() => {});
+      const ctx = makeCtx({ navigate });
+
+      await dispatchAction(
+        { type: 'link', url: 'https://external.com/docs' } as ActionSchema,
+        ctx,
+      );
+
+      expect(navigate).toHaveBeenCalledWith('https://external.com/docs');
     });
 
     test('resolves expressions in link URL', async () => {
@@ -441,7 +453,21 @@ describe('dispatchAction', () => {
         ctx,
       );
 
-      expect(navigate).toHaveBeenCalledWith('/items/5');
+      expect(navigate).toHaveBeenCalledWith('http://localhost:3000/items/5');
+    });
+
+    test('falls back to window.location.href when navigate is not provided', async () => {
+      (globalThis as any).window.location = { href: '' };
+      const ctx = makeCtx({ navigate: undefined });
+
+      await dispatchAction(
+        { type: 'link', url: '/settings' } as ActionSchema,
+        ctx,
+      );
+
+      expect((globalThis as any).window.location.href).toBe(
+        'http://localhost:3000/settings',
+      );
     });
   });
 });

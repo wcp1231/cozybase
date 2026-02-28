@@ -1,5 +1,7 @@
 import type { PageSchema, PagesJson } from '@cozybase/ui';
 
+export type AppMode = 'stable' | 'draft';
+
 export type ContentSlotState =
   | { type: 'loading' }
   | { type: 'error'; message: string }
@@ -11,15 +13,23 @@ export type ContentSlotState =
 export interface ResolveContentSlotInput {
   appName?: string;
   pageId?: string;
-  mode: 'stable' | 'draft';
+  mode: AppMode;
   pagesJson: PagesJson | null;
   appLoading: boolean;
   appError: string | null;
 }
 
-export function toAppPagePath(appName: string, pageId: string | undefined, mode: 'stable' | 'draft'): string {
-  const path = pageId ? `/apps/${appName}/${pageId}` : `/apps/${appName}`;
-  return `${path}?mode=${mode}`;
+export function isAppMode(value: string | undefined): value is AppMode {
+  return value === 'stable' || value === 'draft';
+}
+
+export function toAppListPath(mode: AppMode): string {
+  return `/${mode}/apps`;
+}
+
+export function toAppPagePath(appName: string, pageId: string | undefined, mode: AppMode): string {
+  const path = `${toAppListPath(mode)}/${appName}`;
+  return pageId ? `${path}/${pageId}` : path;
 }
 
 export function resolveContentSlotState(

@@ -79,15 +79,15 @@ Commonly used in api action's `onSuccess` to refresh data lists.
 ```json
 {
   "type": "link",
-  "url": "/apps/my-app/settings"
+  "url": "/settings"
 }
 ```
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `url` | string | Target URL (supports expressions) |
+| `url` | string | Target URL (APP-relative path, supports expressions) |
 
-Link URLs are passed directly to the browser without base URL resolution (unlike API URLs). For navigating between app pages, use the full path format `/apps/{appName}/{pageId}`.
+Link URLs use the same APP-relative path resolution as API URLs. For example, `/settings` resolves to `/{mode}/apps/{appName}/settings`. External URLs (`https://...`) are passed through as-is.
 
 ### close — Close Dialog
 
@@ -134,7 +134,7 @@ Actions can be arrays, executed in order:
 Or a single Action:
 
 ```json
-"action": { "type": "link", "url": "/apps/my-app/home" }
+"action": { "type": "link", "url": "/home" }
 ```
 
 ## Quick Confirm

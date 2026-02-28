@@ -1,10 +1,15 @@
 import { describe, test, expect, afterEach } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { createServer } from '../../src/server';
 import type { Config } from '../../src/config';
 import {
   createTestWorkspace,
   createTestApp,
+  createStableDb,
+  addMigration,
   MIGRATION_CREATE_TODOS,
+  MIGRATION_ADD_PRIORITY,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -117,6 +122,23 @@ describe('Management API (/api/v1/apps)', () => {
       expect(body.data.api_key).toMatch(/^cb_/);
       expect(body.data.files).toBeArray();
       expect(body.data.files.length).toBeGreaterThan(0);
+    });
+
+    test('starts draft runtime for newly created apps so draft UI routes can resolve', async () => {
+      handle = createTestWorkspace();
+      const { app, startup } = createServer(createTestConfig(handle.root));
+      await startup;
+
+      const createRes = await app.request(jsonReq('/api/v1/apps', 'POST', { name: 'newapp' }));
+      expect(createRes.status).toBe(201);
+
+      const uiDir = join(handle.root, 'draft', 'newapp', 'ui');
+      mkdirSync(uiDir, { recursive: true });
+      writeFileSync(join(uiDir, 'pages.json'), JSON.stringify({ pages: [] }), 'utf-8');
+
+      const uiRes = await app.request('/draft/apps/newapp/ui');
+      expect(uiRes.status).toBe(200);
+      expect((await jsonBody(uiRes)).data).toEqual({ pages: [] });
     });
   });
 
@@ -414,6 +436,60 @@ describe('Management API (/api/v1/apps)', () => {
 
       const body = await jsonBody(res);
       expect(body.data).toBeArray();
+    });
+
+    test('GET /apps supports filtering by stable mode', async () => {
+      handle = createTestWorkspace();
+
+      createTestApp(handle, 'stable-only', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      createStableDb(handle, 'stable-only', [MIGRATION_CREATE_TODOS], [1]);
+
+      createTestApp(handle, 'draft-only', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+
+      createTestApp(handle, 'hybrid', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      createStableDb(handle, 'hybrid', [MIGRATION_CREATE_TODOS], [1]);
+      addMigration(handle, 'hybrid', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request('/api/v1/apps?mode=stable');
+      expect(res.status).toBe(200);
+
+      const body = await jsonBody(res);
+      expect(body.data.map((item: any) => item.name).sort()).toEqual(['hybrid', 'stable-only']);
+    });
+
+    test('GET /apps supports filtering by draft mode', async () => {
+      handle = createTestWorkspace();
+
+      createTestApp(handle, 'stable-only', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      createStableDb(handle, 'stable-only', [MIGRATION_CREATE_TODOS], [1]);
+
+      createTestApp(handle, 'draft-only', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+
+      createTestApp(handle, 'hybrid', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      createStableDb(handle, 'hybrid', [MIGRATION_CREATE_TODOS], [1]);
+      addMigration(handle, 'hybrid', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request('/api/v1/apps?mode=draft');
+      expect(res.status).toBe(200);
+
+      const body = await jsonBody(res);
+      expect(body.data.map((item: any) => item.name).sort()).toEqual(['draft-only', 'hybrid']);
     });
 
     test('GET /apps/:name returns 404 for nonexistent app', async () => {

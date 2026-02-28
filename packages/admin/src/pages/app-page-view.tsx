@@ -1,13 +1,13 @@
 import { useParams, useSearchParams, Navigate } from 'react-router-dom';
 import { SchemaRenderer } from '@cozybase/ui';
 import { useAppContext } from './app-layout';
-import { resolveContentSlotState } from './content-slot';
+import { isAppMode, resolveContentSlotState, type AppMode } from './content-slot';
 
 export function AppPageView() {
-  const { appName, pageId } = useParams<{ appName: string; pageId: string }>();
+  const { appName, pageId, mode: modeParam } = useParams<{ appName: string; pageId: string; mode: string }>();
   const [searchParams] = useSearchParams();
   const { appLoading, appError, pagesJson } = useAppContext();
-  const mode = searchParams.get('mode') === 'draft' ? 'draft' : 'stable';
+  const mode: AppMode = isAppMode(modeParam) ? modeParam : 'stable';
 
   const slotState = resolveContentSlotState({
     appName,

@@ -79,8 +79,8 @@ export class AppManager {
     private registry?: AppRegistry,
   ) {}
 
-  /** List all apps (basic info, no files) */
-  list(): (App & { has_ui: boolean })[] {
+  /** List apps (basic info, no files), optionally filtered by mode */
+  list(mode?: AppMode): (App & { has_ui: boolean })[] {
     const db = this.workspace.getPlatformDb();
     const apps = db.query(
       'SELECT name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
@@ -92,10 +92,20 @@ export class AppManager {
     ).all() as { app_name: string }[];
     const appsWithUi = new Set(uiFiles.map((f) => f.app_name));
 
-    return apps.map((app) => ({
+    const summaries = apps.map((app) => ({
       ...this.toApp(app),
       has_ui: appsWithUi.has(app.name),
     }));
+
+    if (!mode) {
+      return summaries;
+    }
+
+    return summaries.filter((app) => (
+      mode === 'stable'
+        ? app.stableStatus !== null
+        : app.hasDraft
+    ));
   }
 
   /** Get a single app's basic info */
@@ -182,6 +192,7 @@ export class AppManager {
 
       // Refresh app state cache
       this.workspace.refreshAppState(name);
+      this.ensureDraftRuntime(name);
 
       const appWithFiles = this.getAppWithFiles(name);
       return { app: appWithFiles, apiKey: rawKey };
@@ -280,6 +291,7 @@ export class AppManager {
     }
 
     this.workspace.refreshAppState(name);
+    this.ensureDraftRuntime(name);
     return this.getAppWithFiles(name);
   }
 
@@ -316,6 +328,7 @@ export class AppManager {
     ).run(name);
 
     this.workspace.refreshAppState(name);
+    this.ensureDraftRuntime(name);
 
     const immutable = existing?.immutable === 1;
     return { path, content, immutable };
@@ -537,12 +550,26 @@ export class AppManager {
 
     this.workspace.removeApp(oldName);
     this.workspace.refreshAppState(newName);
-
-    if (this.registry && oldDraftWasRunning) {
-      this.registry.start(newName, this.getRuntimeConfig(newName, 'draft'));
-    }
+    this.ensureDraftRuntime(newName);
 
     return this.getAppWithFiles(newName);
+  }
+
+  private ensureDraftRuntime(name: string): void {
+    if (!this.registry) return;
+
+    const state = this.workspace.getAppState(name) ?? this.workspace.refreshAppState(name);
+    if (!state?.hasDraft) return;
+
+    const existing = this.registry.get(name, 'draft');
+    if (existing?.status === 'running') return;
+
+    if (existing) {
+      this.registry.restart(name, this.getRuntimeConfig(name, 'draft'));
+      return;
+    }
+
+    this.registry.start(name, this.getRuntimeConfig(name, 'draft'));
   }
 
   private getStateInfo(name: string): AppStateInfo {

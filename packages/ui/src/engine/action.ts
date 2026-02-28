@@ -124,8 +124,9 @@ function handleLinkAction(
   action: Extract<ActionSchema, { type: 'link' }>,
   ctx: ActionContext,
 ): void {
-  const url = String(
-    resolveExpression(action.url, ctx.expressionContext) ?? action.url,
+  const url = resolveUrl(
+    String(resolveExpression(action.url, ctx.expressionContext) ?? action.url),
+    ctx.baseUrl,
   );
   if (ctx.navigate) {
     ctx.navigate(url);

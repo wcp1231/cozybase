@@ -14,10 +14,16 @@ export default defineConfig({
       '/stable': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return '/index.html';
+        },
       },
       '/draft': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return '/index.html';
+        },
       },
     },
   },
