@@ -1,6 +1,14 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
+
+type AppListTab = 'stable' | 'draft';
+
+interface AppSummaryLike {
+  name: string;
+  state: string;
+}
 
 const stateBadgeClasses: Record<string, string> = {
   draft_only: 'bg-bg-muted text-text-secondary',
@@ -22,8 +30,22 @@ function StateBadge({ state }: { state: string }) {
   );
 }
 
+export function filterAppsByTab<T extends AppSummaryLike>(apps: T[], tab: AppListTab): T[] {
+  return apps.filter((app) => {
+    if (tab === 'stable') {
+      return app.state === 'stable' || app.state === 'stable_draft';
+    }
+    return app.state === 'draft_only' || app.state === 'stable_draft';
+  });
+}
+
 export function AppListPage() {
   const { apps, appsLoading, appsError } = useAppContext();
+  const [activeTab, setActiveTab] = useState<AppListTab>('stable');
+
+  const visibleApps = useMemo(() => filterAppsByTab(apps, activeTab), [apps, activeTab]);
+  const stableCount = useMemo(() => filterAppsByTab(apps, 'stable').length, [apps]);
+  const draftCount = useMemo(() => filterAppsByTab(apps, 'draft').length, [apps]);
 
   if (appsLoading) {
     return <div className="p-6 text-text-muted">Loading apps...</div>;
@@ -35,18 +57,58 @@ export function AppListPage() {
 
   return (
     <div className="w-full max-w-5xl">
-      <h1 className="text-2xl font-semibold text-text m-0 mb-2">Apps</h1>
-      <p className="m-0 mb-6 text-sm text-text-muted">
-        Select an app to open it in the center content slot.
-      </p>
+
+      <div className="mb-5 flex items-center gap-2">
+        <button
+          type="button"
+          className={clsx(
+            'inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold transition-colors',
+            activeTab === 'stable'
+              ? 'border-[#DDE4FF] bg-[#FFFFFF] text-[#475569]'
+              : 'border-[#E2E8F0] bg-[#FFFFFF] text-[#64748B] hover:bg-[#F8FAFC]',
+          )}
+          onClick={() => setActiveTab('stable')}
+        >
+          Stable
+          <span className="ml-2 rounded-full bg-[#F1F5F9] px-1.5 py-0.5 text-[10px] font-semibold text-[#64748B]">
+            {stableCount}
+          </span>
+        </button>
+        <button
+          type="button"
+          className={clsx(
+            'inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold transition-colors',
+            activeTab === 'draft'
+              ? 'border-[#DDE4FF] bg-[#EEF2FF] text-[#3730A3]'
+              : 'border-[#E2E8F0] bg-[#FFFFFF] text-[#64748B] hover:bg-[#F8FAFC]',
+          )}
+          onClick={() => setActiveTab('draft')}
+        >
+          Draft
+          <span
+            className={clsx(
+              'ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+              activeTab === 'draft'
+                ? 'bg-[#C7D2FE] text-[#3730A3]'
+                : 'bg-[#F1F5F9] text-[#64748B]',
+            )}
+          >
+            {draftCount}
+          </span>
+        </button>
+      </div>
 
       {apps.length === 0 ? (
         <div className="text-text-muted border border-border rounded-md p-6">
           No apps found.
         </div>
+      ) : visibleApps.length === 0 ? (
+        <div className="rounded-xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
+          No {activeTab} apps found.
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {apps.map((app) => (
+          {visibleApps.map((app) => (
             <Link
               key={app.name}
               to={`/apps/${app.name}`}
