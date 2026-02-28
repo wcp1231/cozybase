@@ -24,6 +24,7 @@ function printHelp() {
       restart           Restart the daemon
       status            Show daemon status
     mcp                 Start the MCP server (stdio)
+    init                Initialize Agent Workspace (AGENT.md, Skills)
 
   Options:
     --help, -h          Show this help message
@@ -75,6 +76,34 @@ switch (command) {
   case 'mcp':
     await import('./mcp/mcp-entry');
     break;
+
+  case 'init': {
+    const { parseArgs } = await import('util');
+    const { initWorkspace } = await import('./workspace-init');
+    const { values } = parseArgs({
+      args: args.slice(1),
+      options: { 'apps-dir': { type: 'string' } },
+      strict: false,
+    });
+    const targetDir = resolve(
+      (values['apps-dir'] as string | undefined)
+        ?? process.env.COZYBASE_APPS_DIR
+        ?? process.cwd(),
+    );
+    const result = initWorkspace(targetDir);
+    if (result.created.length > 0) {
+      console.log('Created:');
+      for (const f of result.created) console.log(`  + ${f}`);
+    }
+    if (result.skipped.length > 0) {
+      console.log('Skipped (already exist):');
+      for (const f of result.skipped) console.log(`  - ${f}`);
+    }
+    if (result.created.length === 0 && result.skipped.length === 0) {
+      console.log('No template files to copy.');
+    }
+    break;
+  }
 
   case '--version':
   case '-v':

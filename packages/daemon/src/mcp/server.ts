@@ -1,7 +1,7 @@
 /**
  * MCP Server Setup
  *
- * Creates a McpServer instance, registers all 11 tools with Zod input
+ * Creates a McpServer instance, registers all tools with Zod input
  * schemas, and wires them to the corresponding handler functions.
  */
 
@@ -22,6 +22,7 @@ import {
   handleExecuteSql,
   handleCallApi,
 } from './handlers';
+import { handleGetGuide } from './guide-handler';
 
 import { TOOL_DESCRIPTIONS } from '../modules/apps/mcp-types';
 
@@ -158,6 +159,18 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     async (args) => {
       const result = await handleCallApi(ctx, args);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  // --- Documentation ---
+
+  server.tool(
+    'get_guide',
+    TOOL_DESCRIPTIONS.get_guide,
+    { topic: z.string() },
+    async (args) => {
+      const content = handleGetGuide(args.topic);
+      return { content: [{ type: 'text', text: content }] };
     },
   );
 

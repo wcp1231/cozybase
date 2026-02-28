@@ -145,7 +145,8 @@ export const TOOL_DESCRIPTIONS = {
   create_app:
     'Create a new APP. Template files will be written to the Agent working directory.\n\n' +
     'After creation, use your file tools to read and edit the files in the returned `directory`.\n' +
-    'When done editing, call `update_app` to sync changes back to cozybase.',
+    'When done editing, call `update_app` to sync changes back to cozybase.\n\n' +
+    'For the complete development workflow, call `get_guide("workflow")`.',
 
   list_apps:
     'List all APPs with their basic info (name, description, state, versions).',
@@ -167,20 +168,7 @@ export const TOOL_DESCRIPTIONS = {
   update_app_file:
     'Sync a single file from the Agent working directory to cozybase.\n\n' +
     'Use this for quick single-file updates instead of full `update_app`.\n\n' +
-    '## UI Definitions (`ui/pages.json`)\n\n' +
-    'APP UI definitions are stored in `ui/pages.json`. ' +
-    'The file uses JSON format with two top-level fields:\n' +
-    '- `pages` — Array of page objects.\n' +
-    '- `components` — Optional custom component declarations.\n\n' +
-    'Each page has `id`, `title`, and `body` fields (`id` also serves as the route path segment).\n\n' +
-    'In `body`, components use `type` to specify the component type. ' +
-    'Built-in types: page, row, col, card, tabs, divider, table, list, ' +
-    'text, heading, tag, stat, form, input, textarea, number, select, ' +
-    'switch, checkbox, radio, date-picker, button, link, dialog, alert, empty.\n\n' +
-    'Interactions use action declarations. Action types: ' +
-    'api, reload, dialog, link, close, confirm.\n\n' +
-    'API URLs use App-relative paths (e.g. `/fn/_db/tables/todo`, `/fn/todos`); ' +
-    'the renderer auto-completes them to full URLs.\n\n',
+    'For UI component reference, call `get_guide("ui/components")`.',
 
   delete_app:
     'Delete an APP and all its associated data. This also removes the Agent working directory.\n\n' +
@@ -191,18 +179,21 @@ export const TOOL_DESCRIPTIONS = {
     'This destroys and recreates the Draft database by executing all migrations, ' +
     'loading seed data, and exporting functions to the runtime directory.\n\n' +
     'Call this after `update_app` or `update_app_file` when you\'ve changed ' +
-    'migrations, seeds, or functions.',
+    'migrations, seeds, or functions.\n\n' +
+    'For migration patterns, call `get_guide("db/migrations")`.',
 
   verify_app:
     'Verify that Draft changes can be safely published to Stable.\n\n' +
     'This checks migration compatibility by dry-running pending migrations ' +
-    'against a copy of the Stable database.',
+    'against a copy of the Stable database.\n\n' +
+    'For migration patterns, call `get_guide("db/migrations")`.',
 
   publish_app:
     'Publish Draft changes to Stable.\n\n' +
     'This applies pending migrations to the Stable database, exports functions, ' +
     'and marks executed migrations as immutable.\n\n' +
-    'Run `verify_app` first to ensure changes are safe to publish.',
+    'Run `verify_app` first to ensure changes are safe to publish.\n\n' +
+    'For migration patterns, call `get_guide("db/migrations")`.',
 
   execute_sql:
     'Execute a SQL query on an APP\'s database.\n\n' +
@@ -219,6 +210,23 @@ export const TOOL_DESCRIPTIONS = {
     '- Database REST API: `/fn/_db/tables/{table}` and `/fn/_db/tables/{table}/{id}`\n' +
     '- TypeScript functions: ANY `/fn/{name}`\n\n' +
     'Default mode is `draft`.',
+
+  get_guide:
+    'Get detailed reference documentation for APP development.\n\n' +
+    'Use this tool when you need in-depth information about a specific topic ' +
+    'beyond what tool descriptions provide.\n\n' +
+    '**Available topics:**\n' +
+    '- `workflow` — Complete development lifecycle (create → edit → sync → reconcile → verify → publish)\n' +
+    '- `functions` — Writing TypeScript functions (FunctionContext API, exports, return values)\n' +
+    '- `ui` — UI system overview (pages, components, actions, expressions)\n' +
+    '  - `ui/components` — Component quick-reference (26 built-in types)\n' +
+    '  - `ui/components/<name>` — Individual component docs (e.g. `ui/components/table`)\n' +
+    '  - `ui/actions` — Action system (api, reload, dialog, link, close, confirm)\n' +
+    '  - `ui/expressions` — Expression engine (`${...}` syntax, scopes)\n' +
+    '- `db` — Database overview\n' +
+    '  - `db/crud` — Database REST API reference (paths, query params, operators)\n' +
+    '  - `db/migrations` — Migration patterns (SQLite syntax, naming, immutable mechanism)\n\n' +
+    'Use `/` to drill into subtopics (e.g. `get_guide("ui/components/table")`).',
 } as const;
 
 // --- Input Schemas (for MCP Server tool registration) ---

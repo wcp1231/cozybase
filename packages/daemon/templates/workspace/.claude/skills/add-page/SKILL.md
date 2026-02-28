@@ -1,0 +1,92 @@
+# Skill: Add Page
+
+Add a new UI page to an existing Cozybase APP.
+
+## When to Use
+
+Use this skill when the user wants to add a new page or modify existing UI in an APP.
+
+## Steps
+
+### Step 1: Identify the APP and Requirements
+
+- Which APP? (use `list_apps` if needed)
+- What should the page display? (tables, forms, stats, etc.)
+- What data sources does it use?
+
+### Step 2: Fetch the APP (if not already in working directory)
+
+```
+fetch_app(app_name: "<app-name>")
+```
+
+### Step 3: Read Existing UI
+
+Read the current `ui/pages.json` to understand existing pages and avoid conflicts.
+
+### Step 4: Design the Page
+
+For the component reference, call:
+```
+get_guide("ui/components")
+```
+
+For specific high-frequency components:
+```
+get_guide("ui/components/table")   # Data tables
+get_guide("ui/components/form")    # Forms
+get_guide("ui/components/dialog")  # Modal dialogs
+```
+
+For actions (API calls, dialogs, navigation):
+```
+get_guide("ui/actions")
+```
+
+For expression syntax:
+```
+get_guide("ui/expressions")
+```
+
+### Step 5: Add the Page
+
+Add a new page object to the `pages` array in `ui/pages.json`:
+
+```json
+{
+  "id": "page-id",
+  "title": "Page Title",
+  "body": [ ... ]
+}
+```
+
+The `id` serves as the route path segment.
+
+### Step 6: Sync and Reconcile
+
+```
+update_app_file(app_name: "<app-name>", path: "ui/pages.json")
+reconcile_app(app_name: "<app-name>")
+```
+
+## Common Page Patterns
+
+### Data Listing Page
+- Heading + Button (for "New" action)
+- Optional filter tabs
+- Table with columns and row actions
+
+### Dashboard Page
+- Row of Stat components
+- Tables or Charts below
+
+### Detail Page
+- Card with data fields
+- Action buttons (Edit, Delete)
+
+## Tips
+
+- Give tables and key components an `id` so they can be targeted by `reload` actions
+- Use tabs with `${tabs-id.value}` in table `api.params` for filtering
+- Put forms inside `dialog` actions for create/edit workflows
+- Chain actions: `onSuccess: [{ "type": "reload", "target": "..." }, { "type": "close" }]`
