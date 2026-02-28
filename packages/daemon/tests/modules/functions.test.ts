@@ -419,9 +419,9 @@ describe('createServer() first-init auto-publish', () => {
 
     await startup;
 
-    // After createServer, welcome app should be auto-published and stable
+    // After createServer, welcome app should be auto-published and running stable
     const state = workspace.getAppState('welcome');
-    expect(state).toBe('stable');
+    expect(state).toEqual({ stableStatus: 'running', hasDraft: false });
 
     // Stable DB should exist
     const stableDbPath = join(tmpRoot, 'stable', 'welcome', 'db.sqlite');
@@ -446,7 +446,7 @@ describe('createServer() first-init auto-publish', () => {
       jwtSecret: 'test-secret',
     });
     await s1;
-    expect(ws1.getAppState('welcome')).toBe('stable');
+    expect(ws1.getAppState('welcome')).toEqual({ stableStatus: 'running', hasDraft: false });
     reg1.shutdownAll();
     ws1.close();
 
@@ -465,9 +465,9 @@ describe('createServer() first-init auto-publish', () => {
     });
     await s2;
 
-    // State should be stable_draft — auto-publish did NOT run
+    // State should retain stable and show draft changes - auto-publish did NOT run
     const state = ws2.getAppState('welcome');
-    expect(state).toBe('stable_draft');
+    expect(state).toEqual({ stableStatus: 'running', hasDraft: true });
 
     reg2.shutdownAll();
     ws2.close();

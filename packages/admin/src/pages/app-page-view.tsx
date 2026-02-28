@@ -7,10 +7,12 @@ export function AppPageView() {
   const { appName, pageId } = useParams<{ appName: string; pageId: string }>();
   const [searchParams] = useSearchParams();
   const { appLoading, appError, pagesJson } = useAppContext();
+  const mode = searchParams.get('mode') === 'draft' ? 'draft' : 'stable';
 
   const slotState = resolveContentSlotState({
     appName,
     pageId,
+    mode,
     pagesJson,
     appLoading,
     appError,

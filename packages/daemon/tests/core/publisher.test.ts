@@ -29,7 +29,10 @@ describe('Publisher', () => {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
       handle.workspace.refreshAppState('myapp');
-      expect(handle.workspace.getAppState('myapp')).toBe('draft_only');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: null,
+        hasDraft: true,
+      });
 
       const publisher = new Publisher(handle.workspace);
       const result = await publisher.publish('myapp');
@@ -68,13 +71,16 @@ describe('Publisher', () => {
       const draftDbPath = join(handle.root, 'draft', 'myapp', 'db.sqlite');
       expect(existsSync(draftDbPath)).toBe(false);
 
-      // 7. State is now stable
+      // 7. State is now running stable
       handle.workspace.refreshAppState('myapp');
-      expect(handle.workspace.getAppState('myapp')).toBe('stable');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: 'running',
+        hasDraft: false,
+      });
     });
   });
 
-  describe('publish stable_draft app', () => {
+  describe('publish app with existing stable version', () => {
     test('incremental migration + backup created', async () => {
       handle = createTestWorkspace();
 
@@ -89,7 +95,10 @@ describe('Publisher', () => {
       // Phase 2: Add new migration
       addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
       handle.workspace.refreshAppState('myapp');
-      expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: 'running',
+        hasDraft: true,
+      });
 
       // Publish again
       const result = await publisher.publish('myapp');
@@ -118,9 +127,12 @@ describe('Publisher', () => {
       ).get() as { cnt: number };
       expect(immutableCount.cnt).toBe(2);
 
-      // 5. Draft cleaned, state stable
+      // 5. Draft cleaned, state is still running stable
       handle.workspace.refreshAppState('myapp');
-      expect(handle.workspace.getAppState('myapp')).toBe('stable');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: 'running',
+        hasDraft: false,
+      });
     });
   });
 
@@ -183,15 +195,27 @@ describe('Publisher', () => {
   });
 
   describe('edge cases', () => {
-    test('throws BadRequestError for deleted app', async () => {
+    test('keeps stopped stable status when publishing new draft changes', async () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
-        spec: { description: 'test', status: 'deleted' },
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      handle.workspace.getPlatformDb().query(
+        "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+      ).run('myapp');
+      addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
       handle.workspace.refreshAppState('myapp');
 
       const publisher = new Publisher(handle.workspace);
-      await expect(publisher.publish('myapp')).rejects.toThrow(/deleted/);
+      const result = await publisher.publish('myapp');
+      expect(result.success).toBe(true);
+
+      handle.workspace.refreshAppState('myapp');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: 'stopped',
+        hasDraft: false,
+      });
     });
 
     test('throws BadRequestError for stable app with no draft changes', async () => {

@@ -28,13 +28,10 @@ export class Verifier {
     if (!state) {
       throw new BadRequestError(`App '${appName}' not found`);
     }
-    if (state === 'deleted') {
-      throw new BadRequestError(`App '${appName}' is deleted`);
-    }
-    if (state === 'draft_only') {
+    if (state.stableStatus === null) {
       throw new BadRequestError(`App '${appName}' has no stable version to verify against`);
     }
-    if (state === 'stable') {
+    if (!state.hasDraft) {
       throw new BadRequestError(`App '${appName}' has no draft changes to verify`);
     }
 

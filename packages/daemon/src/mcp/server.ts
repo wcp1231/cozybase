@@ -14,6 +14,8 @@ import {
   handleListApps,
   handleFetchApp,
   handleDeleteApp,
+  handleStartApp,
+  handleStopApp,
   handleUpdateApp,
   handleUpdateAppFile,
   handleReconcileApp,
@@ -72,6 +74,26 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     { app_name: z.string() },
     async (args) => {
       const result = await handleDeleteApp(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'start_app',
+    TOOL_DESCRIPTIONS.start_app,
+    { app_name: z.string() },
+    async (args) => {
+      const result = await handleStartApp(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'stop_app',
+    TOOL_DESCRIPTIONS.stop_app,
+    { app_name: z.string() },
+    async (args) => {
+      const result = await handleStopApp(ctx, args);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },
   );

@@ -91,17 +91,17 @@ describe('Workspace', () => {
   // --- getAppState ---
 
   describe('getAppState', () => {
-    test('returns draft_only for new app (published_version = 0)', () => {
+    test('returns null stableStatus with draft for new app', () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
 
       const state = handle.workspace.refreshAppState('myapp');
-      expect(state).toBe('draft_only');
+      expect(state).toEqual({ stableStatus: null, hasDraft: true });
     });
 
-    test('returns stable when published_version = current_version', () => {
+    test('returns running stable state when published_version = current_version', () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -109,10 +109,10 @@ describe('Workspace', () => {
       createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
       const state = handle.workspace.refreshAppState('myapp');
-      expect(state).toBe('stable');
+      expect(state).toEqual({ stableStatus: 'running', hasDraft: false });
     });
 
-    test('returns stable_draft when current_version > published_version', () => {
+    test('returns running stable state with draft when current_version > published_version', () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -123,17 +123,21 @@ describe('Workspace', () => {
       addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
 
       const state = handle.workspace.refreshAppState('myapp');
-      expect(state).toBe('stable_draft');
+      expect(state).toEqual({ stableStatus: 'running', hasDraft: true });
     });
 
-    test('returns deleted when status is deleted', () => {
+    test('returns stopped stable state when stable_status is stopped', () => {
       handle = createTestWorkspace();
       createTestApp(handle, 'myapp', {
-        spec: { description: 'to delete', status: 'deleted' },
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      handle.workspace.getPlatformDb().query(
+        "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+      ).run('myapp');
 
       const state = handle.workspace.refreshAppState('myapp');
-      expect(state).toBe('deleted');
+      expect(state).toEqual({ stableStatus: 'stopped', hasDraft: false });
     });
 
     test('returns undefined for non-existent app', () => {

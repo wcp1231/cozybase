@@ -18,6 +18,7 @@ import { EmbeddedBackend } from '../../src/mcp/embedded-backend';
 import { DraftReconciler } from '../../src/core/draft-reconciler';
 import { Verifier } from '../../src/core/verifier';
 import { Publisher } from '../../src/core/publisher';
+import { AppRegistry } from '@cozybase/runtime';
 
 let handle: TestWorkspaceHandle;
 
@@ -29,8 +30,9 @@ function createBackend(h: TestWorkspaceHandle) {
   const draftReconciler = new DraftReconciler(h.workspace);
   const verifier = new Verifier(h.workspace);
   const publisher = new Publisher(h.workspace);
+  const registry = new AppRegistry();
   const app = new Hono(); // Minimal app for callApi (can be extended)
-  return new EmbeddedBackend(h.workspace, draftReconciler, verifier, publisher, app);
+  return new EmbeddedBackend(h.workspace, draftReconciler, verifier, publisher, registry, app);
 }
 
 describe('EmbeddedBackend — App Lifecycle', () => {

@@ -87,7 +87,7 @@ describe('DraftReconciler', () => {
     db.close();
   });
 
-  test('works for stable_draft app', async () => {
+  test('works for app with stable and draft changes', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -97,7 +97,10 @@ describe('DraftReconciler', () => {
     // Add new migration (increments current_version, state becomes stable_draft)
     addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
-    expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: true,
+    });
 
     const reconciler = new DraftReconciler(handle.workspace);
     const result = await reconciler.reconcile('myapp');
@@ -107,15 +110,21 @@ describe('DraftReconciler', () => {
     expect(result.migrations).toContain('002_add_col.sql');
   });
 
-  test('throws BadRequestError for deleted app', async () => {
+  test('works for stopped stable app with draft changes', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
-      spec: { description: 'test', status: 'deleted' },
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
     });
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    handle.workspace.getPlatformDb().query(
+      "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+    ).run('myapp');
+    addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
 
     const reconciler = new DraftReconciler(handle.workspace);
-    expect(reconciler.reconcile('myapp')).rejects.toThrow(/deleted/);
+    const result = await reconciler.reconcile('myapp');
+    expect(result.success).toBe(true);
   });
 
   test('throws BadRequestError for stable app with no draft changes', async () => {
@@ -125,7 +134,10 @@ describe('DraftReconciler', () => {
     });
     createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
     handle.workspace.refreshAppState('myapp');
-    expect(handle.workspace.getAppState('myapp')).toBe('stable');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: false,
+    });
 
     const reconciler = new DraftReconciler(handle.workspace);
     expect(reconciler.reconcile('myapp')).rejects.toThrow(/no draft changes/);

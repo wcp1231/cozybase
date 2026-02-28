@@ -47,3 +47,46 @@
 
 - **WHEN** Agent 查看 `reconcile_app` 工具的 description
 - **THEN** description SHALL 包含 `get_guide('db/migrations')` 的交叉引用
+
+#### Scenario: delete_app 描述包含状态守卫说明
+
+- **WHEN** Agent 查看 `delete_app` 工具的 description
+- **THEN** description SHALL 说明只能删除 stopped 或未发布的 APP
+
+### Requirement: start_app MCP 工具
+
+`createMcpServer` SHALL 注册 `start_app` 工具，参数为 `{ name: z.string() }`。
+
+工具 handler SHALL 调用 `AppManager.startStable(name)`，启动指定 APP 的 Stable 版本。
+
+#### Scenario: Agent 调用 start_app 成功
+
+- **WHEN** Agent 调用 `start_app(name: "my-app")`
+- **AND** APP `my-app` 的 Stable 版本为 `stopped`
+- **THEN** 工具 SHALL 返回成功信息
+- **AND** APP 的 stable runtime SHALL 被启动
+
+#### Scenario: Agent 调用 start_app 无 stable 版本
+
+- **WHEN** Agent 调用 `start_app(name: "draft-only-app")`
+- **AND** APP 从未发布过
+- **THEN** 工具 SHALL 返回错误信息，说明该 APP 没有 Stable 版本
+
+### Requirement: stop_app MCP 工具
+
+`createMcpServer` SHALL 注册 `stop_app` 工具，参数为 `{ name: z.string() }`。
+
+工具 handler SHALL 调用 `AppManager.stopStable(name)`，停止指定 APP 的 Stable 版本。
+
+#### Scenario: Agent 调用 stop_app 成功
+
+- **WHEN** Agent 调用 `stop_app(name: "my-app")`
+- **AND** APP `my-app` 的 Stable 版本为 `running`
+- **THEN** 工具 SHALL 返回成功信息
+- **AND** APP 的 stable runtime SHALL 被停止
+
+#### Scenario: Agent 调用 stop_app 无 stable 版本
+
+- **WHEN** Agent 调用 `stop_app(name: "draft-only-app")`
+- **AND** APP 从未发布过
+- **THEN** 工具 SHALL 返回错误信息，说明该 APP 没有 Stable 版本

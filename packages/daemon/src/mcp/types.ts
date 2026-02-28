@@ -5,7 +5,7 @@
  * so MCP tool handlers work identically in both deployment scenarios.
  */
 
-import type { AppState } from '../core/workspace';
+import type { StableStatus } from '../core/workspace';
 import type { DraftReconcileResult } from '../core/draft-reconciler';
 import type { VerifyResult } from '../core/verifier';
 import type { PublishResult } from '../core/publisher';
@@ -25,7 +25,8 @@ export interface FileEntry {
 export interface AppSnapshot {
   name: string;
   description: string;
-  state: AppState | 'unknown';
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
   current_version: number;
   published_version: number;
   files: FileEntry[];
@@ -35,7 +36,8 @@ export interface AppSnapshot {
 export interface AppInfo {
   name: string;
   description: string;
-  state: AppState | 'unknown';
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
   current_version: number;
   published_version: number;
 }
@@ -81,6 +83,8 @@ export interface CozybaseBackend {
   listApps(): Promise<AppInfo[]>;
   fetchApp(name: string): Promise<AppSnapshot>;
   deleteApp(name: string): Promise<void>;
+  startApp(name: string): Promise<AppInfo>;
+  stopApp(name: string): Promise<AppInfo>;
 
   // File sync
   pushFiles(name: string, files: FileEntry[]): Promise<PushResult>;

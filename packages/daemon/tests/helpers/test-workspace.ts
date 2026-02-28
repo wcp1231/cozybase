@@ -59,12 +59,14 @@ export function createTestApp(
 
   const spec = opts.spec ?? { description: `Test app: ${appName}` };
   const description = typeof spec.description === 'string' ? spec.description : '';
-  const status = typeof spec.status === 'string' ? spec.status : 'active';
+  const stableStatus = spec.stable_status === 'running' || spec.stable_status === 'stopped'
+    ? spec.stable_status
+    : null;
 
   // Create app record
   db.query(
-    'INSERT INTO apps (name, description, status, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
-  ).run(appName, description, status);
+    'INSERT INTO apps (name, description, stable_status, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
+  ).run(appName, description, stableStatus);
 
   // Insert app.yaml
   db.query(
@@ -169,12 +171,17 @@ export function setAppSpec(handle: TestWorkspaceHandle, appName: string, spec: R
     "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = 'app.yaml'",
   ).run(content, appName);
 
-  // Also update description and status in apps table if provided
+  // Also update description and stable_status in apps table if provided
   if (spec.description !== undefined) {
     db.query('UPDATE apps SET description = ? WHERE name = ?').run(String(spec.description), appName);
   }
-  if (spec.status !== undefined) {
-    db.query('UPDATE apps SET status = ? WHERE name = ?').run(String(spec.status), appName);
+  const stableStatus = spec.stable_status === 'running' || spec.stable_status === 'stopped'
+    ? spec.stable_status
+    : spec.stableStatus === 'running' || spec.stableStatus === 'stopped'
+      ? spec.stableStatus
+      : undefined;
+  if (stableStatus !== undefined) {
+    db.query('UPDATE apps SET stable_status = ? WHERE name = ?').run(String(stableStatus), appName);
   }
 
   // Increment current_version
@@ -236,7 +243,7 @@ export function createStableDb(handle: TestWorkspaceHandle, appName: string, mig
     platformDb.query('UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?')
       .run(appName, `migrations/${versionPrefix}_%`);
   }
-  platformDb.query('UPDATE apps SET published_version = current_version WHERE name = ?').run(appName);
+  platformDb.query("UPDATE apps SET published_version = current_version, stable_status = 'running' WHERE name = ?").run(appName);
 }
 
 // ---- Standard test fixtures ----

@@ -24,6 +24,10 @@ import {
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
+const DRAFT_ONLY_STATE = { stableStatus: null, hasDraft: true } as const;
+const STABLE_RUNNING_STATE = { stableStatus: 'running', hasDraft: false } as const;
+const STABLE_RUNNING_WITH_DRAFT_STATE = { stableStatus: 'running', hasDraft: true } as const;
+
 describe('End-to-end Reconciler Scenarios', () => {
   let handle: TestWorkspaceHandle;
 
@@ -42,9 +46,9 @@ describe('End-to-end Reconciler Scenarios', () => {
         seeds: { '01_seed.sql': SEED_TODOS_SQL },
       });
 
-      // Step 2: Verify state is draft_only
+      // Step 2: Verify state is draft-only
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('draft_only');
+      expect(handle.workspace.getAppState('todos')).toEqual(DRAFT_ONLY_STATE);
 
       // Step 3: Draft reconcile
       const reconciler = new DraftReconciler(handle.workspace);
@@ -91,8 +95,8 @@ describe('End-to-end Reconciler Scenarios', () => {
       });
       handle.workspace.refreshAppState('todos');
 
-      // Step 2: State is draft_only
-      expect(handle.workspace.getAppState('todos')).toBe('draft_only');
+      // Step 2: State is draft-only
+      expect(handle.workspace.getAppState('todos')).toEqual(DRAFT_ONLY_STATE);
 
       // Step 3: Publish
       const publisher = new Publisher(handle.workspace);
@@ -124,9 +128,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       const draftDbPath = join(handle.root, 'draft', 'todos', 'db.sqlite');
       expect(existsSync(draftDbPath)).toBe(false);
 
-      // Step 9: State is stable
+      // Step 9: State is running stable
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('stable');
+      expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_STATE);
     });
   });
 
@@ -146,9 +150,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 2: Add new migration
       addMigration(handle, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
 
-      // Step 3: State is stable_draft
+      // Step 3: State has running stable plus draft changes
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
+      expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_WITH_DRAFT_STATE);
 
       // Step 4: Draft reconcile — draft DB has both migrations
       const reconciler = new DraftReconciler(handle.workspace);
@@ -180,9 +184,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       const backupPath = join(handle.root, 'stable', 'todos', 'db.sqlite.bak');
       expect(existsSync(backupPath)).toBe(true);
 
-      // Step 9: State is stable
+      // Step 9: State is running stable
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('stable');
+      expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_STATE);
     });
   });
 
@@ -202,9 +206,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 2: Modify published migration (clears immutable flag in test helper)
       modifyMigration(handle, 'todos', '001_init.sql', 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
 
-      // Step 3: State is stable_draft (current_version incremented)
+      // Step 3: State now has running stable plus draft changes
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
+      expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_WITH_DRAFT_STATE);
 
       // Step 4: Verify should fail with immutability error
       const verifier = new Verifier(handle.workspace);
@@ -216,26 +220,22 @@ describe('End-to-end Reconciler Scenarios', () => {
   });
 
   // --- Scenario 9.5 ---
-  describe('9.5: status: deleted -> state detection and operation rejection', () => {
-    test('deleted app detected and all operations rejected', async () => {
+  describe('9.5: Draft-only app cannot be verified before first publish', () => {
+    test('verify rejects an app without stable state', async () => {
       handle = createTestWorkspace();
 
-      // Step 1: Create app marked as deleted
+      // Step 1: Create an unpublished app
       createTestApp(handle, 'todos', {
-        spec: { description: 'old app', status: 'deleted' },
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
 
-      // Step 2: State is deleted
+      // Step 2: State is draft-only
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('deleted');
+      expect(handle.workspace.getAppState('todos')).toEqual(DRAFT_ONLY_STATE);
 
-      // Step 3: All operations should be rejected
-      const reconciler = new DraftReconciler(handle.workspace);
-      expect(reconciler.reconcile('todos')).rejects.toThrow(/deleted/);
-
-      const publisher = new Publisher(handle.workspace);
-      await expect(publisher.publish('todos')).rejects.toThrow(/deleted/);
+      // Step 3: Verify is rejected because there is no stable version yet
+      const verifier = new Verifier(handle.workspace);
+      expect(() => verifier.verify('todos')).toThrow(/no stable version/);
     });
   });
 
@@ -260,9 +260,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 3: Add bad migration
       addMigration(handle, 'todos', '002_bad.sql', MIGRATION_BAD_SQL);
 
-      // Step 4: State is stable_draft
+      // Step 4: State now has running stable plus draft changes
       handle.workspace.refreshAppState('todos');
-      expect(handle.workspace.getAppState('todos')).toBe('stable_draft');
+      expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_WITH_DRAFT_STATE);
 
       // Step 5: Publish should fail
       const result = await publisher.publish('todos');
@@ -294,9 +294,9 @@ describe('End-to-end Reconciler Scenarios', () => {
         functions: { 'todos.ts': fnCode },
       });
 
-      // Step 2: State is draft_only
+      // Step 2: State is draft-only
       handle.workspace.refreshAppState('welcome');
-      expect(handle.workspace.getAppState('welcome')).toBe('draft_only');
+      expect(handle.workspace.getAppState('welcome')).toEqual(DRAFT_ONLY_STATE);
 
       // Step 3: Auto-publish (simulating what server.ts does after init)
       const publisher = new Publisher(handle.workspace);
@@ -312,9 +312,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       expect(existsSync(stableFnDir)).toBe(true);
       expect(existsSync(join(stableFnDir, 'todos.ts'))).toBe(true);
 
-      // Step 6: State is now stable
+      // Step 6: State is now running stable
       handle.workspace.refreshAppState('welcome');
-      expect(handle.workspace.getAppState('welcome')).toBe('stable');
+      expect(handle.workspace.getAppState('welcome')).toEqual(STABLE_RUNNING_STATE);
     });
   });
 
@@ -330,9 +330,9 @@ describe('End-to-end Reconciler Scenarios', () => {
         functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
       });
 
-      // Step 2: State is draft_only
+      // Step 2: State is draft-only
       handle.workspace.refreshAppState('myapp');
-      expect(handle.workspace.getAppState('myapp')).toBe('draft_only');
+      expect(handle.workspace.getAppState('myapp')).toEqual(DRAFT_ONLY_STATE);
 
       // Step 3: Before reconcile, draft functions dir does not exist
       const draftFnDir = join(handle.root, 'draft', 'myapp', 'functions');

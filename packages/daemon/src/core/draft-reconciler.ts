@@ -43,10 +43,7 @@ export class DraftReconciler {
     if (!state) {
       throw new BadRequestError(`App '${appName}' not found`);
     }
-    if (state === 'deleted') {
-      throw new BadRequestError(`App '${appName}' is deleted`);
-    }
-    if (state === 'stable') {
+    if (!state.hasDraft) {
       throw new BadRequestError(`App '${appName}' has no draft changes`);
     }
 

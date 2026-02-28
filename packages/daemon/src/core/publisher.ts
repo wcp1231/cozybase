@@ -29,10 +29,7 @@ export class Publisher {
     if (!state) {
       throw new BadRequestError(`App '${appName}' not found`);
     }
-    if (state === 'deleted') {
-      throw new BadRequestError(`App '${appName}' is deleted`);
-    }
-    if (state === 'stable') {
+    if (!state.hasDraft) {
       throw new BadRequestError(`App '${appName}' has no draft changes to publish`);
     }
 
@@ -41,7 +38,8 @@ export class Publisher {
       throw new BadRequestError(`App '${appName}' not found`);
     }
 
-    const isNewApp = state === 'draft_only';
+    const previousStableStatus = state.stableStatus;
+    const isNewApp = previousStableStatus === null;
     const backupPath = appContext.stableDbPath + '.bak';
 
     // 1. Backup stable database (skip for new apps)
@@ -76,7 +74,11 @@ export class Publisher {
         this.exportFunctions(appName);
         const uiResult = this.exportUi(appName);
         const npmResult = await this.exportPackageJsonAndInstall(appName, appContext.stableDataDir);
-        this.markImmutableAndUpdateVersion(appName, allMigrations.map(m => m.version));
+        this.markImmutableAndUpdateVersion(
+          appName,
+          allMigrations.map(m => m.version),
+          previousStableStatus,
+        );
         this.cleanup(appContext);
         this.workspace.refreshAppState(appName);
         return { success: true, migrationsApplied: [], ui: uiResult, npm: npmResult };
@@ -112,7 +114,7 @@ export class Publisher {
 
       // 10. Mark executed migrations immutable + update published_version
       const allExecutedVersions = [...executedVersions, ...pendingMigrations.map(m => m.version)];
-      this.markImmutableAndUpdateVersion(appName, allExecutedVersions);
+      this.markImmutableAndUpdateVersion(appName, allExecutedVersions, previousStableStatus);
 
       // 10. Cleanup
       this.cleanup(appContext);
@@ -137,7 +139,11 @@ export class Publisher {
   }
 
   /** Mark executed migration files as immutable and update published_version */
-  private markImmutableAndUpdateVersion(appName: string, executedVersions: number[]): void {
+  private markImmutableAndUpdateVersion(
+    appName: string,
+    executedVersions: number[],
+    previousStableStatus: 'running' | 'stopped' | null,
+  ): void {
     const platformDb = this.workspace.getPlatformDb();
 
     // Mark all executed migration files as immutable
@@ -150,8 +156,8 @@ export class Publisher {
 
     // Update published_version = current_version
     platformDb.query(
-      "UPDATE apps SET published_version = current_version, updated_at = datetime('now') WHERE name = ?",
-    ).run(appName);
+      "UPDATE apps SET published_version = current_version, stable_status = ?, updated_at = datetime('now') WHERE name = ?",
+    ).run(previousStableStatus ?? 'running', appName);
   }
 
   /** Export function files from DB to stable data dir */

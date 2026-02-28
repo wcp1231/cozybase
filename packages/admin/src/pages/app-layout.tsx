@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { useParams, Outlet, Link, NavLink } from 'react-router-dom';
+import { useParams, Outlet, Link, NavLink, useSearchParams } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { PagesJson } from '@cozybase/ui';
@@ -7,21 +7,22 @@ import type { PagesJson } from '@cozybase/ui';
 interface AppSummary {
   name: string;
   description: string;
-  status: string;
+  stableStatus: 'running' | 'stopped' | null;
+  hasDraft: boolean;
   current_version: number;
   published_version: number;
   created_at: string;
   updated_at: string;
-  state: string;
   has_ui: boolean;
 }
 
 interface AppInfo {
   name: string;
   description: string;
+  stableStatus: 'running' | 'stopped' | null;
+  hasDraft: boolean;
   current_version: number;
   published_version: number;
-  state: string;
 }
 
 interface AppContextValue {
@@ -45,6 +46,7 @@ export function useAppContext(): AppContextValue {
 
 export function AppLayout() {
   const { appName } = useParams<{ appName: string }>();
+  const [searchParams] = useSearchParams();
 
   const [apps, setApps] = useState<AppSummary[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
@@ -58,6 +60,7 @@ export function AppLayout() {
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [chatVisible, setChatVisible] = useState(false);
+  const selectedMode = searchParams.get('mode') === 'draft' ? 'draft' : 'stable';
   const iconBtnClass =
     'inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#E2E8F0] bg-white text-[#475569] transition-colors hover:bg-[#F8FAFC]';
 
@@ -133,7 +136,7 @@ export function AppLayout() {
         if (!res.ok) throw new Error(`Failed to load app: HTTP ${res.status}`);
         return res.json();
       }),
-      fetch(`/stable/apps/${appName}/ui`).then((res) => {
+      fetch(`/${selectedMode}/apps/${appName}/ui`).then((res) => {
         if (res.status === 404) return null;
         if (!res.ok) throw new Error('加载 UI 定义失败');
         return res.json();
@@ -146,9 +149,10 @@ export function AppLayout() {
         setApp({
           name: appData.name,
           description: appData.description,
+          stableStatus: appData.stableStatus,
+          hasDraft: appData.hasDraft,
           current_version: appData.current_version,
           published_version: appData.published_version,
-          state: appData.state,
         });
 
         setPagesJson(uiJson ? (uiJson.data as PagesJson) : null);
@@ -167,7 +171,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [appName]);
+  }, [appName, selectedMode]);
 
   const ctxValue: AppContextValue = {
     apps,

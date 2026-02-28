@@ -29,6 +29,10 @@ import type {
   UpdateAppFileOutput,
   DeleteAppInput,
   DeleteAppOutput,
+  StartAppInput,
+  StartAppOutput,
+  StopAppInput,
+  StopAppOutput,
   ReconcileAppInput,
   VerifyAppInput,
   PublishAppInput,
@@ -84,7 +88,8 @@ export async function handleFetchApp(
   return {
     name: snapshot.name,
     description: snapshot.description,
-    state: snapshot.state,
+    stableStatus: snapshot.stableStatus,
+    hasDraft: snapshot.hasDraft,
     current_version: snapshot.current_version,
     published_version: snapshot.published_version,
     directory: getAppDir(ctx.appsDir, input.app_name),
@@ -99,6 +104,20 @@ export async function handleDeleteApp(
   await ctx.backend.deleteApp(input.app_name);
   clearAppDir(ctx.appsDir, input.app_name);
   return { message: `App '${input.app_name}' has been permanently deleted.` };
+}
+
+export async function handleStartApp(
+  ctx: HandlerContext,
+  input: StartAppInput,
+): Promise<StartAppOutput> {
+  return ctx.backend.startApp(input.app_name);
+}
+
+export async function handleStopApp(
+  ctx: HandlerContext,
+  input: StopAppInput,
+): Promise<StopAppOutput> {
+  return ctx.backend.stopApp(input.app_name);
 }
 
 // --- File Sync ---

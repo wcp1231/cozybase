@@ -11,19 +11,21 @@ export type ContentSlotState =
 export interface ResolveContentSlotInput {
   appName?: string;
   pageId?: string;
+  mode: 'stable' | 'draft';
   pagesJson: PagesJson | null;
   appLoading: boolean;
   appError: string | null;
 }
 
-export function toAppPagePath(appName: string, pageId?: string): string {
-  return pageId ? `/apps/${appName}/${pageId}` : `/apps/${appName}`;
+export function toAppPagePath(appName: string, pageId: string | undefined, mode: 'stable' | 'draft'): string {
+  const path = pageId ? `/apps/${appName}/${pageId}` : `/apps/${appName}`;
+  return `${path}?mode=${mode}`;
 }
 
 export function resolveContentSlotState(
   input: ResolveContentSlotInput,
 ): ContentSlotState {
-  const { appName, pageId, pagesJson, appLoading, appError } = input;
+  const { appName, pageId, mode, pagesJson, appLoading, appError } = input;
 
   if (!appName) {
     return { type: 'error', message: 'Missing app name.' };
@@ -43,7 +45,7 @@ export function resolveContentSlotState(
   }
 
   if (!pageId) {
-    return { type: 'redirect', to: toAppPagePath(appName, pages[0].id) };
+    return { type: 'redirect', to: toAppPagePath(appName, pages[0].id, mode) };
   }
 
   const page = pages.find((item) => item.id === pageId);
@@ -54,6 +56,6 @@ export function resolveContentSlotState(
   return {
     type: 'render',
     page,
-    baseUrl: `/stable/apps/${appName}`,
+    baseUrl: `/${mode}/apps/${appName}`,
   };
 }

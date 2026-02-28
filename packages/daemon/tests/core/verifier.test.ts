@@ -81,7 +81,7 @@ describe('Verifier', () => {
     expect(existsSync(tempPath)).toBe(false);
   });
 
-  test('throws BadRequestError for draft_only app', () => {
+  test('throws BadRequestError for unpublished app', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -128,10 +128,13 @@ describe('Verifier', () => {
     });
     createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
 
-    // Update app spec to trigger stable_draft state
+    // Update app spec to create a draft without new migrations
     setAppSpec(handle, 'myapp', { description: 'updated description' });
     handle.workspace.refreshAppState('myapp');
-    expect(handle.workspace.getAppState('myapp')).toBe('stable_draft');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: true,
+    });
 
     const verifier = new Verifier(handle.workspace);
     const result = verifier.verify('myapp');

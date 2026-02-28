@@ -7,17 +7,30 @@ type AppListTab = 'stable' | 'draft';
 
 interface AppSummaryLike {
   name: string;
-  state: string;
+  stableStatus: 'running' | 'stopped' | null;
+  hasDraft: boolean;
+  has_ui?: boolean;
+  description?: string;
 }
 
-const stateBadgeClasses: Record<string, string> = {
-  draft_only: 'bg-bg-muted text-text-secondary',
-  stable: 'bg-success-bg text-success-text',
-  stable_draft: 'bg-warning-bg text-warning-text',
-};
+function StateBadge({
+  tab,
+  stableStatus,
+}: {
+  tab: AppListTab;
+  stableStatus: 'running' | 'stopped' | null;
+}) {
+  const label = tab === 'stable'
+    ? stableStatus ?? 'stopped'
+    : stableStatus === null ? 'draft (new)' : 'draft';
+  const cls = tab === 'stable'
+    ? stableStatus === 'running'
+      ? 'bg-success-bg text-success-text'
+      : 'bg-bg-muted text-text-secondary'
+    : stableStatus === null
+      ? 'bg-bg-muted text-text-secondary'
+      : 'bg-warning-bg text-warning-text';
 
-function StateBadge({ state }: { state: string }) {
-  const cls = stateBadgeClasses[state] ?? stateBadgeClasses.draft_only;
   return (
     <span
       className={clsx(
@@ -25,7 +38,7 @@ function StateBadge({ state }: { state: string }) {
         cls,
       )}
     >
-      {state}
+      {label}
     </span>
   );
 }
@@ -33,9 +46,9 @@ function StateBadge({ state }: { state: string }) {
 export function filterAppsByTab<T extends AppSummaryLike>(apps: T[], tab: AppListTab): T[] {
   return apps.filter((app) => {
     if (tab === 'stable') {
-      return app.state === 'stable' || app.state === 'stable_draft';
+      return app.stableStatus !== null;
     }
-    return app.state === 'draft_only' || app.state === 'stable_draft';
+    return app.hasDraft;
   });
 }
 
@@ -111,7 +124,7 @@ export function AppListPage() {
           {visibleApps.map((app) => (
             <Link
               key={app.name}
-              to={`/apps/${app.name}`}
+              to={`/apps/${app.name}?mode=${activeTab}`}
               className="no-underline text-inherit"
             >
               <div className="bg-bg border border-border rounded-md p-4 cursor-pointer transition-shadow hover:shadow-md h-full">
@@ -125,7 +138,7 @@ export function AppListPage() {
                         No UI
                       </span>
                     )}
-                    <StateBadge state={app.state} />
+                    <StateBadge tab={activeTab} stableStatus={app.stableStatus} />
                   </div>
                 </div>
                 <p className="text-sm text-text-muted m-0 leading-normal">

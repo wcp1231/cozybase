@@ -112,7 +112,8 @@ describe('Management API (/api/v1/apps)', () => {
       expect(body.data.description).toBe('My new app');
       expect(body.data.current_version).toBe(1);
       expect(body.data.published_version).toBe(0);
-      expect(body.data.state).toBe('draft_only');
+      expect(body.data.stableStatus).toBeNull();
+      expect(body.data.hasDraft).toBe(true);
       expect(body.data.api_key).toMatch(/^cb_/);
       expect(body.data.files).toBeArray();
       expect(body.data.files.length).toBeGreaterThan(0);

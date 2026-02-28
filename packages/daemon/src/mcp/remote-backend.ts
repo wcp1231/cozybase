@@ -35,7 +35,8 @@ export class RemoteBackend implements CozybaseBackend {
     return {
       name: app.name,
       description: app.description ?? '',
-      state: app.state ?? 'unknown',
+      stableStatus: app.stableStatus ?? null,
+      hasDraft: app.hasDraft ?? false,
       current_version: app.current_version ?? 0,
       published_version: app.published_version ?? 0,
       files: (app.files ?? []).map((f: any) => ({ path: f.path, content: f.content })),
@@ -47,7 +48,8 @@ export class RemoteBackend implements CozybaseBackend {
     return (res.data ?? []).map((a: any) => ({
       name: a.name,
       description: a.description ?? '',
-      state: a.state ?? 'unknown',
+      stableStatus: a.stableStatus ?? null,
+      hasDraft: a.hasDraft ?? false,
       current_version: a.current_version ?? 0,
       published_version: a.published_version ?? 0,
     }));
@@ -59,7 +61,8 @@ export class RemoteBackend implements CozybaseBackend {
     return {
       name: app.name,
       description: app.description ?? '',
-      state: app.state ?? 'unknown',
+      stableStatus: app.stableStatus ?? null,
+      hasDraft: app.hasDraft ?? false,
       current_version: app.current_version ?? 0,
       published_version: app.published_version ?? 0,
       files: (app.files ?? []).map((f: any) => ({ path: f.path, content: f.content })),
@@ -68,6 +71,38 @@ export class RemoteBackend implements CozybaseBackend {
 
   async deleteApp(name: string): Promise<void> {
     await this.request('DELETE', `/api/v1/apps/${encodeURIComponent(name)}`);
+  }
+
+  async startApp(name: string): Promise<AppInfo> {
+    const res = await this.request(
+      'POST',
+      `/api/v1/apps/${encodeURIComponent(name)}/start`,
+    );
+    const app = res.data;
+    return {
+      name: app.name,
+      description: app.description ?? '',
+      stableStatus: app.stableStatus ?? null,
+      hasDraft: app.hasDraft ?? false,
+      current_version: app.current_version ?? 0,
+      published_version: app.published_version ?? 0,
+    };
+  }
+
+  async stopApp(name: string): Promise<AppInfo> {
+    const res = await this.request(
+      'POST',
+      `/api/v1/apps/${encodeURIComponent(name)}/stop`,
+    );
+    const app = res.data;
+    return {
+      name: app.name,
+      description: app.description ?? '',
+      stableStatus: app.stableStatus ?? null,
+      hasDraft: app.hasDraft ?? false,
+      current_version: app.current_version ?? 0,
+      published_version: app.published_version ?? 0,
+    };
   }
 
   // --- File Sync ---

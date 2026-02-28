@@ -84,6 +84,7 @@ async function createBackend(config: {
     draftReconciler,
     verifier,
     publisher,
+    registry,
     app,
   );
 

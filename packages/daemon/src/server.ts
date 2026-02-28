@@ -111,9 +111,6 @@ export function createServer(config: Config) {
     if (!state) {
       throw new BadRequestError(`App '${appName}' not found`);
     }
-    if (state === 'deleted') {
-      throw new BadRequestError(`App '${appName}' is deleted`);
-    }
     await next();
   };
 
@@ -146,22 +143,29 @@ export function createServer(config: Config) {
     const result = await publisher.publish(appName);
 
     if (result.success) {
-      // Restart stable in Runtime after publish
+      workspace.refreshAppState(appName);
+      const state = workspace.getAppState(appName);
+
       const appContext = workspace.getOrCreateApp(appName);
-      if (appContext) {
+      if (appContext && state?.stableStatus === 'running') {
         registry.restart(appName, {
           mode: 'stable',
           dbPath: appContext.stableDbPath,
           functionsDir: join(appContext.stableDataDir, 'functions'),
           uiDir: join(appContext.stableDataDir, 'ui'),
         });
-
-        // Stop draft version if it was running
+      } else {
         try {
-          registry.stop(appName, 'draft');
+          registry.stop(appName, 'stable');
         } catch {
-          // ignore if draft wasn't running
+          // Ignore if stable was not running.
         }
+      }
+
+      try {
+        registry.stop(appName, 'draft');
+      } catch {
+        // Ignore if draft was not running.
       }
     }
 
@@ -222,7 +226,7 @@ async function initializeRuntime(
     workspace.refreshAllAppStates();
     for (const appDef of workspace.scanApps()) {
       const state = workspace.getAppState(appDef.name);
-      if (state === 'draft_only') {
+      if (state?.stableStatus === null && state.hasDraft) {
         console.log(`  Auto-publishing template app: ${appDef.name}`);
         try {
           const result = await publisher.publish(appDef.name);
@@ -243,10 +247,9 @@ async function initializeRuntime(
   for (const appDef of workspace.scanApps()) {
     const state = workspace.getAppState(appDef.name);
     const appContext = workspace.getOrCreateApp(appDef.name);
-    if (!appContext) continue;
+    if (!appContext || !state) continue;
 
-    // Start stable version if published
-    if (state === 'stable' || state === 'stable_draft') {
+    if (state.stableStatus === 'running') {
       try {
         registry.start(appDef.name, {
           mode: 'stable',
@@ -260,8 +263,7 @@ async function initializeRuntime(
       }
     }
 
-    // Start draft version if has draft changes
-    if (state === 'draft_only' || state === 'stable_draft') {
+    if (state.hasDraft) {
       try {
         registry.start(appDef.name, {
           mode: 'draft',

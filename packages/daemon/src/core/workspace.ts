@@ -28,14 +28,19 @@ export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 
 // --- App State ---
 
-export type AppState = 'draft_only' | 'stable' | 'stable_draft' | 'deleted';
+export type StableStatus = 'running' | 'stopped';
+
+export interface AppStateInfo {
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
+}
 
 // --- App Definition (DB-backed) ---
 
 export interface AppDefinition {
   name: string;
   description: string;
-  status: string;
+  stable_status: StableStatus | null;
   current_version: number;
   published_version: number;
 }
@@ -55,7 +60,7 @@ export class Workspace {
   private _config: WorkspaceConfig | null = null;
   private _platformDb: Database | null = null;
   private _apps = new Map<string, AppContext>();
-  private _appStates = new Map<string, AppState>();
+  private _appStates = new Map<string, AppStateInfo>();
 
   constructor(root: string) {
     this.root = root;
@@ -174,7 +179,7 @@ export class Workspace {
       CREATE TABLE IF NOT EXISTS apps (
         name TEXT PRIMARY KEY,
         description TEXT DEFAULT '',
-        status TEXT DEFAULT 'active',
+        stable_status TEXT DEFAULT NULL,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       );
@@ -217,40 +222,40 @@ export class Workspace {
     if (!columnNames.has('published_version')) {
       db.exec("ALTER TABLE apps ADD COLUMN published_version INTEGER DEFAULT 0");
     }
+    if (!columnNames.has('stable_status')) {
+      db.exec("ALTER TABLE apps ADD COLUMN stable_status TEXT DEFAULT NULL");
+    }
   }
 
   // --- App State ---
 
   /** Get the current state of an app (uses cache) */
-  getAppState(name: string): AppState | undefined {
+  getAppState(name: string): AppStateInfo | undefined {
     return this._appStates.get(name);
   }
 
   /** Refresh the state cache for a specific app (DB-based) */
-  refreshAppState(name: string): AppState | undefined {
+  refreshAppState(name: string): AppStateInfo | undefined {
     const db = this.getPlatformDb();
     const row = db.query(
-      'SELECT status, current_version, published_version FROM apps WHERE name = ?',
-    ).get(name) as { status: string; current_version: number; published_version: number } | null;
+      'SELECT stable_status, current_version, published_version FROM apps WHERE name = ?',
+    ).get(name) as {
+      stable_status: StableStatus | null;
+      current_version: number;
+      published_version: number;
+    } | null;
 
     if (!row) {
       this._appStates.delete(name);
       return undefined;
     }
 
-    if (row.status === 'deleted') {
-      this._appStates.set(name, 'deleted');
-      return 'deleted';
-    }
-
-    let state: AppState;
-    if (row.published_version === 0) {
-      state = 'draft_only';
-    } else if (row.current_version === row.published_version) {
-      state = 'stable';
-    } else {
-      state = 'stable_draft';
-    }
+    const state: AppStateInfo = {
+      stableStatus: row.published_version === 0
+        ? null
+        : (row.stable_status ?? 'running'),
+      hasDraft: row.current_version > row.published_version,
+    };
 
     this._appStates.set(name, state);
     return state;
@@ -273,7 +278,7 @@ export class Workspace {
   scanApps(): AppDefinition[] {
     const db = this.getPlatformDb();
     return db.query(
-      'SELECT name, description, status, current_version, published_version FROM apps ORDER BY name',
+      'SELECT name, description, stable_status, current_version, published_version FROM apps ORDER BY name',
     ).all() as AppDefinition[];
   }
 

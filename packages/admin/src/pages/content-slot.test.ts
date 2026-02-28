@@ -14,6 +14,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'todo-list',
+      mode: 'stable',
       pagesJson,
       appLoading: true,
       appError: null,
@@ -26,6 +27,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'todo-list',
+      mode: 'stable',
       pagesJson,
       appLoading: false,
       appError: 'boom',
@@ -41,6 +43,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'todo-list',
+      mode: 'stable',
       pagesJson: null,
       appLoading: false,
       appError: null,
@@ -53,6 +56,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: undefined,
+      mode: 'draft',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -60,7 +64,7 @@ describe('resolveContentSlotState', () => {
 
     expect(result.type).toBe('redirect');
     if (result.type === 'redirect') {
-      expect(result.to).toBe('/apps/welcome/todo-list');
+      expect(result.to).toBe('/apps/welcome/todo-list?mode=draft');
     }
   });
 
@@ -68,6 +72,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'missing',
+      mode: 'stable',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -80,6 +85,7 @@ describe('resolveContentSlotState', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'settings',
+      mode: 'draft',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -88,7 +94,7 @@ describe('resolveContentSlotState', () => {
     expect(result.type).toBe('render');
     if (result.type === 'render') {
       expect(result.page.id).toBe('settings');
-      expect(result.baseUrl).toBe('/stable/apps/welcome');
+      expect(result.baseUrl).toBe('/draft/apps/welcome');
     }
   });
 });

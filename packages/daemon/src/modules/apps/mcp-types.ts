@@ -8,7 +8,7 @@
  * MCP tools sync between the working directory and cozybase core.
  */
 
-import type { AppState } from '../../core/workspace';
+import type { StableStatus } from '../../core/workspace';
 
 // --- Tool Input / Output Types ---
 
@@ -32,7 +32,8 @@ export interface ListAppsOutput {
   apps: {
     name: string;
     description: string;
-    state: AppState | 'unknown';
+    stableStatus: StableStatus | null;
+    hasDraft: boolean;
     current_version: number;
     published_version: number;
   }[];
@@ -47,7 +48,8 @@ export interface FetchAppInput {
 export interface FetchAppOutput {
   name: string;
   description: string;
-  state: AppState | 'unknown';
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
   current_version: number;
   published_version: number;
   directory: string;
@@ -89,6 +91,34 @@ export interface DeleteAppInput {
 
 export interface DeleteAppOutput {
   message: string;
+}
+
+// -- start_app --
+
+export interface StartAppInput {
+  app_name: string;
+}
+
+export interface StartAppOutput {
+  name: string;
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
+  current_version: number;
+  published_version: number;
+}
+
+// -- stop_app --
+
+export interface StopAppInput {
+  app_name: string;
+}
+
+export interface StopAppOutput {
+  name: string;
+  stableStatus: StableStatus | null;
+  hasDraft: boolean;
+  current_version: number;
+  published_version: number;
 }
 
 // -- reconcile_app --
@@ -149,7 +179,7 @@ export const TOOL_DESCRIPTIONS = {
     'For the complete development workflow, call `get_guide("workflow")`.',
 
   list_apps:
-    'List all APPs with their basic info (name, description, state, versions).',
+    'List all APPs with their basic info (name, description, stableStatus, hasDraft, versions).',
 
   fetch_app:
     'Fetch an APP from cozybase and write all files to the Agent working directory.\n\n' +
@@ -172,7 +202,16 @@ export const TOOL_DESCRIPTIONS = {
 
   delete_app:
     'Delete an APP and all its associated data. This also removes the Agent working directory.\n\n' +
+    'Only APPs whose Stable version is `stopped` or has never been published can be deleted.\n\n' +
     '**WARNING: This operation is irreversible. All data will be permanently deleted.**',
+
+  start_app:
+    'Start an APP\'s Stable runtime.\n\n' +
+    'The APP must already have a Stable version, and a stopped Stable version will transition to `running`.',
+
+  stop_app:
+    'Stop an APP\'s Stable runtime.\n\n' +
+    'The APP must already have a Stable version, and a running Stable version will transition to `stopped`.',
 
   reconcile_app:
     'Rebuild the Draft environment for an APP.\n\n' +
@@ -272,6 +311,22 @@ export const INPUT_SCHEMAS = {
   },
 
   delete_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  start_app: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP name' },
+    },
+    required: ['app_name'],
+  },
+
+  stop_app: {
     type: 'object' as const,
     properties: {
       app_name: { type: 'string', description: 'APP name' },

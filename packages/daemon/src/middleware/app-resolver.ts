@@ -23,15 +23,15 @@ export function appResolver(workspace: Workspace, mode: AppMode) {
     // Refresh state from filesystem/git before checking
     workspace.refreshAppState(appName);
     const state = workspace.getAppState(appName);
-    if (!state || state === 'deleted') {
+    if (!state) {
       throw new NotFoundError(`App '${appName}' not found`);
     }
 
-    if (mode === 'stable' && state === 'draft_only') {
+    if (mode === 'stable' && state.stableStatus === null) {
       throw new NotFoundError(`App '${appName}' has no stable version yet`);
     }
 
-    if (mode === 'draft' && state === 'stable') {
+    if (mode === 'draft' && !state.hasDraft) {
       throw new NotFoundError(`App '${appName}' has no draft changes`);
     }
 

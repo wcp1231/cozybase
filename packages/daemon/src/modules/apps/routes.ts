@@ -6,7 +6,7 @@ import { BadRequestError } from '../../core/errors';
 
 export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
   const app = new Hono();
-  const manager = new AppManager(workspace);
+  const manager = new AppManager(workspace, registry);
 
   // GET /apps - List all apps with derived states
   app.get('/apps', (c) => {
@@ -92,15 +92,44 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
   // DELETE /apps/:name - Delete an app
   app.delete('/apps/:name', (c) => {
     const name = c.req.param('name')!;
-
-    // Stop app in Runtime before deleting
-    if (registry) {
-      try { registry.stop(name, 'stable'); } catch { /* not running */ }
-      try { registry.stop(name, 'draft'); } catch { /* not running */ }
-    }
-
     manager.delete(name);
     return c.json({ data: { message: `App '${name}' deleted` } });
+  });
+
+  app.post('/apps/:name/start', (c) => {
+    const name = c.req.param('name')!;
+    const result = manager.startStable(name);
+    return c.json({ data: result });
+  });
+
+  app.post('/apps/:name/stop', (c) => {
+    const name = c.req.param('name')!;
+    const result = manager.stopStable(name);
+    return c.json({ data: result });
+  });
+
+  app.post('/apps/:name/rename', async (c) => {
+    const name = c.req.param('name')!;
+
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new BadRequestError('Invalid JSON body');
+    }
+
+    const nextName = typeof body.new_name === 'string'
+      ? body.new_name.trim()
+      : typeof body.newName === 'string'
+        ? body.newName.trim()
+        : '';
+
+    if (!nextName) {
+      throw new BadRequestError('Request body must include a non-empty "new_name" field');
+    }
+
+    const result = manager.rename(name, nextName);
+    return c.json({ data: result });
   });
 
   return app;

@@ -11,12 +11,13 @@ const pagesJson: PagesJson = {
 
 describe('content slot navigation flow', () => {
   test('list -> app -> first page redirect flow is continuous', () => {
-    const appPath = toAppPagePath('welcome');
-    expect(appPath).toBe('/apps/welcome');
+    const appPath = toAppPagePath('welcome', undefined, 'draft');
+    expect(appPath).toBe('/apps/welcome?mode=draft');
 
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: undefined,
+      mode: 'draft',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -24,7 +25,7 @@ describe('content slot navigation flow', () => {
 
     expect(result.type).toBe('redirect');
     if (result.type === 'redirect') {
-      expect(result.to).toBe('/apps/welcome/todo-list');
+      expect(result.to).toBe('/apps/welcome/todo-list?mode=draft');
     }
   });
 
@@ -32,6 +33,7 @@ describe('content slot navigation flow', () => {
     const first = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'todo-list',
+      mode: 'stable',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -41,6 +43,7 @@ describe('content slot navigation flow', () => {
     const second = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'settings',
+      mode: 'draft',
       pagesJson,
       appLoading: false,
       appError: null,
@@ -52,6 +55,7 @@ describe('content slot navigation flow', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
       pageId: 'missing',
+      mode: 'stable',
       pagesJson,
       appLoading: false,
       appError: null,

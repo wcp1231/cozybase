@@ -12,6 +12,7 @@ import type { Verifier } from '../core/verifier';
 import type { Publisher } from '../core/publisher';
 import { AppManager } from '../modules/apps/manager';
 import { validateSql } from './sql-safety';
+import type { AppRegistry } from '@cozybase/runtime';
 import type {
   CozybaseBackend,
   AppSnapshot,
@@ -36,9 +37,10 @@ export class EmbeddedBackend implements CozybaseBackend {
     private draftReconciler: DraftReconciler,
     private verifier: Verifier,
     private publisher: Publisher,
+    private registry: AppRegistry,
     private app: Hono,
   ) {
-    this.appManager = new AppManager(workspace);
+    this.appManager = new AppManager(workspace, registry);
   }
 
   // --- App Lifecycle ---
@@ -48,7 +50,8 @@ export class EmbeddedBackend implements CozybaseBackend {
     return {
       name: result.app.name,
       description: result.app.description,
-      state: result.app.state,
+      stableStatus: result.app.stableStatus,
+      hasDraft: result.app.hasDraft,
       current_version: result.app.current_version,
       published_version: result.app.published_version,
       files: result.app.files.map((f) => ({ path: f.path, content: f.content })),
@@ -60,7 +63,8 @@ export class EmbeddedBackend implements CozybaseBackend {
     return apps.map((a) => ({
       name: a.name,
       description: a.description,
-      state: a.state,
+      stableStatus: a.stableStatus,
+      hasDraft: a.hasDraft,
       current_version: a.current_version,
       published_version: a.published_version,
     }));
@@ -71,7 +75,8 @@ export class EmbeddedBackend implements CozybaseBackend {
     return {
       name: app.name,
       description: app.description,
-      state: app.state,
+      stableStatus: app.stableStatus,
+      hasDraft: app.hasDraft,
       current_version: app.current_version,
       published_version: app.published_version,
       files: app.files.map((f) => ({ path: f.path, content: f.content })),
@@ -80,6 +85,30 @@ export class EmbeddedBackend implements CozybaseBackend {
 
   async deleteApp(name: string): Promise<void> {
     this.appManager.delete(name);
+  }
+
+  async startApp(name: string): Promise<AppInfo> {
+    const app = this.appManager.startStable(name);
+    return {
+      name: app.name,
+      description: app.description,
+      stableStatus: app.stableStatus,
+      hasDraft: app.hasDraft,
+      current_version: app.current_version,
+      published_version: app.published_version,
+    };
+  }
+
+  async stopApp(name: string): Promise<AppInfo> {
+    const app = this.appManager.stopStable(name);
+    return {
+      name: app.name,
+      description: app.description,
+      stableStatus: app.stableStatus,
+      hasDraft: app.hasDraft,
+      current_version: app.current_version,
+      published_version: app.published_version,
+    };
   }
 
   // --- File Sync ---
