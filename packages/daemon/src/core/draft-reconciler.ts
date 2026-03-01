@@ -1,5 +1,13 @@
 import { join } from 'path';
-import { existsSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  readdirSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
+import { createHash } from 'crypto';
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
@@ -36,7 +44,7 @@ export class DraftReconciler {
 
   constructor(private workspace: Workspace) {}
 
-  /** Reconcile a draft app: destroy and rebuild draft database */
+  /** Reconcile a draft app: rebuild draft DB only when migrations changed */
   async reconcile(appName: string): Promise<DraftReconcileResult> {
     // Validate app state
     const state = this.workspace.getAppState(appName);
@@ -53,44 +61,70 @@ export class DraftReconciler {
       throw new BadRequestError(`App '${appName}' not found`);
     }
 
-    // 1. Destroy draft database
-    appContext.resetDraft();
-
-    // 2. Query migrations from app_files
+    // 1. Query migrations from app_files
     const platformDb = this.workspace.getPlatformDb();
     const migrationRecords = platformDb.query(
-      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
-    ).all(appName) as { path: string; content: string }[];
+      "SELECT path, content, updated_at FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+    ).all(appName) as { path: string; content: string; updated_at: string }[];
 
     const migrations = MigrationRunner.fromDbRecords(migrationRecords);
+    const migrationSignature = this.buildMigrationSignature(migrationRecords);
+    const needsDbRebuild = this.shouldRebuildDraftDb(
+      appContext.draftDbPath,
+      appContext.draftDataDir,
+      migrationSignature,
+      this.getLatestMigrationUpdatedAt(migrationRecords),
+    );
 
-    // 3. Execute all migrations on fresh draft database
-    const db = appContext.draftDb;
-    const migrationResult = this.migrationRunner.executeMigrations(db, migrations);
+    let migrationResult = { success: true, executed: [] } as {
+      success: boolean;
+      executed: string[];
+      error?: string;
+      failedMigration?: string;
+    };
+    let seedResult = { success: true, loaded: [] } as {
+      success: boolean;
+      loaded: string[];
+      error?: string;
+      failedSeed?: string;
+    };
 
-    if (!migrationResult.success) {
-      return {
-        success: false,
-        migrations: migrationResult.executed,
-        seeds: [],
-        error: `Migration failed (${migrationResult.failedMigration}): ${migrationResult.error}`,
-      };
-    }
+    if (needsDbRebuild) {
+      // 2. Destroy draft database
+      appContext.resetDraft();
 
-    // 4. Load seeds from app_files
-    const seedRecords = platformDb.query(
-      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'seeds/%' ORDER BY path",
-    ).all(appName) as { path: string; content: string }[];
+      // 3. Execute all migrations on fresh draft database
+      const db = appContext.draftDb;
+      migrationResult = this.migrationRunner.executeMigrations(db, migrations);
 
-    const seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
+      if (!migrationResult.success) {
+        return {
+          success: false,
+          migrations: migrationResult.executed,
+          seeds: [],
+          error: `Migration failed (${migrationResult.failedMigration}): ${migrationResult.error}`,
+        };
+      }
 
-    if (!seedResult.success) {
-      return {
-        success: false,
-        migrations: migrationResult.executed,
-        seeds: seedResult.loaded,
-        error: `Seed loading failed (${seedResult.failedSeed}): ${seedResult.error}`,
-      };
+      // 4. Load seeds from app_files only when the draft DB is rebuilt
+      const seedRecords = platformDb.query(
+        "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'seeds/%' ORDER BY path",
+      ).all(appName) as { path: string; content: string }[];
+
+      seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
+
+      if (!seedResult.success) {
+        return {
+          success: false,
+          migrations: migrationResult.executed,
+          seeds: seedResult.loaded,
+          error: `Seed loading failed (${seedResult.failedSeed}): ${seedResult.error}`,
+        };
+      }
+
+      this.writeDraftReconcileState(appContext.draftDataDir, migrationSignature);
+    } else {
+      this.writeDraftReconcileState(appContext.draftDataDir, migrationSignature);
     }
 
     // 5. Export functions from DB to draft directory
@@ -123,6 +157,106 @@ export class DraftReconciler {
       ui: uiResult,
       npm: npmResult,
     };
+  }
+
+  private shouldRebuildDraftDb(
+    draftDbPath: string,
+    draftDataDir: string,
+    migrationSignature: string,
+    latestMigrationUpdatedAt: Date | null,
+  ): boolean {
+    if (!existsSync(draftDbPath)) {
+      return true;
+    }
+
+    const previousState = this.readDraftReconcileState(draftDataDir);
+    if (!previousState) {
+      return !this.canReuseLegacyDraftDb(draftDbPath, latestMigrationUpdatedAt);
+    }
+
+    return previousState.migrationSignature !== migrationSignature;
+  }
+
+  private buildMigrationSignature(
+    records: { path: string; content: string }[],
+  ): string {
+    const hash = createHash('sha256');
+    for (const record of [...records].sort((a, b) => a.path.localeCompare(b.path))) {
+      hash.update(record.path);
+      hash.update('\0');
+      hash.update(record.content);
+      hash.update('\0');
+    }
+    return hash.digest('hex');
+  }
+
+  private readDraftReconcileState(
+    draftDataDir: string,
+  ): { migrationSignature: string } | null {
+    const statePath = join(draftDataDir, '.reconcile-state.json');
+    if (!existsSync(statePath)) {
+      return null;
+    }
+
+    try {
+      const raw = readFileSync(statePath, 'utf-8');
+      const parsed = JSON.parse(raw) as { migrationSignature?: unknown };
+      return typeof parsed.migrationSignature === 'string'
+        ? { migrationSignature: parsed.migrationSignature }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeDraftReconcileState(
+    draftDataDir: string,
+    migrationSignature: string,
+  ): void {
+    mkdirSync(draftDataDir, { recursive: true });
+    writeFileSync(
+      join(draftDataDir, '.reconcile-state.json'),
+      JSON.stringify({ migrationSignature }, null, 2),
+      'utf-8',
+    );
+  }
+
+  private getLatestMigrationUpdatedAt(
+    records: { updated_at: string }[],
+  ): Date | null {
+    let latest: Date | null = null;
+    for (const record of records) {
+      const parsed = this.parseSqliteDateTime(record.updated_at);
+      if (parsed && (!latest || parsed > latest)) {
+        latest = parsed;
+      }
+    }
+    return latest;
+  }
+
+  private canReuseLegacyDraftDb(
+    draftDbPath: string,
+    latestMigrationUpdatedAt: Date | null,
+  ): boolean {
+    if (!existsSync(draftDbPath)) {
+      return false;
+    }
+
+    if (!latestMigrationUpdatedAt) {
+      return true;
+    }
+
+    try {
+      const draftDbMtime = statSync(draftDbPath).mtime;
+      return draftDbMtime >= latestMigrationUpdatedAt;
+    } catch {
+      return false;
+    }
+  }
+
+  private parseSqliteDateTime(value: string): Date | null {
+    const parsed = new Date(value.replace(' ', 'T') + 'Z');
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   /** Validate all function files for an app (non-blocking, reads from draft dir) */

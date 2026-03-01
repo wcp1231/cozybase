@@ -4,6 +4,7 @@ import {
   createTestWorkspace,
   createTestApp,
   addMigration,
+  addFunction,
   createStableDb,
   openDraftDb,
   MIGRATION_CREATE_TODOS,
@@ -84,6 +85,46 @@ describe('DraftReconciler', () => {
     // New column should exist
     const cols = db.query('PRAGMA table_info(todos)').all() as { name: string }[];
     expect(cols.map((c) => c.name)).toContain('priority');
+    db.close();
+  });
+
+  test('re-reconcile without migration changes preserves draft DB contents', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      seeds: { '01_seed.sql': SEED_TODOS_SQL },
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const reconciler = new DraftReconciler(handle.workspace);
+
+    const result1 = await reconciler.reconcile('myapp');
+    expect(result1.success).toBe(true);
+    expect(result1.migrations).toContain('001_init.sql');
+    expect(result1.seeds).toContain('01_seed.sql');
+
+    const appContext = handle.workspace.getOrCreateApp('myapp')!;
+    appContext.draftDb.exec("INSERT INTO todos (id, title) VALUES (999, 'Local test row')");
+
+    addFunction(
+      handle,
+      'myapp',
+      'hello.ts',
+      "export default function hello() { return new Response('ok'); }",
+    );
+
+    const result2 = await reconciler.reconcile('myapp');
+    expect(result2.success).toBe(true);
+    expect(result2.migrations).toEqual([]);
+    expect(result2.seeds).toEqual([]);
+    expect(result2.functions?.validated).toContain('hello');
+
+    const db = openDraftDb(handle.root, 'myapp');
+    const extra = db.query('SELECT * FROM todos WHERE id = 999').get() as { id: number; title: string } | null;
+    expect(extra).toMatchObject({ id: 999, title: 'Local test row' });
+
+    const rows = db.query('SELECT * FROM todos ORDER BY id').all() as { id: number; title: string }[];
+    expect(rows).toHaveLength(3);
     db.close();
   });
 
