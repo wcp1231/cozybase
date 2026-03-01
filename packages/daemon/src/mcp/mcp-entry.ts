@@ -7,8 +7,10 @@
  *   cozybase mcp --apps-dir /path/to/workspace
  *   cozybase mcp --url http://homelab:2765 --apps-dir /path/to/workspace
  *
- * When --url is omitted, runs in embedded mode (local, no network).
- * When --url is provided, runs in remote mode (HTTP API).
+ * Connects to a running cozybase daemon via HTTP.
+ * When --url is provided, connects to the specified daemon.
+ * When --url is omitted, auto-detects a local daemon via PID file.
+ * Exits with an error if no daemon is available.
  */
 
 import { resolve } from 'path';
@@ -18,6 +20,7 @@ import { parseArgs } from 'util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createMcpServer } from './server';
+import { readPidFile, isProcessAlive } from '../daemon-ctl';
 import type { CozybaseBackend } from './types';
 
 function loadMcpConfig() {
@@ -54,47 +57,29 @@ function loadMcpConfig() {
 async function createBackend(config: {
   url?: string;
   workspaceDir: string;
-}): Promise<{ backend: CozybaseBackend; cleanup: () => void }> {
-  if (config.url) {
-    // Remote mode — import dynamically to avoid loading unused deps
-    const { RemoteBackend } = await import('./remote-backend');
-    return {
-      backend: new RemoteBackend(config.url),
-      cleanup: () => {},
-    };
+}): Promise<CozybaseBackend> {
+  let remoteUrl = config.url;
+
+  // Auto-detect running daemon via PID file
+  if (!remoteUrl) {
+    const pidInfo = readPidFile(config.workspaceDir);
+    if (pidInfo && isProcessAlive(pidInfo.pid) && pidInfo.port > 0) {
+      remoteUrl = `http://127.0.0.1:${pidInfo.port}`;
+    }
   }
 
-  // Embedded mode — initialize full server (workspace + Hono app + core services)
-  const { createServer } = await import('../server');
+  if (!remoteUrl) {
+    console.error(
+      'No running cozybase daemon detected.\n\n' +
+      'To use cozybase MCP, either:\n' +
+      '  1. Start the daemon:  cozybase daemon start\n' +
+      '  2. Specify a remote daemon URL:  cozybase mcp --url http://host:port\n',
+    );
+    process.exit(1);
+  }
 
-  const { app, workspace, registry, draftReconciler, verifier, publisher, startup } =
-    createServer({
-      port: 0, // not used in MCP mode
-      host: '127.0.0.1',
-      workspaceDir: config.workspaceDir,
-      jwtSecret: 'mcp-embedded',
-    });
-
-  // Wait for all apps to start
-  await startup;
-
-  const { EmbeddedBackend } = await import('./embedded-backend');
-  const backend = new EmbeddedBackend(
-    workspace,
-    draftReconciler,
-    verifier,
-    publisher,
-    registry,
-    app,
-  );
-
-  return {
-    backend,
-    cleanup: () => {
-      registry.shutdownAll();
-      workspace.close();
-    },
-  };
+  const { RemoteBackend } = await import('./remote-backend');
+  return new RemoteBackend(remoteUrl);
 }
 
 async function main() {
@@ -103,7 +88,7 @@ async function main() {
   // Ensure apps directory exists
   mkdirSync(config.appsDir, { recursive: true });
 
-  const { backend, cleanup } = await createBackend({
+  const backend = await createBackend({
     url: config.url,
     workspaceDir: config.workspaceDir,
   });
@@ -119,13 +104,11 @@ async function main() {
   // Graceful shutdown
   process.on('SIGINT', async () => {
     await server.close();
-    cleanup();
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
     await server.close();
-    cleanup();
     process.exit(0);
   });
 }

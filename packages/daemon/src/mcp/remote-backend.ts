@@ -1,8 +1,7 @@
 /**
- * RemoteBackend — Remote mode implementation of CozybaseBackend.
+ * RemoteBackend — CozybaseBackend implementation.
  *
  * Communicates with a cozybase daemon via HTTP API.
- * Used when cozybase runs on a different machine (e.g., Homelab).
  */
 
 import type {

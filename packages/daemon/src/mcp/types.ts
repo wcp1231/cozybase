@@ -1,8 +1,8 @@
 /**
  * MCP Backend types for CozyBase.
  *
- * CozybaseBackend abstracts the connection mode (embedded vs remote),
- * so MCP tool handlers work identically in both deployment scenarios.
+ * CozybaseBackend abstracts cozybase operations for MCP tool handlers,
+ * connecting to a running daemon via HTTP.
  */
 
 import type { StableStatus } from '../core/workspace';
@@ -71,11 +71,8 @@ export interface ApiResponse {
 /**
  * Abstraction layer for cozybase operations.
  *
- * - EmbeddedBackend: directly calls internal modules (local mode)
- * - RemoteBackend: calls cozybase daemon via HTTP API (remote mode)
- *
- * MCP tool handlers use this interface exclusively, never checking which
- * mode is active.
+ * Implemented by RemoteBackend, which calls the cozybase daemon via HTTP API.
+ * MCP tool handlers use this interface exclusively.
  */
 export interface CozybaseBackend {
   // App lifecycle

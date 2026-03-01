@@ -428,17 +428,17 @@ Environment variables `COZYBASE_WORKSPACE`, `COZYBASE_PORT` are also supported.
 The `cozybase mcp` command starts an MCP Server for AI Agent integration (stdio transport):
 
 ```bash
-# Local mode (embedded, no daemon needed)
+# Auto-detect local daemon (reads daemon.pid)
 bun packages/daemon/src/cli.ts mcp --apps-dir /path/to/workspace
 
-# Remote mode (connects to a running cozybase daemon)
+# Connect to a remote daemon
 bun packages/daemon/src/cli.ts mcp --url http://homelab.local:3000 --apps-dir /path/to/workspace
 ```
 
 | Option | Env Var | Description |
 |--------|---------|-------------|
 | `--apps-dir <path>` | `COZYBASE_APPS_DIR` | Agent working directory for file sync |
-| `--url <url>` | — | Remote cozybase URL (omit for local/embedded mode) |
+| `--url <url>` | — | Daemon URL (omit to auto-detect local daemon) |
 
 The MCP Server exposes 11 tools: `create_app`, `list_apps`, `fetch_app`, `update_app`, `update_app_file`, `delete_app`, `reconcile_app`, `verify_app`, `publish_app`, `execute_sql`, `call_api`.
 
@@ -589,7 +589,7 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Management API**: RESTful HTTP API (`/api/v1/apps/*`) for app CRUD and file management. Supports single-file updates and batch Checkout-Edit-Push with optimistic locking (`base_version`).
 - **AppRegistry** (`@cozybase/runtime`): In-process registry that manages per-app lifecycle. Each entry holds the app's DB connection, module cache, and runtime config. The Daemon calls `registry.start()`, `.stop()`, `.restart()`, and `.shutdownAll()` to control app instances.
 - **Runtime** (`@cozybase/runtime`): Separate package providing the app execution layer — DB CRUD, function execution, and UI serving. Mounted as Hono sub-routes under `/stable/apps/:name` and `/draft/apps/:name`. No internal management endpoints are exposed.
-- **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Uses a Backend Adapter pattern (`CozybaseBackend` interface) with two implementations: `EmbeddedBackend` (local, direct module calls) and `RemoteBackend` (HTTP client to a running daemon). Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
+- **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Connects to a running cozybase daemon via HTTP (`RemoteBackend`). Auto-detects a local daemon via PID file, or accepts an explicit `--url` for remote daemons. Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
 - **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the daemon. Uses a hardcoded three-column shell (sidebar / content slot / chat window), lists apps, and renders selected app pages in the center slot via `SchemaRenderer`.
 - **App States**: Derived from DB fields — `published_version = 0` → `draft_only`, `current_version = published_version` → `stable`, `current_version > published_version` → `stable_draft`, `status = deleted` → `deleted`.
@@ -624,11 +624,9 @@ cozybase/
 │   │   │   │   └── logger.ts
 │   │   │   ├── mcp/
 │   │   │   │   ├── types.ts           # CozybaseBackend interface + shared types
-│   │   │   │   ├── sql-safety.ts      # SQL classification + permission checks
 │   │   │   │   ├── app-dir.ts         # Agent working directory management
 │   │   │   │   ├── handlers.ts        # MCP tool handler implementations
-│   │   │   │   ├── embedded-backend.ts # Local mode (direct module calls)
-│   │   │   │   ├── remote-backend.ts  # Remote mode (HTTP API client)
+│   │   │   │   ├── remote-backend.ts  # HTTP API client to daemon
 │   │   │   │   ├── mcp-entry.ts       # MCP Server entry point
 │   │   │   │   └── server.ts          # MCP Server (stdio transport)
 │   │   │   └── modules/

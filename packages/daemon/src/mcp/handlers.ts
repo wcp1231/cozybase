@@ -2,8 +2,8 @@
  * MCP Tool Handlers
  *
  * Each handler combines CozybaseBackend operations with Agent working
- * directory management. Handlers are backend-agnostic — they work
- * identically with EmbeddedBackend and RemoteBackend.
+ * directory management. Handlers use the CozybaseBackend interface,
+ * which connects to the daemon via HTTP.
  */
 
 import { readFileSync } from 'fs';

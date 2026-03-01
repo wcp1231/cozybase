@@ -26,15 +26,24 @@ Provide a unified CLI entry point (`cli.ts`) for CozyBase, routing subcommands t
 - **WHEN** 用户执行 `cozybase daemon start --port 8080 --workspace ~/my-ws`
 - **THEN** 系统启动 HTTP 服务，监听 8080 端口，使用指定 workspace
 
-#### Scenario: 启动 MCP Server
+#### Scenario: 启动 MCP Server（本地 daemon 运行中）
 
 - **WHEN** 用户执行 `cozybase mcp`
-- **THEN** 系统启动 MCP Server（embedded 模式），行为与直接运行 `src/mcp/mcp-entry.ts` 一致
+- **AND** 本地 daemon 正在运行（`daemon.pid` 存在且进程存活）
+- **THEN** 系统启动 MCP Server，通过 HTTP 连接到本地 daemon（`http://127.0.0.1:{port}`）
 
-#### Scenario: 启动 MCP Server（remote 模式）
+#### Scenario: 启动 MCP Server（指定远程 URL）
 
-- **WHEN** 用户执行 `cozybase mcp --url http://localhost:3000`
-- **THEN** 系统启动 MCP Server（remote 模式），连接到指定 daemon
+- **WHEN** 用户执行 `cozybase mcp --url http://homelab:2765`
+- **THEN** 系统启动 MCP Server，通过 HTTP 连接到指定 URL 的 daemon
+
+#### Scenario: 启动 MCP Server（无 daemon 运行且未指定 URL）
+
+- **WHEN** 用户执行 `cozybase mcp`
+- **AND** 本地 daemon 未运行（`daemon.pid` 不存在或进程已死）
+- **AND** 未提供 `--url` 参数
+- **THEN** 系统 SHALL 输出错误信息到 stderr，说明需要先启动 daemon 或指定 `--url`
+- **AND** 系统 SHALL 以退出码 1 退出
 
 #### Scenario: 初始化 Workspace
 
