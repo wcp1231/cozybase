@@ -1,5 +1,9 @@
 import { describe, test, expect } from 'bun:test';
-import { resolveExpression, resolveExpressions } from '../expression';
+import {
+  resolveExpression,
+  resolveExpressions,
+  resolveStyleExpressions,
+} from '../expression';
 import type { ExpressionContext } from '../../schema/types';
 
 describe('resolveExpression', () => {
@@ -60,6 +64,44 @@ describe('resolveExpression', () => {
       ctx,
     );
     expect(result).toBe('Pending');
+  });
+
+  test('resolves nested ternary expressions', () => {
+    const ctx: ExpressionContext = { row: { status: 'not_allergic' } };
+    const result = resolveExpression(
+      "${row.status === 'allergic' ? '#ff4d4f' : row.status === 'not_allergic' ? '#52c41a' : '#ffffff'}",
+      ctx,
+    );
+    expect(result).toBe('#52c41a');
+  });
+
+  test('resolves grouped nested ternary expressions with parentheses', () => {
+    const ctx: ExpressionContext = {
+      row: { status: 'allergic', severity: 'moderate' },
+    };
+    const result = resolveExpression(
+      "${row.status === 'not_allergic' ? '#52c41a' : row.status === 'allergic' ? (row.severity === 'mild' ? '#faad14' : row.severity === 'moderate' ? '#fa541c' : '#cf1322') : '#ffffff'}",
+      ctx,
+    );
+    expect(result).toBe('#fa541c');
+  });
+
+  test('resolves parenthesized conditions', () => {
+    const ctx: ExpressionContext = { row: { completed: 1 } };
+    const result = resolveExpression(
+      "${(row.completed === 1) ? 'Done' : 'Pending'}",
+      ctx,
+    );
+    expect(result).toBe('Done');
+  });
+
+  test('resolves relational comparisons in ternary expressions', () => {
+    const ctx: ExpressionContext = { row: { score: 72 } };
+    const result = resolveExpression(
+      "${row.score >= 60 ? 'Pass' : 'Fail'}",
+      ctx,
+    );
+    expect(result).toBe('Pass');
   });
 
   // ---- Non-existent path ----
@@ -260,5 +302,24 @@ describe('resolveExpressions', () => {
   test('handles empty object', () => {
     const ctx: ExpressionContext = {};
     expect(resolveExpressions({}, ctx)).toEqual({});
+  });
+});
+
+describe('resolveStyleExpressions', () => {
+  test('resolves style object values and preserves numeric outputs', () => {
+    const ctx: ExpressionContext = { row: { status: 'allergic', opacity: 0.6 } };
+    expect(
+      resolveStyleExpressions(
+        {
+          backgroundColor:
+            "${row.status === 'allergic' ? '#ff4d4f' : '#ffffff'}",
+          opacity: '${row.opacity}',
+        },
+        ctx,
+      ),
+    ).toEqual({
+      backgroundColor: '#ff4d4f',
+      opacity: 0.6,
+    });
   });
 });

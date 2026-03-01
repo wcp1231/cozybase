@@ -8,7 +8,13 @@ import { act } from 'react';
 import '../../components';
 
 import { SchemaRenderer } from '../../renderer';
-import type { PageSchema, CardComponent, ButtonComponent, LinkComponent } from '../../schema/types';
+import type {
+  PageSchema,
+  CardComponent,
+  ButtonComponent,
+  LinkComponent,
+  ListComponent,
+} from '../../schema/types';
 
 // Enable React act() environment
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -251,5 +257,48 @@ describe('CardRenderer', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toBe('http://localhost:3000/fn/link-action');
+  });
+
+  test('card style resolves row-scoped expressions inside list items', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ id: 1, name: 'Peanut', status: 'allergic' }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      id: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'list',
+          api: {
+            url: '/fn/allergies',
+          },
+          itemRender: {
+            type: 'card',
+            style: {
+              backgroundColor:
+                "${row.status === 'allergic' ? '#ff4d4f' : row.status === 'not_allergic' ? '#52c41a' : '#ffffff'}",
+            },
+            children: [{ type: 'text', text: '${row.name}' }],
+          } as CardComponent,
+        } as ListComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const cardWrapper = container.querySelector('[data-schema-type="card"]') as HTMLDivElement;
+    const card = cardWrapper?.firstElementChild as HTMLDivElement | null;
+
+    expect(card).not.toBeNull();
+    expect(card!.style.backgroundColor).toBe('#ff4d4f');
   });
 });

@@ -26,7 +26,7 @@ export interface ComponentBase {
   id?: string;
   visible?: string | boolean;
   className?: string;
-  style?: Record<string, string>;
+  style?: Record<string, string | number>;
 }
 
 // --- Layout ---

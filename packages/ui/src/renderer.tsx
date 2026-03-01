@@ -12,7 +12,7 @@ import {
   useDialogs,
   useConfirm,
 } from './engine/context';
-import { resolveExpression } from './engine/expression';
+import { resolveExpression, resolveStyleExpressions } from './engine/expression';
 import { builtinRegistry } from './engine/registry';
 import {
   CzDialog,
@@ -181,9 +181,12 @@ export function NodeRenderer({
     if (visible === false || visible === 'false') return null;
   }
 
+  const resolvedSchema = resolveSchemaBaseProps(schema, exprCtx);
+
   // Check if it's a custom component that needs template expansion
-  const schemaType = schema.type;
-  const schemaId = (schema as { id?: string }).id ?? `${schemaType}-${siblingIndex}`;
+  const schemaType = resolvedSchema.type;
+  const schemaId =
+    (resolvedSchema as { id?: string }).id ?? `${schemaType}-${siblingIndex}`;
   if (
     customComponents &&
     schemaType in customComponents &&
@@ -192,7 +195,7 @@ export function NodeRenderer({
     return (
       <div data-schema-id={schemaId} data-schema-type={schemaType} style={{ display: 'contents' }}>
         {renderCustomComponent(
-          schema,
+          resolvedSchema,
           customComponents[schemaType],
           customComponents,
           exprCtx,
@@ -227,10 +230,42 @@ export function NodeRenderer({
   return (
     <div data-schema-id={schemaId} data-schema-type={schemaType} style={{ display: 'contents' }}>
       <ErrorBoundary type={schemaType}>
-        <Comp schema={schema} exprContext={exprCtx} renderChild={renderChild} />
+        <Comp schema={resolvedSchema} exprContext={exprCtx} renderChild={renderChild} />
       </ErrorBoundary>
     </div>
   );
+}
+
+function resolveSchemaBaseProps(
+  schema: ComponentSchema,
+  exprCtx: ExpressionContext,
+): ComponentSchema {
+  const resolvedClassName =
+    schema.className !== undefined
+      ? resolveExpression(schema.className, exprCtx)
+      : undefined;
+  const className =
+    resolvedClassName === undefined ||
+    resolvedClassName === null ||
+    resolvedClassName === ''
+      ? undefined
+      : String(resolvedClassName);
+
+  const style = resolveStyleExpressions(schema.style, exprCtx);
+
+  if (
+    className === schema.className &&
+    schema.style === undefined &&
+    style === undefined
+  ) {
+    return schema;
+  }
+
+  return {
+    ...schema,
+    className,
+    style,
+  } as ComponentSchema;
 }
 
 // ---- Custom component expansion ----
