@@ -70,7 +70,10 @@ function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
     <button
       type="button"
       disabled={isDisabled}
-      onClick={handleClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleClick();
+      }}
       className={clsx(
         'px-4 py-2 text-sm font-medium rounded-sm inline-flex items-center gap-1.5 transition-opacity',
         variantClasses[variant] ?? variantClasses.primary,
@@ -98,6 +101,7 @@ function LinkRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     dispatchAction(s.action, { ...actionCtx, expressionContext: exprContext });
   };
 

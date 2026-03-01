@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
+import { dispatchAction } from '../engine/action';
 import { CzTabs, CzTabsList, CzTabsTrigger, CzTabsContent } from '../primitives';
 import type {
   PageComponent,
@@ -89,14 +90,34 @@ registerBuiltinComponent('col', ColComp);
 // card
 // ============================================================
 
-function CardComp({ schema, renderChild }: SchemaComponentProps) {
+function CardComp({ schema, renderChild, exprContext }: SchemaComponentProps) {
   const s = schema as CardComponent;
   const padding = s.padding ?? 16;
+  const ctx = usePageContext();
+  const hasAction = !!s.action;
+
+  const handleClick = hasAction
+    ? () => {
+        dispatchAction(s.action!, {
+          baseUrl: ctx.baseUrl,
+          triggerReload: ctx.triggerReload,
+          openDialog: ctx.openDialog,
+          closeDialog: ctx.closeDialog,
+          requestConfirm: ctx.requestConfirm,
+          expressionContext: exprContext,
+        });
+      }
+    : undefined;
 
   return (
     <div
-      className={clsx('border border-border rounded-md shadow-sm bg-bg overflow-hidden', s.className)}
+      className={clsx(
+        'border border-border rounded-md shadow-sm bg-bg overflow-hidden',
+        hasAction && 'cursor-pointer transition-shadow hover:shadow-md',
+        s.className,
+      )}
       style={s.style}
+      onClick={handleClick}
     >
       {s.title && (
         <div

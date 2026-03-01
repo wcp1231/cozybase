@@ -58,6 +58,7 @@ export interface CardComponent extends ComponentBase {
   title?: string;
   children: ComponentSchema[];
   padding?: number;
+  action?: ActionSchema | ActionSchema[];
 }
 
 export interface TabsComponent extends ComponentBase {
