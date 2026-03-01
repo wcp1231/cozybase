@@ -146,3 +146,44 @@ Inside a form, expressions can reference current form values using `${form.field
 ```
 
 When a form has an `api` configured, all field values are automatically sent as the JSON request body on submission. The submitted payload always includes every field — individual field selection or remapping is not supported.
+
+## Passing Extra Parameters via api.params
+
+Use `api.params` to pass contextual parameters (e.g., from the page URL or row data) alongside the form submission. Params are appended as **URL query parameters** — they are NOT merged into the request body.
+
+```json
+{
+  "type": "form",
+  "fields": [
+    { "name": "note", "label": "Note", "type": "textarea" }
+  ],
+  "api": {
+    "method": "POST",
+    "url": "/fn/upsert-record",
+    "params": {
+      "baby_id": "${params.baby_id}",
+      "allergen_id": "${row.id}"
+    }
+  },
+  "onSuccess": [{ "type": "reload", "target": "records-table" }, { "type": "close" }]
+}
+```
+
+This sends: `POST /fn/upsert-record?baby_id=42&allergen_id=7` with `{ "note": "..." }` as the JSON body.
+
+In the function, read params from the URL and field values from the body:
+
+```typescript
+export async function POST(ctx) {
+  const url = new URL(ctx.req.url);
+  const babyId = url.searchParams.get('baby_id');
+  const allergenId = url.searchParams.get('allergen_id');
+  const body = await ctx.req.json();
+
+  ctx.db.run(
+    'INSERT OR REPLACE INTO records (baby_id, allergen_id, note) VALUES (?, ?, ?)',
+    [babyId, allergenId, body.note]
+  );
+  return { data: [{ baby_id: babyId, allergen_id: allergenId, note: body.note }] };
+}
+```

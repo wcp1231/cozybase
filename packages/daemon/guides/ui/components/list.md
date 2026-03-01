@@ -2,6 +2,10 @@
 
 List component that loads data from an API and renders each item using a custom template.
 
+## API Response Format
+
+Same as the Table component — the API must return `{ "data": [...] }`. If the response is a plain array or uses a different key, the list will display no data. The built-in CRUD API returns this format automatically. For custom functions, wrap query results: `return { data: rows }`.
+
 ## Properties
 
 | Property | Type | Required | Description |

@@ -1,430 +1,94 @@
 # Components
 
-Quick reference for 26 built-in UI components. Each component uses the `type` field to specify its type. All components share the base properties `id`, `visible`, `className`, and `style`.
+Catalog of 26 built-in UI components. Each uses the `type` field to specify its kind. All share base properties `id`, `visible`, `className`, and `style`. For full details on any component, call `get_guide("ui/components/<name>")`.
 
 ## Layout Components
 
 ### page
-
-Container component with a title and child components.
-
-```json
-{ "type": "page", "title": "My Page", "children": [...] }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `title` | string | Page title |
-| `children` | Component[] | Child components |
+Container with a title and child components. Props: `title` (string), `children` (Component[]).
 
 ### row
-
-Horizontal layout.
-
-```json
-{ "type": "row", "justify": "space-between", "align": "center", "gap": 16, "children": [...] }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `children` | Component[] | Child components |
-| `justify` | string | Horizontal alignment: `start`, `end`, `center`, `space-between`, `space-around` |
-| `align` | string | Vertical alignment: `start`, `center`, `end`, `stretch` |
-| `gap` | number | Spacing (px) |
-| `wrap` | boolean | Whether to wrap |
+Horizontal layout. Props: `children` (Component[]), `justify` (`start`|`end`|`center`|`space-between`|`space-around`), `align` (`start`|`center`|`end`|`stretch`), `gap` (number, px), `wrap` (boolean).
 
 ### col
-
-Vertical layout.
-
-```json
-{ "type": "col", "gap": 8, "children": [...] }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `children` | Component[] | Child components |
-| `align` | string | Alignment: `start`, `center`, `end`, `stretch` |
-| `gap` | number | Spacing (px) |
+Vertical layout. Props: `children` (Component[]), `align` (`start`|`center`|`end`|`stretch`), `gap` (number, px).
 
 ### card
-
-Card container with optional title.
-
-```json
-{ "type": "card", "title": "Summary", "padding": 16, "children": [...] }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `title` | string | Card title |
-| `children` | Component[] | Child components |
-| `padding` | number | Inner padding (px) |
+Card container with optional title. Props: `title` (string), `children` (Component[]), `padding` (number, px).
 
 ### tabs
-
-Tab switcher. Can be used for data filtering (reference selected value via `${tabs-id.value}`) or content grouping (via `body`).
-
-```json
-{
-  "type": "tabs",
-  "id": "status-tabs",
-  "items": [
-    { "label": "All", "value": "" },
-    { "label": "Active", "value": "active" },
-    { "label": "Settings", "value": "settings", "body": [...] }
-  ]
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `items` | TabItem[] | Tab items |
-| `defaultValue` | string | Default selected value |
-
-TabItem: `{ label, value, body? }`. `body` is optional; when present, it displays the tab's content.
+Tab switcher for filtering or content grouping. Reference selected value via `${tabs-id.value}`. Props: `items` (TabItem[]), `defaultValue` (string). TabItem: `{ label, value, body? }` — `body` displays content when selected. → `get_guide("ui/components/tabs")`
 
 ### divider
-
-Separator line.
-
-```json
-{ "type": "divider", "label": "Section" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `label` | string | Text on the divider |
+Separator line. Props: `label` (string).
 
 ## Data Display Components
 
 ### table
-
-Data table that loads data from an API. See `get_guide("ui/components/table")` for details.
-
-```json
-{
-  "type": "table",
-  "id": "todo-table",
-  "api": { "url": "/fn/_db/tables/todo", "params": { "order": "created_at.desc" } },
-  "columns": [
-    { "name": "title", "label": "Title" },
-    { "name": "status", "label": "Status", "render": { "type": "tag", "text": "${row.status}" } }
-  ],
-  "rowActions": [
-    { "label": "Edit", "action": { "type": "dialog", "title": "Edit", "body": {...} } }
-  ]
-}
-```
+Data table with API data source, custom column rendering, row actions, and pagination. → `get_guide("ui/components/table")`
 
 ### list
-
-List component that loads data from an API with custom item rendering.
-
-```json
-{
-  "type": "list",
-  "api": { "url": "/fn/_db/tables/todo" },
-  "itemRender": { "type": "card", "title": "${row.title}", "children": [...] }
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `api` | ApiConfig | Data source |
-| `itemRender` | Component | Render template for each item (use `${row.xxx}`) |
+List with API data source and custom item rendering. Props: `api` (ApiConfig), `itemRender` (Component — use `${row.xxx}`).
 
 ### text
-
-Text display.
-
-```json
-{ "type": "text", "text": "Hello World" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `text` | string | Text content (supports expressions) |
+Text display. Props: `text` (string, supports expressions).
 
 ### heading
-
-Heading.
-
-```json
-{ "type": "heading", "text": "Dashboard", "level": 2 }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `text` | string | Heading text (supports expressions) |
-| `level` | 1-6 | Heading level (default 1) |
+Heading text. Props: `text` (string, supports expressions), `level` (1-6, default 1).
 
 ### tag
-
-Tag / badge.
-
-```json
-{ "type": "tag", "text": "Active", "color": "success" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `text` | string | Tag text (supports expressions) |
-| `color` | string | Color: `default`, `success`, `warning`, `error`, `info`, or custom color |
+Tag / badge. Props: `text` (string, supports expressions), `color` (`default`|`success`|`warning`|`error`|`info` or custom).
 
 ### stat
-
-Statistical value display.
-
-```json
-{ "type": "stat", "label": "Total Sales", "value": "${response.total}", "prefix": "$" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `label` | string | Metric name |
-| `value` | string/number | Value (supports expressions) |
-| `prefix` | string | Prefix (e.g. $) |
-| `suffix` | string | Suffix (e.g. %) |
+Statistical value display. Props: `label` (string), `value` (string/number, supports expressions), `prefix` (string), `suffix` (string).
 
 ## Data Input Components
 
 ### form
-
-Form component. See `get_guide("ui/components/form")` for details.
-
-```json
-{
-  "type": "form",
-  "fields": [
-    { "name": "title", "label": "Title", "type": "input", "required": true },
-    { "name": "priority", "label": "Priority", "type": "select", "options": [
-      { "label": "High", "value": "high" },
-      { "label": "Low", "value": "low" }
-    ]}
-  ],
-  "api": { "method": "POST", "url": "/fn/_db/tables/todo" },
-  "onSuccess": [{ "type": "reload", "target": "table-1" }, { "type": "close" }]
-}
-```
+Form for collecting input and submitting to an API. Supports field types: input, textarea, number, select, switch, checkbox, radio, date-picker. → `get_guide("ui/components/form")`
 
 ### input
-
-Text input field.
-
-```json
-{ "type": "input", "placeholder": "Enter text..." }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | string | Current value |
-| `placeholder` | string | Placeholder text |
-| `onChange` | Action[] | Triggered on value change |
+Text input. Props: `value` (string), `placeholder` (string), `onChange` (Action[]).
 
 ### textarea
-
-Multi-line text input.
-
-```json
-{ "type": "textarea", "placeholder": "Enter description...", "rows": 4 }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | string | Current value |
-| `placeholder` | string | Placeholder text |
-| `rows` | number | Number of visible rows |
-| `onChange` | Action[] | Triggered on value change |
+Multi-line text input. Props: `value` (string), `placeholder` (string), `rows` (number), `onChange` (Action[]).
 
 ### number
-
-Number input.
-
-```json
-{ "type": "number", "min": 0, "max": 100, "step": 1 }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | number | Current value |
-| `min` | number | Minimum value |
-| `max` | number | Maximum value |
-| `step` | number | Step increment |
-| `onChange` | Action[] | Triggered on value change |
+Number input. Props: `value` (number), `min` (number), `max` (number), `step` (number), `onChange` (Action[]).
 
 ### select
-
-Dropdown selector.
-
-```json
-{
-  "type": "select",
-  "placeholder": "Choose...",
-  "options": [
-    { "label": "Option A", "value": "a" },
-    { "label": "Option B", "value": "b" }
-  ]
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | string/string[] | Current value |
-| `options` | OptionItem[] | `{ label, value }` array |
-| `multiple` | boolean | Enable multi-select |
-| `placeholder` | string | Placeholder text |
-| `onChange` | Action[] | Triggered on value change |
+Dropdown selector. Props: `value` (string/string[]), `options` (OptionItem[]: `{ label, value }`), `multiple` (boolean), `placeholder` (string), `onChange` (Action[]). → `get_guide("ui/components/select")`
 
 ### switch
-
-Toggle switch.
-
-```json
-{ "type": "switch", "id": "dark-mode" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | boolean | Current value |
-| `onChange` | Action[] | Triggered on value change |
+Toggle switch. Props: `value` (boolean), `onChange` (Action[]).
 
 ### checkbox
-
-Checkbox. Single or multi-select group.
-
-```json
-{ "type": "checkbox", "label": "I agree to the terms" }
-```
-
-Multi-select group:
-```json
-{
-  "type": "checkbox",
-  "options": [
-    { "label": "Email", "value": "email" },
-    { "label": "SMS", "value": "sms" }
-  ]
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | boolean/string[] | Current value |
-| `label` | string | Checkbox label |
-| `options` | OptionItem[] | Multi-select group options |
-| `onChange` | Action[] | Triggered on value change |
+Checkbox — single or multi-select group. Props: `value` (boolean/string[]), `label` (string), `options` (OptionItem[]), `onChange` (Action[]).
 
 ### radio
-
-Radio button group.
-
-```json
-{
-  "type": "radio",
-  "options": [
-    { "label": "Male", "value": "male" },
-    { "label": "Female", "value": "female" }
-  ]
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | string | Current value |
-| `options` | OptionItem[] | `{ label, value }` array |
-| `onChange` | Action[] | Triggered on value change |
+Radio button group. Props: `value` (string), `options` (OptionItem[]: `{ label, value }`), `onChange` (Action[]).
 
 ### date-picker
-
-Date picker.
-
-```json
-{ "type": "date-picker", "format": "YYYY-MM-DD" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | string | Current value |
-| `format` | string | Date format |
-| `onChange` | Action[] | Triggered on value change |
+Date picker. Props: `value` (string), `format` (string), `onChange` (Action[]).
 
 ## Interaction Components
 
 ### button
-
-Button that triggers an Action on click.
-
-```json
-{
-  "type": "button",
-  "label": "Submit",
-  "variant": "primary",
-  "action": { "type": "api", "method": "POST", "url": "/fn/submit" }
-}
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `label` | string | Button text |
-| `action` | Action/Action[] | Action(s) triggered on click |
-| `variant` | string | Style: `primary`, `secondary`, `danger`, `ghost` |
-| `disabled` | string/boolean | Whether disabled (supports expressions) |
-| `loading` | string/boolean | Whether to show loading state |
+Button that triggers an action on click. Props: `label` (string), `action` (Action/Action[]), `variant` (`primary`|`secondary`|`danger`|`ghost`), `disabled` (string/boolean, supports expressions), `loading` (string/boolean). → `get_guide("ui/components/button")`
 
 ### link
-
-Text link that triggers an Action on click.
-
-```json
-{ "type": "link", "text": "View details", "action": { "type": "link", "url": "/pages/detail" } }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `text` | string | Link text |
-| `action` | Action/Action[] | Action(s) triggered on click |
+Text link that triggers an action on click. Props: `text` (string), `action` (Action/Action[]).
 
 ## Feedback Components
 
 ### dialog
-
-Dialog container (typically opened via dialog action, not placed directly in body).
-
-```json
-{ "type": "dialog", "title": "Confirm", "width": 500, "children": [...] }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `title` | string | Dialog title |
-| `children` | Component[] | Content |
-| `width` | number/string | Width |
+Dialog container (typically opened via `dialog` action, not placed directly in body). Props: `title` (string), `children` (Component[]), `width` (number/string). → `get_guide("ui/components/dialog")`
 
 ### alert
-
-Alert message.
-
-```json
-{ "type": "alert", "message": "Changes saved successfully", "alertType": "success" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `message` | string | Alert text |
-| `alertType` | string | Type: `info`, `success`, `warning`, `error` |
+Alert message. Props: `message` (string), `alertType` (`info`|`success`|`warning`|`error`).
 
 ### empty
-
-Empty state placeholder.
-
-```json
-{ "type": "empty", "message": "No data available" }
-```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `message` | string | Placeholder text |
+Empty state placeholder. Props: `message` (string).
 
 ## ApiConfig
 
@@ -448,6 +112,8 @@ The `table`, `list`, and `form` components use `api` to configure their data sou
 | `method` | string | HTTP method (default GET) |
 | `url` | string | API path (APP-relative path) |
 | `params` | object | URL query parameters (values support expressions) |
+
+**Response format:** The `table` and `list` components expect the API to return `{ "data": [...] }`. The built-in CRUD API returns this automatically. Custom functions must wrap results: `return { data: rows }`. See `get_guide("ui/components/table")` for details.
 
 ## Custom Components
 

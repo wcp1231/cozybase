@@ -120,6 +120,113 @@ describe('FormRenderer', () => {
     });
   });
 
+  describe('initialValues expression resolution', () => {
+    test('static initialValues populate form fields', async () => {
+      const schema: PageSchema = {
+        id: 'test',
+        title: 'Test',
+        body: [
+          {
+            type: 'form',
+            fields: [
+              { name: 'name', label: 'Name', type: 'input' },
+              { name: 'notes', label: 'Notes', type: 'textarea' },
+            ],
+            initialValues: {
+              name: 'Alice',
+              notes: 'Some notes',
+            },
+          } as FormComponent,
+        ],
+      };
+
+      await renderPage(schema);
+
+      const input = container.querySelector('input') as HTMLInputElement | null;
+      const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null;
+      expect(input!.value).toBe('Alice');
+      expect(textarea!.value).toBe('Some notes');
+    });
+
+    test('initialValues with ${params.xxx} expressions resolve correctly', async () => {
+      const schema: PageSchema = {
+        id: 'test',
+        title: 'Test',
+        body: [
+          {
+            type: 'form',
+            fields: [
+              { name: 'baby_name', label: 'Baby', type: 'input' },
+              { name: 'notes', label: 'Notes', type: 'textarea' },
+            ],
+            initialValues: {
+              baby_name: '${params.baby_name}',
+              notes: '${params.note_text}',
+            },
+          } as FormComponent,
+        ],
+      };
+
+      await renderPage(schema, 'http://localhost:3000', {
+        baby_name: 'Alice',
+        note_text: 'Allergic to peanuts',
+      });
+
+      const input = container.querySelector('input') as HTMLInputElement | null;
+      const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null;
+      expect(input!.value).toBe('Alice');
+      expect(textarea!.value).toBe('Allergic to peanuts');
+    });
+
+    test('initialValues expressions without context resolve to empty', async () => {
+      const schema: PageSchema = {
+        id: 'test',
+        title: 'Test',
+        body: [
+          {
+            type: 'form',
+            fields: [
+              { name: 'status', label: 'Status', type: 'input' },
+            ],
+            initialValues: {
+              status: '${row.status}',
+            },
+          } as FormComponent,
+        ],
+      };
+
+      await renderPage(schema);
+
+      const input = container.querySelector('input') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
+      // Without row context, should resolve to empty, not show raw "${row.status}"
+      expect(input!.value).toBe('');
+    });
+
+    test('initialValues take precedence over defaultValue', async () => {
+      const schema: PageSchema = {
+        id: 'test',
+        title: 'Test',
+        body: [
+          {
+            type: 'form',
+            fields: [
+              { name: 'name', label: 'Name', type: 'input', defaultValue: 'default-name' },
+            ],
+            initialValues: {
+              name: 'initial-name',
+            },
+          } as FormComponent,
+        ],
+      };
+
+      await renderPage(schema);
+
+      const input = container.querySelector('input') as HTMLInputElement | null;
+      expect(input!.value).toBe('initial-name');
+    });
+  });
+
   describe('form api.url expression resolution', () => {
     test('submits to the correct URL with form body', async () => {
       const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -304,5 +411,62 @@ describe('params expression resolution', () => {
     const input = container.querySelector('input') as HTMLInputElement | null;
     expect(input).not.toBeNull();
     expect(input!.value).toBe('42');
+  });
+
+  test('form api.params are appended as URL query parameters on submit', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      id: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'form',
+          fields: [
+            {
+              name: 'note',
+              label: 'Note',
+              type: 'input',
+              defaultValue: 'some note',
+              required: true,
+            },
+          ],
+          api: {
+            method: 'POST',
+            url: '/fn/upsert-record',
+            params: {
+              baby_id: '${params.baby_id}',
+              allergen_id: '${params.allergen_id}',
+            },
+          },
+        } as FormComponent,
+      ],
+    };
+
+    await renderPage(schema, 'http://localhost:3000', { baby_id: '42', allergen_id: '7' });
+
+    const submitBtn = container.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+    expect(submitBtn).not.toBeNull();
+
+    await act(async () => {
+      submitBtn!.click();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    // params should be appended as query parameters
+    expect(calledUrl).toContain('/fn/upsert-record?');
+    expect(calledUrl).toContain('baby_id=42');
+    expect(calledUrl).toContain('allergen_id=7');
+
+    // body should only contain form field values, not params
+    const calledOptions = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(calledOptions.body as string);
+    expect(body).toEqual({ note: 'some note' });
+    expect(body.baby_id).toBeUndefined();
+    expect(body.allergen_id).toBeUndefined();
   });
 });

@@ -223,16 +223,16 @@ export const TOOL_DESCRIPTIONS = {
 
   verify_app:
     'Verify that Draft changes can be safely published to Stable.\n\n' +
-    'This checks migration compatibility by dry-running pending migrations ' +
-    'against a copy of the Stable database.\n\n' +
-    'For migration patterns, call `get_guide("db/migrations")`.',
+    'This is a **required step before `publish_app`**. It validates that all changes ' +
+    '(migrations, functions, UI) can be correctly applied to the Stable environment.\n\n' +
+    'For the complete development workflow, call `get_guide("workflow")`.',
 
   publish_app:
-    'Publish Draft changes to Stable.\n\n' +
+    'Publish Draft changes to Stable. **This is the FINAL step in the development workflow.**\n\n' +
     'This applies pending migrations to the Stable database, exports functions, ' +
     'and marks executed migrations as immutable.\n\n' +
-    'Run `verify_app` first to ensure changes are safe to publish.\n\n' +
-    'For migration patterns, call `get_guide("db/migrations")`.',
+    'Requires `verify_app` to pass first. Do NOT call automatically — always get user confirmation first.\n\n' +
+    'For the complete development workflow, call `get_guide("workflow")`.',
 
   execute_sql:
     'Execute a SQL query on an APP\'s database.\n\n' +
@@ -255,7 +255,7 @@ export const TOOL_DESCRIPTIONS = {
     'Use this tool when you need in-depth information about a specific topic ' +
     'beyond what tool descriptions provide.\n\n' +
     '**Available topics:**\n' +
-    '- `workflow` — Complete development lifecycle (create → edit → sync → reconcile → verify → publish)\n' +
+    '- `workflow` — Complete development lifecycle (get source → edit → upload → reconcile → test → verify → publish)\n' +
     '- `functions` — Writing TypeScript functions (FunctionContext API, exports, return values)\n' +
     '- `ui` — UI system overview (pages, components, actions, expressions)\n' +
     '  - `ui/components` — Component quick-reference (26 built-in types)\n' +

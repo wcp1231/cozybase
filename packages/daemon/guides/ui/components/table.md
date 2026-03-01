@@ -2,6 +2,36 @@
 
 Data table that loads data from an API and displays it in tabular form, supporting custom column rendering, row actions, and pagination.
 
+## API Response Format
+
+The Table component expects the API to return a JSON object with a `data` array:
+
+```json
+{
+  "data": [
+    { "id": 1, "title": "Task A", "created_at": "2024-01-01" },
+    { "id": 2, "title": "Task B", "created_at": "2024-01-02" }
+  ]
+}
+```
+
+The built-in CRUD API (`/fn/_db/tables/{table}`) returns this format automatically. When using a custom function as data source, you **must** wrap the query result in `{ data: rows }`:
+
+```typescript
+// functions/tasks-with-details.ts → GET /fn/tasks-with-details
+export function GET(ctx) {
+  const rows = ctx.db.query(`
+    SELECT t.*, u.name as assignee_name
+    FROM tasks t
+    LEFT JOIN users u ON t.assignee_id = u.id
+    ORDER BY t.created_at DESC
+  `);
+  return { data: rows };
+}
+```
+
+> **If the API returns a plain array or any other structure without a `data` array, the table will display no data.**
+
 ## Basic Usage
 
 ```json

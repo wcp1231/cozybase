@@ -78,7 +78,12 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   // Initialize values from initialValues or field defaults
   const [values, setValues] = useState<Record<string, unknown>>(() => {
-    const init: Record<string, unknown> = { ...(s.initialValues ?? {}) };
+    const init: Record<string, unknown> = {};
+    if (s.initialValues) {
+      for (const [key, val] of Object.entries(s.initialValues)) {
+        init[key] = resolveExpression(val, exprContext);
+      }
+    }
     for (const field of s.fields) {
       if (init[field.name] === undefined && field.defaultValue !== undefined) {
         init[field.name] = resolveExpression(field.defaultValue, exprContext);
@@ -127,9 +132,26 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
     setSubmitting(true);
     try {
       const resolvedUrl = String(resolveExpression(s.api.url, exprContext) ?? s.api.url);
-      const url = resolvedUrl.startsWith('http')
+      let url = resolvedUrl.startsWith('http')
         ? resolvedUrl
         : ctx.baseUrl + resolvedUrl;
+
+      // Resolve api.params and append as URL query parameters
+      if (s.api.params) {
+        const queryParts: string[] = [];
+        for (const [key, value] of Object.entries(s.api.params)) {
+          const resolved = resolveExpression(value, exprContext);
+          const str = resolved === undefined || resolved === null ? '' : String(resolved);
+          if (str !== '') {
+            queryParts.push(
+              `${encodeURIComponent(key)}=${encodeURIComponent(str)}`,
+            );
+          }
+        }
+        if (queryParts.length > 0) {
+          url += (url.includes('?') ? '&' : '?') + queryParts.join('&');
+        }
+      }
 
       const response = await fetch(url, {
         method: s.api.method ?? 'POST',

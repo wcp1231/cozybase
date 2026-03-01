@@ -13,96 +13,30 @@ You are working in a Cozybase workspace. Cozybase is a local Backend-as-a-Servic
 ## Development Workflow
 
 ```
-create_app → edit files → update_app → reconcile_app → test → verify_app → publish_app
+get source → edit → upload → reconcile → test ←─(iterate if issues)
+                                           │
+                                     human confirmation
+                                           │
+                                      verify_app → publish (FINAL)
 ```
 
-1. **create_app** — Create a new APP (scaffolds template files)
-2. **Edit files** — Use your file tools to modify the APP directory
-3. **update_app** / **update_app_file** — Sync edited files back to cozybase
-4. **reconcile_app** — Rebuild Draft environment (runs migrations, loads seeds, exports functions)
-5. **Test** — Use `execute_sql` and `call_api` to verify behavior
-6. **verify_app** — Dry-run pending migrations against Stable
-7. **publish_app** — Apply changes to Stable (makes migrations immutable)
+1. **Get APP source** — `create_app` (new) or `fetch_app` (existing)
+2. **Edit files** — Modify the APP directory
+3. **Upload** — `update_app` or `update_app_file`
+4. **Reconcile** — `reconcile_app`
+5. **Test** — `execute_sql` and `call_api` (iterate back to 2 if issues; get **human confirmation** when done)
+6. **Verify** — `verify_app` (required before publish; iterate back to 2 if fails)
+7. **Publish** — `publish_app` (**FINAL step**, only after human confirms and verify passes)
 
-## APP Directory Structure
-
-```
-{app-name}/
-├── app.yaml              # APP metadata (description)
-├── package.json          # npm dependencies (optional)
-├── migrations/           # Database schema (NNN_name.sql)
-│   └── 001_init.sql
-├── seeds/                # Development seed data (optional, Draft only)
-├── functions/            # TypeScript API functions
-│   └── hello.ts          # → GET/POST/... /fn/hello
-└── ui/
-    └── pages.json        # UI page definitions
-```
-
-## MCP Tools
-
-| Tool | Purpose |
-|------|---------|
-| `create_app` | Create a new APP |
-| `list_apps` | List all APPs |
-| `fetch_app` | Fetch APP files to working directory |
-| `update_app` | Sync all files to cozybase |
-| `update_app_file` | Sync a single file |
-| `delete_app` | Delete an APP |
-| `reconcile_app` | Rebuild Draft environment |
-| `verify_app` | Verify publish safety |
-| `publish_app` | Publish to Stable |
-| `execute_sql` | Run SQL on APP database |
-| `call_api` | Call APP HTTP endpoints |
-| `get_guide` | Get detailed reference docs |
-
-## Reference Documentation
-
-Use `get_guide(topic)` to access detailed documentation on any topic:
-
-### Top-level Topics
-
-| Topic | Description |
-|-------|-------------|
-| `workflow` | Complete development lifecycle |
-| `functions` | Writing TypeScript functions (FunctionContext API) |
-| `ui` | UI system overview |
-| `db` | Database system overview |
-
-### UI Subtopics
-
-| Topic | Description |
-|-------|-------------|
-| `ui/components` | Component quick-reference (26 built-in types) |
-| `ui/components/table` | Table component (columns, row actions, filtering) |
-| `ui/components/form` | Form component (fields, validation, submission) |
-| `ui/components/dialog` | Dialog patterns (create, edit, view) |
-| `ui/actions` | Action system (api, reload, dialog, link, close, confirm) |
-| `ui/expressions` | Expression engine (`${...}` syntax, scopes) |
-
-### Database Subtopics
-
-| Topic | Description |
-|-------|-------------|
-| `db/crud` | Auto CRUD API reference (REST endpoints, query operators) |
-| `db/migrations` | Migration patterns (naming, SQLite syntax, immutability) |
-
-### Usage Examples
-
-```
-get_guide("workflow")              # Full development flow
-get_guide("ui/components")         # All 26 components
-get_guide("ui/components/table")   # Table component deep-dive
-get_guide("db/crud")               # CRUD API query syntax
-```
+For detailed workflow documentation, call `get_guide("workflow")`.
 
 ## Available Skills
 
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
-| create-app | `/create-app` | Guided workflow to create a complete APP from scratch |
-| add-function | `/add-function` | Add a new TypeScript function to an existing APP |
-| add-page | `/add-page` | Add a new UI page to an existing APP |
+| create-app | `/create-app` | Create a complete APP from scratch |
+| add-function | `/add-function` | Add a TypeScript API function to an existing APP |
+| add-page | `/add-page` | Add a UI page to an existing APP |
 | modify-schema | `/modify-schema` | Modify database schema with a new migration |
 
 ## Key Conventions

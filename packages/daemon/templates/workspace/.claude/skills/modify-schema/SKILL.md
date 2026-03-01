@@ -13,27 +13,18 @@ Use this skill when the user wants to add/modify tables, columns, or indexes in 
 - Which APP? (use `list_apps` if needed)
 - What schema changes are needed? (new table, new column, new index, etc.)
 
-### Step 2: Fetch the APP (if not already in working directory)
+### Step 2: Review Existing Migrations
 
-```
-fetch_app(app_name: "<app-name>")
-```
+Fetch the APP with `fetch_app` if not already in the working directory, then read the existing migration files to understand the current schema.
 
-### Step 3: Review Existing Migrations
+For migration patterns and SQLite syntax, call `get_guide("db/migrations")`.
 
-Read the existing migration files to understand the current schema.
-
-For migration patterns and SQLite syntax, call:
-```
-get_guide("db/migrations")
-```
-
-### Step 4: Determine Migration Number
+### Step 3: Determine Migration Number
 
 List existing migrations and use the next sequential number:
 - If last migration is `002_add_users.sql`, create `003_description.sql`
 
-### Step 5: Write the New Migration
+### Step 4: Write the New Migration
 
 Create `migrations/NNN_description.sql`:
 
@@ -53,34 +44,13 @@ ALTER TABLE users ADD COLUMN avatar TEXT;
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 ```
 
-### Step 6: Update Seeds (Optional)
+### Step 5: Update Seeds (Optional)
 
 If needed, update `seeds/` with sample data for the new schema.
 
-### Step 7: Sync and Reconcile
+### Step 6: Follow the Standard Workflow
 
-```
-update_app(app_name: "<app-name>")
-reconcile_app(app_name: "<app-name>")
-```
-
-### Step 8: Verify the Schema
-
-```
-execute_sql(app_name: "<app-name>", sql: "SELECT * FROM <new_table> LIMIT 5")
-```
-
-Or check schema:
-```
-call_api(app_name: "<app-name>", method: "GET", path: "/fn/_db/schemas")
-```
-
-### Step 9: Verify and Publish (when ready)
-
-```
-verify_app(app_name: "<app-name>")
-publish_app(app_name: "<app-name>")
-```
+Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
 
 ## Important Rules
 

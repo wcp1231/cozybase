@@ -15,20 +15,11 @@ Use this skill when the user wants to add a new API endpoint or server-side logi
 - What HTTP methods are needed? (GET, POST, etc.)
 - Does it need database access?
 
-### Step 2: Fetch the APP (if not already in working directory)
+### Step 2: Write the Function
 
-```
-fetch_app(app_name: "<app-name>")
-```
+Fetch the APP with `fetch_app` if not already in the working directory, then create a new `.ts` file in the APP's `functions/` directory.
 
-### Step 3: Write the Function
-
-Create a new `.ts` file in the APP's `functions/` directory.
-
-For the full FunctionContext API reference, call:
-```
-get_guide("functions")
-```
+For the full FunctionContext API reference, call `get_guide("functions")`.
 
 Key points:
 - File name = route path: `functions/hello.ts` → `/fn/hello`
@@ -37,18 +28,9 @@ Key points:
 - Return objects/arrays for auto JSON serialization
 - Return `Response` for custom status codes
 
-### Step 4: Sync and Reconcile
+### Step 3: Follow the Standard Workflow
 
-```
-update_app_file(app_name: "<app-name>", path: "functions/<name>.ts")
-reconcile_app(app_name: "<app-name>")
-```
-
-### Step 5: Test
-
-```
-call_api(app_name: "<app-name>", method: "GET", path: "/fn/<name>")
-```
+Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
 
 ## Tips
 

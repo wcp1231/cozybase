@@ -21,31 +21,21 @@ Ask the user what the APP should do:
 create_app(name: "<app-name>", description: "<description>")
 ```
 
-This creates a scaffold in the working directory with template files.
-
 ### Step 3: Write Database Migrations
 
 Create `migrations/001_init.sql` with the database schema.
 
-For SQLite syntax and migration patterns, call:
-```
-get_guide("db/migrations")
-```
+For SQLite syntax and migration patterns, call `get_guide("db/migrations")`.
 
 ### Step 4: Write Seed Data (Optional)
 
 Create `seeds/sample_data.sql` with development test data.
 
-Seeds only load into Draft — good for testing.
-
 ### Step 5: Write Functions
 
 Create TypeScript files in `functions/` for custom API logic.
 
-For FunctionContext API and export conventions, call:
-```
-get_guide("functions")
-```
+For FunctionContext API and export conventions, call `get_guide("functions")`.
 
 Note: If the built-in CRUD API (`/fn/_db/tables/{table}`) is sufficient, you may not need custom functions.
 
@@ -53,44 +43,13 @@ Note: If the built-in CRUD API (`/fn/_db/tables/{table}`) is sufficient, you may
 
 Edit `ui/pages.json` to define the UI.
 
-For the component reference, call:
-```
-get_guide("ui/components")
-```
+For the component reference, call `get_guide("ui/components")`.
+For actions (API calls, dialogs, navigation), call `get_guide("ui/actions")`.
+For expression syntax (`${...}`), call `get_guide("ui/expressions")`.
 
-For actions (API calls, dialogs, navigation), call:
-```
-get_guide("ui/actions")
-```
+### Step 7: Follow the Standard Workflow
 
-For expression syntax (`${...}`), call:
-```
-get_guide("ui/expressions")
-```
-
-### Step 7: Sync and Reconcile
-
-```
-update_app(app_name: "<app-name>")
-reconcile_app(app_name: "<app-name>")
-```
-
-### Step 8: Test
-
-```
-# Test database
-execute_sql(app_name: "<app-name>", sql: "SELECT * FROM <table>")
-
-# Test API endpoints
-call_api(app_name: "<app-name>", method: "GET", path: "/fn/_db/tables/<table>")
-```
-
-### Step 9: Verify and Publish
-
-```
-verify_app(app_name: "<app-name>")
-publish_app(app_name: "<app-name>")
-```
+Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
 
 ## Tips
 

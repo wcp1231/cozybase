@@ -14,22 +14,13 @@ Use this skill when the user wants to add a new page or modify existing UI in an
 - What should the page display? (tables, forms, stats, etc.)
 - What data sources does it use?
 
-### Step 2: Fetch the APP (if not already in working directory)
+### Step 2: Read Existing UI
 
-```
-fetch_app(app_name: "<app-name>")
-```
+Fetch the APP with `fetch_app` if not already in the working directory, then read the current `ui/pages.json` to understand existing pages and avoid conflicts.
 
-### Step 3: Read Existing UI
+### Step 3: Design and Add the Page
 
-Read the current `ui/pages.json` to understand existing pages and avoid conflicts.
-
-### Step 4: Design the Page
-
-For the component reference, call:
-```
-get_guide("ui/components")
-```
+For the component reference, call `get_guide("ui/components")`.
 
 For specific high-frequency components:
 ```
@@ -38,17 +29,11 @@ get_guide("ui/components/form")    # Forms
 get_guide("ui/components/dialog")  # Modal dialogs
 ```
 
-For actions (API calls, dialogs, navigation):
+For actions and expressions:
 ```
-get_guide("ui/actions")
+get_guide("ui/actions")            # API calls, dialogs, navigation
+get_guide("ui/expressions")        # ${...} syntax
 ```
-
-For expression syntax:
-```
-get_guide("ui/expressions")
-```
-
-### Step 5: Add the Page
 
 Add a new page object to the `pages` array in `ui/pages.json`:
 
@@ -62,12 +47,9 @@ Add a new page object to the `pages` array in `ui/pages.json`:
 
 The `id` serves as the route path segment.
 
-### Step 6: Sync and Reconcile
+### Step 4: Follow the Standard Workflow
 
-```
-update_app_file(app_name: "<app-name>", path: "ui/pages.json")
-reconcile_app(app_name: "<app-name>")
-```
+Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
 
 ## Common Page Patterns
 

@@ -11,7 +11,9 @@ import {
   createTestWorkspace,
   createTestApp,
   createStableDb,
+  addMigration,
   MIGRATION_CREATE_TODOS,
+  MIGRATION_ADD_PRIORITY,
   type TestWorkspaceHandle,
 } from '../helpers/test-workspace';
 import { EmbeddedBackend } from '../../src/mcp/embedded-backend';
@@ -290,5 +292,165 @@ describe('EmbeddedBackend — execute_sql permission model', () => {
 
     const result = await backend.executeSql('todo', 'SELECT * FROM nums', 'draft');
     expect(result.rowCount).toBe(1000);
+  });
+});
+
+// ---- Registry restart after DB recreation ----
+// Regression tests for stale DB handle bug:
+// reconcile() and publish() destroy and recreate database files.
+// Without registry.restart(), the AppRegistry holds stale Database handles
+// pointing to deleted files, causing "disk I/O error" on subsequent function calls.
+
+function createBackendWithRegistry(h: TestWorkspaceHandle) {
+  const registry = new AppRegistry();
+  const backend = new EmbeddedBackend(
+    h.workspace,
+    new DraftReconciler(h.workspace),
+    new Verifier(h.workspace),
+    new Publisher(h.workspace),
+    registry,
+    new Hono(),
+  );
+  return { backend, registry };
+}
+
+describe('EmbeddedBackend — registry restart after DB recreation', () => {
+  test('reconcile registers draft in runtime registry', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'todo', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    const { backend, registry } = createBackendWithRegistry(handle);
+    handle.workspace.refreshAppState('todo');
+
+    // Before reconcile, registry has no entry
+    expect(registry.get('todo', 'draft')).toBeUndefined();
+
+    await backend.reconcile('todo');
+
+    // After reconcile, registry should have a running draft entry
+    const entry = registry.get('todo', 'draft');
+    expect(entry).toBeDefined();
+    expect(entry!.status).toBe('running');
+    expect(entry!.db).not.toBeNull();
+
+    // Registry DB handle should be functional
+    const rows = entry!.db!.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
+    expect(rows.some((r) => r.name === 'todos')).toBe(true);
+  });
+
+  test('second reconcile refreshes draft registry entry (avoids stale DB handle)', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'todo', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    const { backend, registry } = createBackendWithRegistry(handle);
+    handle.workspace.refreshAppState('todo');
+
+    // First reconcile — registry gets draft DB handle
+    await backend.reconcile('todo');
+    const entry1 = registry.get('todo', 'draft');
+    expect(entry1!.db).not.toBeNull();
+    const db1 = entry1!.db;
+
+    // Verify first reconcile worked
+    entry1!.db!.query("INSERT INTO todos (title) VALUES ('test')").run();
+    const rows1 = entry1!.db!.query('SELECT * FROM todos').all();
+    expect(rows1).toHaveLength(1);
+
+    // Add a new migration — this makes the app have a new draft
+    addMigration(handle, 'todo', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+    handle.workspace.refreshAppState('todo');
+
+    // Second reconcile — resetDraft() deletes old DB, creates fresh one.
+    // registry.restart() must be called to avoid stale handle.
+    await backend.reconcile('todo');
+
+    const entry2 = registry.get('todo', 'draft');
+    expect(entry2).toBeDefined();
+    expect(entry2!.status).toBe('running');
+    expect(entry2!.db).not.toBeNull();
+
+    // DB handle must be different (fresh connection after restart)
+    expect(entry2!.db).not.toBe(db1);
+
+    // Query through registry DB — would fail with "disk I/O error" if not restarted
+    const cols = entry2!.db!.query('PRAGMA table_info(todos)').all() as { name: string }[];
+    expect(cols.some((c) => c.name === 'priority')).toBe(true);
+  });
+
+  test('publish creates stable registry entry and stops draft', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'todo', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    const { backend, registry } = createBackendWithRegistry(handle);
+    handle.workspace.refreshAppState('todo');
+
+    // Reconcile to create draft DB (also starts draft in registry)
+    await backend.reconcile('todo');
+    expect(registry.get('todo', 'draft')?.status).toBe('running');
+
+    // Publish — should create stable registry entry and stop draft
+    const result = await backend.publish('todo');
+    expect(result.success).toBe(true);
+
+    // Stable registry should be running with a valid DB handle
+    const stableEntry = registry.get('todo', 'stable');
+    expect(stableEntry).toBeDefined();
+    expect(stableEntry!.status).toBe('running');
+    expect(stableEntry!.db).not.toBeNull();
+
+    // Query through stable registry DB — should work (table exists with correct schema)
+    const tables = stableEntry!.db!.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
+    expect(tables.some((t) => t.name === 'todos')).toBe(true);
+
+    // Draft registry should be stopped (publish clears draft state)
+    const draftEntry = registry.get('todo', 'draft');
+    expect(draftEntry?.status).toBe('stopped');
+  });
+
+  test('second publish refreshes stable registry entry (avoids stale DB handle)', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'todo', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    const { backend, registry } = createBackendWithRegistry(handle);
+    handle.workspace.refreshAppState('todo');
+
+    // First cycle: reconcile + publish
+    await backend.reconcile('todo');
+    const pub1 = await backend.publish('todo');
+    expect(pub1.success).toBe(true);
+
+    const stableEntry1 = registry.get('todo', 'stable');
+    expect(stableEntry1!.db).not.toBeNull();
+    const db1 = stableEntry1!.db;
+
+    // Verify first publish schema
+    const cols1 = stableEntry1!.db!.query('PRAGMA table_info(todos)').all() as { name: string }[];
+    expect(cols1.some((c) => c.name === 'priority')).toBe(false);
+
+    // Add new migration for second cycle
+    addMigration(handle, 'todo', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
+    handle.workspace.refreshAppState('todo');
+
+    // Second cycle: reconcile + publish
+    await backend.reconcile('todo');
+    const pub2 = await backend.publish('todo');
+    expect(pub2.success).toBe(true);
+
+    // Stable registry should have a fresh DB handle with updated schema
+    const stableEntry2 = registry.get('todo', 'stable');
+    expect(stableEntry2).toBeDefined();
+    expect(stableEntry2!.status).toBe('running');
+    expect(stableEntry2!.db).not.toBeNull();
+
+    // DB handle must be different (fresh connection after restart)
+    expect(stableEntry2!.db).not.toBe(db1);
+
+    // Query through registry DB — would fail with stale handle if not restarted
+    const cols2 = stableEntry2!.db!.query('PRAGMA table_info(todos)').all() as { name: string }[];
+    expect(cols2.some((c) => c.name === 'priority')).toBe(true);
   });
 });

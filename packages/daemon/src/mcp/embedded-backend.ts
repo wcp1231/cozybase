@@ -5,6 +5,7 @@
  * without any network overhead. Used when cozybase runs on the same machine.
  */
 
+import { join } from 'path';
 import type { Hono } from 'hono';
 import type { Workspace } from '../core/workspace';
 import type { DraftReconciler } from '../core/draft-reconciler';
@@ -201,7 +202,20 @@ export class EmbeddedBackend implements CozybaseBackend {
   // --- Dev Workflow ---
 
   async reconcile(name: string): Promise<DraftReconcileResult> {
-    return this.draftReconciler.reconcile(name);
+    const result = await this.draftReconciler.reconcile(name);
+
+    // Restart draft in Runtime so the registry gets a fresh DB connection
+    const appContext = this.workspace.getOrCreateApp(name);
+    if (appContext) {
+      this.registry.restart(name, {
+        mode: 'draft',
+        dbPath: appContext.draftDbPath,
+        functionsDir: join(appContext.draftDataDir, 'functions'),
+        uiDir: join(appContext.draftDataDir, 'ui'),
+      });
+    }
+
+    return result;
   }
 
   async verify(name: string): Promise<VerifyResult> {
@@ -209,7 +223,32 @@ export class EmbeddedBackend implements CozybaseBackend {
   }
 
   async publish(name: string): Promise<PublishResult> {
-    return this.publisher.publish(name);
+    const result = await this.publisher.publish(name);
+
+    if (result.success) {
+      this.workspace.refreshAppState(name);
+      const state = this.workspace.getAppState(name);
+
+      // Restart stable in Runtime with the newly published data
+      const appContext = this.workspace.getOrCreateApp(name);
+      if (appContext && state?.stableStatus === 'running') {
+        this.registry.restart(name, {
+          mode: 'stable',
+          dbPath: appContext.stableDbPath,
+          functionsDir: join(appContext.stableDataDir, 'functions'),
+          uiDir: join(appContext.stableDataDir, 'ui'),
+        });
+      }
+
+      // Stop draft runtime (publish clears draft state)
+      try {
+        this.registry.stop(name, 'draft');
+      } catch {
+        // Ignore if draft was not running.
+      }
+    }
+
+    return result;
   }
 
   // --- Runtime Interaction ---
