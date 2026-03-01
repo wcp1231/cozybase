@@ -34,6 +34,7 @@ export interface SchemaRendererProps {
   baseUrl: string;
   components?: Record<string, CustomComponentSchema>;
   params?: Record<string, string>;
+  navigate?: (url: string) => void;
 }
 
 export function SchemaRenderer({
@@ -41,10 +42,11 @@ export function SchemaRenderer({
   baseUrl,
   components,
   params,
+  navigate,
 }: SchemaRendererProps) {
   const extraContext = params ? { params } : undefined;
   return (
-    <PageProvider baseUrl={baseUrl} customComponents={components}>
+    <PageProvider baseUrl={baseUrl} customComponents={components} navigate={navigate}>
       <PageBody body={schema.body} customComponents={components} extraContext={extraContext} />
       <DialogLayer customComponents={components} />
       <ConfirmLayer />
@@ -71,6 +73,7 @@ function PageBody({
           schema={child}
           customComponents={customComponents}
           extraContext={extraContext}
+          siblingIndex={i}
         />
       ))}
     </>
@@ -157,10 +160,12 @@ export function NodeRenderer({
   schema,
   customComponents,
   extraContext,
+  siblingIndex = 0,
 }: {
   schema: ComponentSchema;
   customComponents?: Record<string, CustomComponentSchema>;
   extraContext?: Partial<ExpressionContext>;
+  siblingIndex?: number;
 }) {
   const componentStates = useComponentStates();
 
@@ -178,16 +183,21 @@ export function NodeRenderer({
 
   // Check if it's a custom component that needs template expansion
   const schemaType = schema.type;
+  const schemaId = (schema as { id?: string }).id ?? `${schemaType}-${siblingIndex}`;
   if (
     customComponents &&
     schemaType in customComponents &&
     !builtinRegistry.has(schemaType)
   ) {
-    return renderCustomComponent(
-      schema,
-      customComponents[schemaType],
-      customComponents,
-      exprCtx,
+    return (
+      <div data-schema-id={schemaId} data-schema-type={schemaType} style={{ display: 'contents' }}>
+        {renderCustomComponent(
+          schema,
+          customComponents[schemaType],
+          customComponents,
+          exprCtx,
+        )}
+      </div>
     );
   }
 
@@ -210,13 +220,16 @@ export function NodeRenderer({
       schema={childSchema}
       customComponents={customComponents}
       extraContext={extraContext}
+      siblingIndex={typeof key === 'number' ? key : 0}
     />
   );
 
   return (
-    <ErrorBoundary type={schemaType}>
-      <Comp schema={schema} exprContext={exprCtx} renderChild={renderChild} />
-    </ErrorBoundary>
+    <div data-schema-id={schemaId} data-schema-type={schemaType} style={{ display: 'contents' }}>
+      <ErrorBoundary type={schemaType}>
+        <Comp schema={schema} exprContext={exprCtx} renderChild={renderChild} />
+      </ErrorBoundary>
+    </div>
   );
 }
 

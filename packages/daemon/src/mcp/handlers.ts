@@ -197,3 +197,17 @@ export async function handleCallApi(
   const mode = input.mode ?? 'draft';
   return ctx.backend.callApi(input.app_name, input.method, input.path, input.body, mode);
 }
+
+// --- UI Inspection ---
+
+export interface InspectUiInput {
+  app_name: string;
+  page?: string;
+}
+
+export async function handleInspectUi(
+  ctx: HandlerContext,
+  input: InspectUiInput,
+): Promise<unknown> {
+  return ctx.backend.inspectUi(input.app_name, input.page);
+}

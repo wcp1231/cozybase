@@ -23,6 +23,7 @@ import {
   handlePublishApp,
   handleExecuteSql,
   handleCallApi,
+  handleInspectUi,
 } from './handlers';
 import { handleGetGuide } from './guide-handler';
 
@@ -193,6 +194,21 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     async (args) => {
       const content = handleGetGuide(args.topic);
       return { content: [{ type: 'text', text: content }] };
+    },
+  );
+
+  // --- UI Inspection ---
+
+  server.tool(
+    'inspect_ui',
+    TOOL_DESCRIPTIONS.inspect_ui,
+    {
+      app_name: z.string(),
+      page: z.string().optional(),
+    },
+    async (args) => {
+      const result = await handleInspectUi(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },
   );
 

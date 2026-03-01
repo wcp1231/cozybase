@@ -266,6 +266,18 @@ export const TOOL_DESCRIPTIONS = {
     '  - `db/crud` — Database REST API reference (paths, query params, operators)\n' +
     '  - `db/migrations` — Migration patterns (SQLite syntax, naming, immutable mechanism)\n\n' +
     'Use `/` to drill into subtopics (e.g. `get_guide("ui/components/table")`).',
+
+  inspect_ui:
+    'Inspect the rendered UI of a draft APP in the browser.\n\n' +
+    'Returns a structured tree of visible components with their text content, ' +
+    'table data (columns, row count, first 5 rows), form state (fields, values), ' +
+    'and available actions.\n\n' +
+    '**Requirements:**\n' +
+    '- Admin UI must be open in a browser with the target APP loaded\n' +
+    '- The APP must have a Draft with UI pages\n' +
+    '- Run `reconcile_app` after file changes before inspecting\n\n' +
+    'Use this after updating UI files and reconciling to verify the UI renders correctly.\n' +
+    'If no browser is connected, an error message will explain what to do.',
 } as const;
 
 // --- Input Schemas (for MCP Server tool registration) ---

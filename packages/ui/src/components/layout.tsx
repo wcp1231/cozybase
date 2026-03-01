@@ -104,6 +104,7 @@ function CardComp({ schema, renderChild, exprContext }: SchemaComponentProps) {
           openDialog: ctx.openDialog,
           closeDialog: ctx.closeDialog,
           requestConfirm: ctx.requestConfirm,
+          navigate: ctx.navigate,
           expressionContext: exprContext,
         });
       }

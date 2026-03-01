@@ -55,7 +55,7 @@ export function createRuntime(options: RuntimeOptions = {}): {
 
   const stableUi = new Hono();
   stableUi.use('*', appEntryResolver(registry, 'stable'));
-  stableUi.route('/', createUiRoutes(registry));
+  stableUi.route('/', createUiRoutes());
 
   // Draft mode routes
   const draftFn = new Hono();
@@ -64,7 +64,7 @@ export function createRuntime(options: RuntimeOptions = {}): {
 
   const draftUi = new Hono();
   draftUi.use('*', appEntryResolver(registry, 'draft'));
-  draftUi.route('/', createUiRoutes(registry));
+  draftUi.route('/', createUiRoutes());
 
   // Mount stable routes
   app.route('/stable/apps/:name/fn', stableFn);

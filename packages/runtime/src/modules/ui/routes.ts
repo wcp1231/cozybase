@@ -2,9 +2,8 @@ import { Hono } from 'hono';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { RuntimeAppEnv } from '../../middleware/app-entry-resolver';
-import type { AppRegistry } from '../../registry';
 
-export function createUiRoutes(registry: AppRegistry) {
+export function createUiRoutes() {
   const app = new Hono<RuntimeAppEnv>();
 
   // GET /ui - UI definition (pages.json)
@@ -31,25 +30,6 @@ export function createUiRoutes(registry: AppRegistry) {
     }
 
     return new Response(Bun.file(fullPath));
-  });
-
-  // GET / - UI index.html with theme CSS injected
-  app.get('/', (c) => {
-    const entry = c.get('appEntry');
-    const indexPath = join(entry.uiDir, 'index.html');
-
-    if (!existsSync(indexPath)) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'UI not found' } }, 404);
-    }
-
-    let html = readFileSync(indexPath, 'utf-8');
-    const themeCSS = registry.getThemeCSS();
-    if (themeCSS && html.includes('</head>')) {
-      // Escape </style sequences to prevent breaking out of the style tag
-      const safeCSS = themeCSS.replace(/<\/style/gi, '<\\/style');
-      html = html.replace('</head>', `<style id="cz-theme">${safeCSS}</style>\n</head>`);
-    }
-    return c.html(html);
   });
 
   return app;

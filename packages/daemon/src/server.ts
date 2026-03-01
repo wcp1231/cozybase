@@ -14,6 +14,7 @@ import { createAppRoutes } from './modules/apps/routes';
 import { createThemeRoutes } from './modules/theme/routes';
 import { createRuntime, type AppRegistry, type PlatformHandler } from '@cozybase/runtime';
 import { generateThemeCSS } from '@cozybase/ui';
+import { UiBridge } from './core/ui-bridge';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -96,6 +97,23 @@ export function createServer(config: Config) {
   // --- Generate initial theme CSS and propagate to runtime ---
   const themeCSS = generateThemeCSS(workspace.getThemeConfig());
   registry.setThemeCSS(themeCSS);
+
+  // --- UI Bridge (Agent → Browser WebSocket relay) ---
+  const uiBridge = new UiBridge();
+
+  app.post('/api/v1/ui/inspect', async (c) => {
+    const body = await c.req.json<{ app_name: string; page?: string }>();
+    if (!body.app_name) {
+      throw new BadRequestError('app_name is required');
+    }
+    try {
+      const result = await uiBridge.inspectUi(body.app_name, body.page);
+      return c.json({ data: result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: { code: 'UI_INSPECT_ERROR', message } }, 503);
+    }
+  });
 
   // --- Draft management routes: /draft/apps/:appName/(reconcile|verify|publish) ---
   // These MUST be registered BEFORE the runtime catch-all at /draft/apps/:name
@@ -208,7 +226,7 @@ export function createServer(config: Config) {
     });
   }
 
-  return { app, workspace, registry, draftReconciler, verifier, publisher, startup };
+  return { app, workspace, registry, uiBridge, draftReconciler, verifier, publisher, startup };
 }
 
 /**

@@ -10,8 +10,7 @@ export function App() {
         <Route path="/" element={<Navigate to="/stable/apps" replace />} />
         <Route path="/:mode/apps" element={<AppLayout />}>
           <Route index element={<AppListPage />} />
-          <Route path=":appName" element={<AppPageView />} />
-          <Route path=":appName/:pageId" element={<AppPageView />} />
+          <Route path=":appName/*" element={<AppPageView />} />
         </Route>
       </Routes>
     </BrowserRouter>

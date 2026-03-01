@@ -218,6 +218,16 @@ export class RemoteBackend implements CozybaseBackend {
     };
   }
 
+  // --- UI Inspection ---
+
+  async inspectUi(appName: string, page?: string): Promise<unknown> {
+    const res = await this.request('POST', '/api/v1/ui/inspect', {
+      app_name: appName,
+      page,
+    });
+    return res.data;
+  }
+
   // --- Internal ---
 
   private async request(method: string, path: string, body?: unknown): Promise<any> {

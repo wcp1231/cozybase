@@ -95,4 +95,7 @@ export interface CozybaseBackend {
   // Runtime interaction
   executeSql(name: string, sql: string, mode: string): Promise<SqlResult>;
   callApi(name: string, method: string, path: string, body?: unknown, mode?: string): Promise<ApiResponse>;
+
+  // UI inspection (requires browser session)
+  inspectUi(appName: string, page?: string): Promise<unknown>;
 }

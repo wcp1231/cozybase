@@ -32,6 +32,7 @@ interface ConfirmEntry {
 interface PageContextValue {
   baseUrl: string;
   customComponents?: Record<string, CustomComponentSchema>;
+  navigate?: (url: string) => void;
   // Component state
   registerComponent: (id: string, state: ComponentState) => void;
   unregisterComponent: (id: string) => void;
@@ -92,10 +93,12 @@ export function useConfirm(): ConfirmEntry | null {
 export function PageProvider({
   baseUrl,
   customComponents,
+  navigate,
   children,
 }: {
   baseUrl: string;
   customComponents?: Record<string, CustomComponentSchema>;
+  navigate?: (url: string) => void;
   children: ReactNode;
 }) {
   // Using refs for mutable state that drives external-store subscriptions.
@@ -131,6 +134,7 @@ export function PageProvider({
   const value: PageContextValue = {
     baseUrl,
     customComponents,
+    navigate,
 
     registerComponent: (id, state) => {
       componentsRef.current[id] = state;

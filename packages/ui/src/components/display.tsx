@@ -277,6 +277,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
         openDialog: ctx.openDialog,
         closeDialog: ctx.closeDialog,
         requestConfirm: ctx.requestConfirm,
+        navigate: ctx.navigate,
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
