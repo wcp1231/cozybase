@@ -23,6 +23,10 @@ export function isAppMode(value: string | undefined): value is AppMode {
   return value === 'stable' || value === 'draft';
 }
 
+export function toModeHomePath(mode: AppMode): string {
+  return `/${mode}`;
+}
+
 export function toAppListPath(mode: AppMode): string {
   return `/${mode}/apps`;
 }
