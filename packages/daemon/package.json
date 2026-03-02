@@ -12,6 +12,7 @@
     "mcp": "bun run src/mcp/mcp-entry.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.63",
     "@cozybase/runtime": "workspace:*",
     "@cozybase/ui": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",

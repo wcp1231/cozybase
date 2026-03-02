@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, symlinkSync } from 'fs';
 import { resolve, join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
@@ -15,6 +15,12 @@ import { createThemeRoutes } from './modules/theme/routes';
 import { createRuntime, type AppRegistry, type PlatformHandler } from '@cozybase/runtime';
 import { generateThemeCSS } from '@cozybase/ui';
 import { UiBridge } from './core/ui-bridge';
+import { AppManager } from './modules/apps/manager';
+import { LocalBackend } from './agent/local-backend';
+import { createCozybaseSdkMcpServer } from './agent/sdk-mcp-server';
+import { ChatService } from './agent/chat-service';
+import { COZYBASE_SYSTEM_PROMPT } from './agent/system-prompt';
+import { initWorkspace } from './workspace-init';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -205,6 +211,43 @@ export function createServer(config: Config) {
     return c.json({ authenticated: true, user: { id: 'system', name: 'System', role: 'admin' } });
   });
 
+  // --- Agent Infrastructure ---
+  // Follows the same init-once pattern as workspace.init():
+  // copy templates on first creation, then leave them alone.
+  const agentDir = join(config.workspaceDir, 'agent');
+  mkdirSync(join(agentDir, 'apps'), { recursive: true });
+
+  if (!existsSync(join(agentDir, 'AGENT.md'))) {
+    initWorkspace(agentDir);
+    // CLAUDE.md → AGENT.md symlink so the SDK picks up the agent docs
+    // (SDK reads CLAUDE.md, not AGENT.md, when settingSources includes 'project')
+    symlinkSync('AGENT.md', join(agentDir, 'CLAUDE.md'));
+  }
+
+  const appManager = new AppManager(workspace, registry);
+
+  const localBackend = new LocalBackend({
+    workspace,
+    appManager,
+    draftReconciler,
+    verifier,
+    publisher,
+    registry,
+    uiBridge,
+    honoApp: app,
+  });
+
+  const sdkMcpServer = createCozybaseSdkMcpServer({
+    backend: localBackend,
+    appsDir: join(agentDir, 'apps'),
+  });
+
+  const chatService = new ChatService({
+    mcpServer: sdkMcpServer,
+    agentDir,
+    systemPrompt: COZYBASE_SYSTEM_PROMPT,
+  });
+
   // --- Admin SPA static files ---
   const adminDistDir = resolve(import.meta.dir, '..', '..', 'admin', 'dist');
 
@@ -226,7 +269,7 @@ export function createServer(config: Config) {
     });
   }
 
-  return { app, workspace, registry, uiBridge, draftReconciler, verifier, publisher, startup };
+  return { app, workspace, registry, uiBridge, chatService, draftReconciler, verifier, publisher, startup };
 }
 
 /**

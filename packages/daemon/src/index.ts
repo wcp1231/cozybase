@@ -3,35 +3,62 @@ import { createServer } from './server';
 import { writePidFile, cleanupPidFile } from './daemon-ctl';
 
 const config = loadConfig();
-const { app, workspace, registry, uiBridge, startup } = createServer(config);
+const { app, workspace, registry, uiBridge, chatService, startup } = createServer(config);
 
 // Wait for all apps to start before accepting requests
 await startup;
 
-const server = Bun.serve({
+interface WsData {
+  type: 'agent-bridge' | 'chat';
+}
+
+const server = Bun.serve<WsData>({
   port: config.port,
   hostname: config.host,
   fetch(req, server) {
-    // Handle WebSocket upgrade for Agent ↔ Browser UI bridge
     const url = new URL(req.url);
+
+    // Handle WebSocket upgrade for Agent ↔ Browser UI bridge
     if (url.pathname === '/api/v1/agent/ws') {
-      if (server.upgrade(req)) {
+      if (server.upgrade(req, { data: { type: 'agent-bridge' } })) {
         return undefined as unknown as Response;
       }
       return new Response('WebSocket upgrade failed', { status: 400 });
     }
+
+    // Handle WebSocket upgrade for Chat
+    if (url.pathname === '/api/v1/chat/ws') {
+      if (server.upgrade(req, { data: { type: 'chat' } })) {
+        return undefined as unknown as Response;
+      }
+      return new Response('WebSocket upgrade failed', { status: 400 });
+    }
+
     // All other requests go to Hono
     return app.fetch(req, server);
   },
   websocket: {
     open(ws) {
-      uiBridge.addSession(ws);
+      if (ws.data.type === 'chat') {
+        chatService.connect(ws as any);
+      } else {
+        uiBridge.addSession(ws as any);
+      }
     },
     message(ws, message) {
-      uiBridge.handleMessage(ws, typeof message === 'string' ? message : message.toString());
+      const raw = typeof message === 'string' ? message : message.toString();
+      if (ws.data.type === 'chat') {
+        chatService.handleMessage(ws as any, raw);
+      } else {
+        uiBridge.handleMessage(ws as any, raw);
+      }
     },
     close(ws) {
-      uiBridge.removeSession(ws);
+      if (ws.data.type === 'chat') {
+        chatService.disconnect(ws as any);
+      } else {
+        uiBridge.removeSession(ws as any);
+      }
     },
   },
 });
@@ -54,6 +81,7 @@ console.log(`
     GET  /api/v1/apps
     GET  /api/v1/apps/:appName
     WS   /api/v1/agent/ws
+    WS   /api/v1/chat/ws
     POST /api/v1/ui/inspect
     *    /stable/apps/:appName/fn/:fnName
     *    /stable/apps/:appName/fn/_db/*
@@ -71,6 +99,9 @@ async function shutdown() {
 
   // Close all browser WebSocket sessions
   uiBridge.shutdown();
+
+  // Shutdown chat service
+  chatService.shutdown();
 
   // Shutdown all apps in Runtime
   registry.shutdownAll();

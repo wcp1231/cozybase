@@ -12,6 +12,7 @@ import {
 export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type AppStatus } from './registry';
 export { type PlatformClient, type PlatformHandler, createInProcessPlatformClient } from './platform-client';
 export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
+export { validateSql, type SqlMode, type SqlValidationResult } from './modules/db/sql-safety';
 
 export interface RuntimeOptions {
   platformHandler?: PlatformHandler;
