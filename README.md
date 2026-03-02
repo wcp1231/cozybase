@@ -45,7 +45,7 @@ Workspace (~/.cozybase)
    │  Workspace → AppContext (per-app) │ │
    │  DraftReconciler / Verifier /     │ │
    │  Publisher → SQLite               │ │
-   │  Management API + Admin UI        │ │
+   │  Management API + Web UI          │ │
    ├───────────────────────────────────┤ │
    │ runtime (@cozybase/runtime)       │ │
    │  AppRegistry (per-app lifecycle)  │─┘
@@ -290,11 +290,11 @@ curl -X POST http://localhost:3000/draft/apps/todo-app/fn/items \
 
 **Where operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`
 
-## Admin UI
+## Web UI
 
-Cozybase includes a built-in Admin UI with a hardcoded three-column shell: left sidebar, center content slot, and right chat window. Apps define their UI in `ui/pages.json`, and the center slot renders selected pages with `SchemaRenderer`.
+Cozybase includes a built-in Web UI with a hardcoded three-column shell: left sidebar, center content slot, and right chat window. Apps define their UI in `ui/pages.json`, and the center slot renders selected pages with `SchemaRenderer`.
 
-Access the Admin at `http://localhost:3000/` after starting the server.
+Access the Web UI at `http://localhost:3000/` after starting the server.
 
 ### JSON UI Schema
 
@@ -368,7 +368,7 @@ Interactive behaviors are declared via actions:
 
 API URLs in actions use app-relative paths (e.g. `/db/todo`, `/fn/hello`) — the renderer auto-completes them.
 
-### Admin Routes
+### Web Routes
 
 | Path | Description |
 |------|-------------|
@@ -379,7 +379,7 @@ API URLs in actions use app-relative paths (e.g. `/db/todo`, `/fn/hello`) — th
 
 ### UI Changes
 
-UI definitions (`ui/pages.json`) follow the same Reconcile / Publish lifecycle as other resources. After updating the UI file via the Management API, run Reconcile and Publish to make changes visible in the Admin:
+UI definitions (`ui/pages.json`) follow the same Reconcile / Publish lifecycle as other resources. After updating the UI file via the Management API, run Reconcile and Publish to make changes visible in the Web UI:
 
 ```bash
 # Update UI definition
@@ -591,7 +591,7 @@ INSERT INTO todos (title, completed) VALUES ('Example todo', 0);
 - **Runtime** (`@cozybase/runtime`): Separate package providing the app execution layer — DB CRUD, function execution, and UI serving. Mounted as Hono sub-routes under `/stable/apps/:name` and `/draft/apps/:name`. No internal management endpoints are exposed.
 - **MCP Server**: Stdio-based [Model Context Protocol](https://modelcontextprotocol.io/) server enabling AI Agents to manage apps. Connects to a running cozybase daemon via HTTP (`RemoteBackend`). Auto-detects a local daemon via PID file, or accepts an explicit `--url` for remote daemons. Manages an Agent working directory for file sync between the Agent's filesystem and cozybase.
 - **UI Renderer (`@cozybase/ui`)**: JSON-to-React rendering engine. Parses `ui/pages.json` into a component tree using a registry of 26 built-in components. Features an expression engine (`${...}` syntax with scoped contexts), action dispatcher (6 action types), and `PageContext` for cross-component state sharing and event propagation.
-- **Admin SPA (`@cozybase/admin`)**: Vite-built React SPA served as static files by the daemon. Uses a hardcoded three-column shell (sidebar / content slot / chat window), lists apps, and renders selected app pages in the center slot via `SchemaRenderer`.
+- **Web UI (`@cozybase/web`)**: Vite-built React SPA served as static files by the daemon. Hosts the CozyBase web interface and renders selected app pages in the center slot via `SchemaRenderer`.
 - **App States**: Derived from DB fields — `published_version = 0` → `draft_only`, `current_version = published_version` → `stable`, `current_version > published_version` → `stable_draft`, `status = deleted` → `deleted`.
 
 ### Project Structure
@@ -685,7 +685,7 @@ cozybase/
 │   │           ├── display.tsx       # table, list, text, heading, tag, stat
 │   │           ├── input.tsx         # form, input, textarea, number, select, switch, ...
 │   │           └── action.tsx        # button, link, dialog, alert, empty
-│   ├── admin/                 # Admin SPA (Vite + React)
+│   ├── web/                   # CozyBase Web UI (Vite + React)
 │   │   └── src/
 │   │       ├── main.tsx              # Vite entry point
 │   │       ├── app.tsx               # Router setup
@@ -713,8 +713,8 @@ bun test tests/scenarios/        # End-to-end: full workflow scenarios
 # Run UI renderer tests (expression engine, action dispatcher, component registry)
 bun test packages/ui/src/
 
-# Build admin SPA
-cd packages/admin && bun run build
+# Build web UI
+cd packages/web && bun run build
 ```
 
 ## Tech Stack
@@ -743,7 +743,7 @@ cd packages/admin && bun run build
 - [x] Automated test suite
 - [x] Functions module (TypeScript HTTP handlers with hot-reload)
 - [x] JSON-to-UI renderer (26 built-in components, expression engine, action system)
-- [x] Admin UI (React SPA with app management and page rendering)
+- [x] Web UI (React SPA with app management and page rendering)
 - [x] MCP Server (AI Agent integration via Model Context Protocol)
 - [x] Daemon/Runtime split (management layer + app execution layer)
 - [ ] Storage module (file uploads + buckets)

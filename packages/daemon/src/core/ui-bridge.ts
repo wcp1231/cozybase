@@ -1,7 +1,7 @@
 /**
  * UiBridge — WebSocket session manager for Agent → Browser UI communication.
  *
- * Tracks connected browser sessions (Admin UI via WebSocket) and relays
+ * Tracks connected browser sessions (Web UI via WebSocket) and relays
  * UI tool requests (e.g. inspect) to the browser, waiting for responses.
  *
  * Flow: Agent tool call → UiBridge.inspectUi() → WebSocket → Browser BridgeClient
@@ -62,7 +62,7 @@ export class UiBridge {
     const ws = this.getActiveSession();
     if (!ws) {
       throw new Error(
-        'No browser session connected. Please open Admin UI to use UI inspection tools.',
+        'No browser session connected. Please open Web UI to use UI inspection tools.',
       );
     }
 

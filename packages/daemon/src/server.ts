@@ -248,16 +248,16 @@ export function createServer(config: Config) {
     systemPrompt: COZYBASE_SYSTEM_PROMPT,
   });
 
-  // --- Admin SPA static files ---
-  const adminDistDir = resolve(import.meta.dir, '..', '..', 'admin', 'dist');
+  // --- Web UI static files ---
+  const webDistDir = resolve(import.meta.dir, '..', '..', 'web', 'dist');
 
-  if (existsSync(adminDistDir)) {
-    app.use('/assets/*', serveStatic({ root: adminDistDir }));
-    app.use('/favicon.ico', serveStatic({ root: adminDistDir }));
+  if (existsSync(webDistDir)) {
+    app.use('/assets/*', serveStatic({ root: webDistDir }));
+    app.use('/favicon.ico', serveStatic({ root: webDistDir }));
 
     // Serve index.html with theme CSS injected
     app.get('*', (c) => {
-      const indexPath = join(adminDistDir, 'index.html');
+      const indexPath = join(webDistDir, 'index.html');
       const html = readFileSync(indexPath, 'utf-8');
       const css = registry.getThemeCSS();
       if (css) {

@@ -273,7 +273,7 @@ export const TOOL_DESCRIPTIONS = {
     'table data (columns, row count, first 5 rows), form state (fields, values), ' +
     'and available actions.\n\n' +
     '**Requirements:**\n' +
-    '- Admin UI must be open in a browser with the target APP loaded\n' +
+    '- Web UI must be open in a browser with the target APP loaded\n' +
     '- The APP must have a Draft with UI pages\n' +
     '- Run `reconcile_app` after file changes before inspecting\n\n' +
     'Use this after updating UI files and reconciling to verify the UI renders correctly.\n' +

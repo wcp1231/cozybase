@@ -1,4 +1,4 @@
-// BridgeClient — Admin-side bridge between WebSocket (Daemon) and direct DOM inspection.
+// BridgeClient — Web-side bridge between WebSocket (Daemon) and direct DOM inspection.
 // Receives ui:request from Daemon via WebSocket, calls the registered handler, sends ui:response back.
 
 interface UiToolRequest {
