@@ -20,47 +20,47 @@ export class SessionStore {
 
   // --- Session CRUD ---
 
-  getSessionId(appName: string): string | null {
+  getSessionId(appSlug: string): string | null {
     const row = this.db.query(
-      'SELECT sdk_session_id FROM agent_sessions WHERE app_name = ?',
-    ).get(appName) as { sdk_session_id: string | null } | null;
+      'SELECT sdk_session_id FROM agent_sessions WHERE app_slug = ?',
+    ).get(appSlug) as { sdk_session_id: string | null } | null;
     return row?.sdk_session_id ?? null;
   }
 
-  saveSessionId(appName: string, sdkSessionId: string): void {
+  saveSessionId(appSlug: string, sdkSessionId: string): void {
     this.db.query(`
-      INSERT INTO agent_sessions (app_name, sdk_session_id, updated_at)
+      INSERT INTO agent_sessions (app_slug, sdk_session_id, updated_at)
       VALUES (?, ?, datetime('now'))
-      ON CONFLICT(app_name) DO UPDATE SET
+      ON CONFLICT(app_slug) DO UPDATE SET
         sdk_session_id = excluded.sdk_session_id,
         updated_at = datetime('now')
-    `).run(appName, sdkSessionId);
+    `).run(appSlug, sdkSessionId);
   }
 
   /** Clear only the SDK session ID (keeps message history intact). */
-  clearSessionId(appName: string): void {
+  clearSessionId(appSlug: string): void {
     this.db.query(`
       UPDATE agent_sessions SET sdk_session_id = NULL, updated_at = datetime('now')
-      WHERE app_name = ?
-    `).run(appName);
+      WHERE app_slug = ?
+    `).run(appSlug);
   }
 
   /** Delete the session row and all associated messages. */
-  deleteSession(appName: string): void {
-    this.db.query('DELETE FROM agent_sessions WHERE app_name = ?').run(appName);
-    this.db.query('DELETE FROM agent_messages WHERE app_name = ?').run(appName);
+  deleteSession(appSlug: string): void {
+    this.db.query('DELETE FROM agent_sessions WHERE app_slug = ?').run(appSlug);
+    this.db.query('DELETE FROM agent_messages WHERE app_slug = ?').run(appSlug);
   }
 
   // --- Message CRUD ---
 
-  getMessages(appName: string, limit = 100): StoredMessage[] {
+  getMessages(appSlug: string, limit = 100): StoredMessage[] {
     const rows = this.db.query(`
       SELECT role, content, tool_name, tool_status, tool_summary
       FROM agent_messages
-      WHERE app_name = ?
+      WHERE app_slug = ?
       ORDER BY id DESC
       LIMIT ?
-    `).all(appName, limit) as {
+    `).all(appSlug, limit) as {
       role: string;
       content: string;
       tool_name: string | null;
@@ -83,12 +83,12 @@ export class SessionStore {
     });
   }
 
-  addMessage(appName: string, msg: StoredMessage): void {
+  addMessage(appSlug: string, msg: StoredMessage): void {
     this.db.query(`
-      INSERT INTO agent_messages (app_name, role, content, tool_name, tool_status, tool_summary)
+      INSERT INTO agent_messages (app_slug, role, content, tool_name, tool_status, tool_summary)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
-      appName,
+      appSlug,
       msg.role,
       msg.content,
       msg.toolName ?? null,
@@ -97,7 +97,7 @@ export class SessionStore {
     );
   }
 
-  clearMessages(appName: string): void {
-    this.db.query('DELETE FROM agent_messages WHERE app_name = ?').run(appName);
+  clearMessages(appSlug: string): void {
+    this.db.query('DELETE FROM agent_messages WHERE app_slug = ?').run(appSlug);
   }
 }

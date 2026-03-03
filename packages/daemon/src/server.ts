@@ -20,6 +20,7 @@ import { LocalBackend } from './agent/local-backend';
 import { createCozybaseSdkMcpServer } from './agent/sdk-mcp-server';
 import { ChatSessionManager } from './agent/chat-session-manager';
 import { SessionStore } from './agent/session-store';
+import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
 import { initWorkspace } from './workspace-init';
 
 export function createServer(config: Config) {
@@ -72,6 +73,9 @@ export function createServer(config: Config) {
   // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
   const startup = initializeRuntime(workspace, registry, publisher, justInitialized);
 
+  // --- Shared AppManager (used by REST routes and agent infrastructure) ---
+  const appManager = new AppManager(workspace, registry, draftReconciler);
+
   // --- Global middleware ---
   app.use('*', cors());
   app.use('*', logger());
@@ -95,7 +99,7 @@ export function createServer(config: Config) {
   app.get('/health', (c) => c.json({ status: 'ok', version: '0.1.0' }));
 
   // --- Platform API (app listing / status) ---
-  app.route('/api/v1', createAppRoutes(workspace, registry));
+  app.route('/api/v1', createAppRoutes(workspace, appManager));
 
   // --- Theme API ---
   app.route('/api/v1', createThemeRoutes(workspace, registry));
@@ -121,31 +125,31 @@ export function createServer(config: Config) {
     }
   });
 
-  // --- Draft management routes: /draft/apps/:appName/(reconcile|verify|publish) ---
+  // --- Draft management routes: /draft/apps/:appSlug/(reconcile|verify|publish) ---
   // These MUST be registered BEFORE the runtime catch-all at /draft/apps/:name
   // to prevent the runtime's appEntryResolver from hijacking management requests.
 
   const draftMgmtMiddleware = async (c: any, next: any) => {
-    const appName = c.req.param('appName');
-    if (!appName) {
-      throw new BadRequestError('App name is required');
+    const appSlug = c.req.param('appSlug');
+    if (!appSlug) {
+      throw new BadRequestError('App slug is required');
     }
-    workspace.refreshAppState(appName);
-    const state = workspace.getAppState(appName);
+    workspace.refreshAppState(appSlug);
+    const state = workspace.getAppState(appSlug);
     if (!state) {
-      throw new BadRequestError(`App '${appName}' not found`);
+      throw new BadRequestError(`App '${appSlug}' not found`);
     }
     await next();
   };
 
-  app.post('/draft/apps/:appName/reconcile', draftMgmtMiddleware, async (c) => {
-    const appName = c.req.param('appName')!;
-    const result = await draftReconciler.reconcile(appName);
+  app.post('/draft/apps/:appSlug/reconcile', draftMgmtMiddleware, async (c) => {
+    const appSlug = c.req.param('appSlug')!;
+    const result = await draftReconciler.reconcile(appSlug);
 
     // Restart draft in Runtime after reconcile
-    const appContext = workspace.getOrCreateApp(appName);
+    const appContext = workspace.getOrCreateApp(appSlug);
     if (appContext) {
-      registry.restart(appName, {
+      registry.restart(appSlug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,
         functionsDir: join(appContext.draftDataDir, 'functions'),
@@ -156,23 +160,23 @@ export function createServer(config: Config) {
     return c.json({ data: result });
   });
 
-  app.post('/draft/apps/:appName/verify', draftMgmtMiddleware, (c) => {
-    const appName = c.req.param('appName')!;
-    const result = verifier.verify(appName);
+  app.post('/draft/apps/:appSlug/verify', draftMgmtMiddleware, (c) => {
+    const appSlug = c.req.param('appSlug')!;
+    const result = verifier.verify(appSlug);
     return c.json({ data: result });
   });
 
-  app.post('/draft/apps/:appName/publish', draftMgmtMiddleware, async (c) => {
-    const appName = c.req.param('appName')!;
-    const result = await publisher.publish(appName);
+  app.post('/draft/apps/:appSlug/publish', draftMgmtMiddleware, async (c) => {
+    const appSlug = c.req.param('appSlug')!;
+    const result = await publisher.publish(appSlug);
 
     if (result.success) {
-      workspace.refreshAppState(appName);
-      const state = workspace.getAppState(appName);
+      workspace.refreshAppState(appSlug);
+      const state = workspace.getAppState(appSlug);
 
-      const appContext = workspace.getOrCreateApp(appName);
+      const appContext = workspace.getOrCreateApp(appSlug);
       if (appContext && state?.stableStatus === 'running') {
-        registry.restart(appName, {
+        registry.restart(appSlug, {
           mode: 'stable',
           dbPath: appContext.stableDbPath,
           functionsDir: join(appContext.stableDataDir, 'functions'),
@@ -180,14 +184,14 @@ export function createServer(config: Config) {
         });
       } else {
         try {
-          registry.stop(appName, 'stable');
+          registry.stop(appSlug, 'stable');
         } catch {
           // Ignore if stable was not running.
         }
       }
 
       try {
-        registry.stop(appName, 'draft');
+        registry.stop(appSlug, 'draft');
       } catch {
         // Ignore if draft was not running.
       }
@@ -224,8 +228,6 @@ export function createServer(config: Config) {
     symlinkSync('AGENT.md', join(agentDir, 'CLAUDE.md'));
   }
 
-  const appManager = new AppManager(workspace, registry);
-
   const localBackend = new LocalBackend({
     workspace,
     appManager,
@@ -255,6 +257,46 @@ export function createServer(config: Config) {
   // Wire session cleanup so app delete/rename cleans up in-memory chat sessions
   appManager.setSessionCleanup(chatSessionManager);
 
+  // --- AI-powered app creation endpoint ---
+  app.post('/api/v1/apps/create-with-ai', async (c) => {
+    let body: { idea?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new BadRequestError('Invalid JSON body');
+    }
+
+    if (!body.idea?.trim()) {
+      throw new BadRequestError('Request body must include a non-empty "idea" field');
+    }
+
+    // 1. Extract structured app info from free-text via LLM
+    const info = await extractAppInfo(body.idea.trim());
+
+    // 2. Deduplicate slug against existing apps
+    const slug = deduplicateSlug(info.slug, (s) => appManager.exists(s));
+
+    // 3. Create app (includes auto-reconcile)
+    const result = await appManager.create(slug, info.description, info.displayName);
+
+    // 4. Start Agent with the original idea text (fire-and-forget)
+    const session = chatSessionManager.getOrCreate(slug);
+    session.injectPrompt(body.idea.trim()).catch((err) => {
+      console.error(`Failed to inject prompt for '${slug}':`, err);
+    });
+
+    // 5. Return slug for frontend navigation
+    const data: Record<string, unknown> = {
+      slug: result.app.slug,
+      displayName: result.app.displayName,
+      description: result.app.description,
+    };
+    if (result.reconcileError) {
+      data.reconcileError = result.reconcileError;
+    }
+    return c.json({ data }, 201);
+  });
+
   // --- Web UI static files ---
   const webDistDir = resolve(import.meta.dir, '..', '..', 'web', 'dist');
 
@@ -276,7 +318,7 @@ export function createServer(config: Config) {
     });
   }
 
-  return { app, workspace, registry, uiBridge, chatSessionManager, draftReconciler, verifier, publisher, startup };
+  return { app, workspace, registry, uiBridge, chatSessionManager, appManager, draftReconciler, verifier, publisher, startup };
 }
 
 /**
@@ -293,19 +335,19 @@ async function initializeRuntime(
     console.log('Auto-publishing template apps...');
     workspace.refreshAllAppStates();
     for (const appDef of workspace.scanApps()) {
-      const state = workspace.getAppState(appDef.name);
+      const state = workspace.getAppState(appDef.slug);
       if (state?.stableStatus === null && state.hasDraft) {
-        console.log(`  Auto-publishing template app: ${appDef.name}`);
+        console.log(`  Auto-publishing template app: ${appDef.slug}`);
         try {
-          const result = await publisher.publish(appDef.name);
+          const result = await publisher.publish(appDef.slug);
           if (result.success) {
-            console.log(`  Published: ${appDef.name}`);
-            workspace.refreshAppState(appDef.name);
+            console.log(`  Published: ${appDef.slug}`);
+            workspace.refreshAppState(appDef.slug);
           } else {
-            console.error(`  Failed to auto-publish '${appDef.name}': ${result.error}`);
+            console.error(`  Failed to auto-publish '${appDef.slug}': ${result.error}`);
           }
         } catch (err) {
-          console.error(`  Failed to auto-publish '${appDef.name}':`, err);
+          console.error(`  Failed to auto-publish '${appDef.slug}':`, err);
         }
       }
     }
@@ -313,35 +355,35 @@ async function initializeRuntime(
 
   // Start all apps in the Runtime registry
   for (const appDef of workspace.scanApps()) {
-    const state = workspace.getAppState(appDef.name);
-    const appContext = workspace.getOrCreateApp(appDef.name);
+    const state = workspace.getAppState(appDef.slug);
+    const appContext = workspace.getOrCreateApp(appDef.slug);
     if (!appContext || !state) continue;
 
     if (state.stableStatus === 'running') {
       try {
-        registry.start(appDef.name, {
+        registry.start(appDef.slug, {
           mode: 'stable',
           dbPath: appContext.stableDbPath,
           functionsDir: join(appContext.stableDataDir, 'functions'),
           uiDir: join(appContext.stableDataDir, 'ui'),
         });
-        console.log(`  Started app: ${appDef.name}:stable`);
+        console.log(`  Started app: ${appDef.slug}:stable`);
       } catch (err) {
-        console.error(`  Failed to start ${appDef.name}:stable:`, err);
+        console.error(`  Failed to start ${appDef.slug}:stable:`, err);
       }
     }
 
     if (state.hasDraft) {
       try {
-        registry.start(appDef.name, {
+        registry.start(appDef.slug, {
           mode: 'draft',
           dbPath: appContext.draftDbPath,
           functionsDir: join(appContext.draftDataDir, 'functions'),
           uiDir: join(appContext.draftDataDir, 'ui'),
         });
-        console.log(`  Started app: ${appDef.name}:draft`);
+        console.log(`  Started app: ${appDef.slug}:draft`);
       } catch (err) {
-        console.error(`  Failed to start ${appDef.name}:draft:`, err);
+        console.error(`  Failed to start ${appDef.slug}:draft:`, err);
       }
     }
   }

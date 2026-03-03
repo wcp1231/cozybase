@@ -113,7 +113,7 @@ describe('Management API (/api/v1/apps)', () => {
       expect(res.status).toBe(201);
 
       const body = await jsonBody(res);
-      expect(body.data.name).toBe('newapp');
+      expect(body.data.slug).toBe('newapp');
       expect(body.data.description).toBe('My new app');
       expect(body.data.current_version).toBe(1);
       expect(body.data.published_version).toBe(0);
@@ -462,7 +462,7 @@ describe('Management API (/api/v1/apps)', () => {
       expect(res.status).toBe(200);
 
       const body = await jsonBody(res);
-      expect(body.data.map((item: any) => item.name).sort()).toEqual(['hybrid', 'stable-only']);
+      expect(body.data.map((item: any) => item.slug).sort()).toEqual(['hybrid', 'stable-only']);
     });
 
     test('GET /apps supports filtering by draft mode', async () => {
@@ -489,7 +489,7 @@ describe('Management API (/api/v1/apps)', () => {
       expect(res.status).toBe(200);
 
       const body = await jsonBody(res);
-      expect(body.data.map((item: any) => item.name).sort()).toEqual(['draft-only', 'hybrid']);
+      expect(body.data.map((item: any) => item.slug).sort()).toEqual(['draft-only', 'hybrid']);
     });
 
     test('GET /apps/:name returns 404 for nonexistent app', async () => {
@@ -516,7 +516,7 @@ describe('Management API (/api/v1/apps)', () => {
       expect(res.status).toBe(200);
 
       const body = await jsonBody(res);
-      expect(body.data.name).toBe('myapp');
+      expect(body.data.slug).toBe('myapp');
       expect(body.data.files).toBeArray();
       expect(body.data.files.length).toBeGreaterThan(0);
     });
@@ -570,7 +570,7 @@ describe('Management API (/api/v1/apps)', () => {
       const getRes = await app.request('/api/v1/apps/lifecycle');
       expect(getRes.status).toBe(200);
       const fetched = (await jsonBody(getRes)).data;
-      expect(fetched.name).toBe('lifecycle');
+      expect(fetched.slug).toBe('lifecycle');
       expect(fetched.files.some((f: any) => f.path === 'app.yaml')).toBe(true);
 
       // 3. Whole-app update

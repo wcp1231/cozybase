@@ -158,7 +158,7 @@ describe('DraftReconciler', () => {
     });
     createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
     handle.workspace.getPlatformDb().query(
-      "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+      "UPDATE apps SET stable_status = 'stopped' WHERE slug = ?",
     ).run('myapp');
     addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');

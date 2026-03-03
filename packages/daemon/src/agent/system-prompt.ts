@@ -4,7 +4,7 @@
  * Kept minimal — platform details, workflow, and conventions are in CLAUDE.md
  * which the SDK loads automatically via settingSources: ['project'].
  *
- * buildSystemPrompt(appName) appends the current app context so the agent
+ * buildSystemPrompt(appSlug) appends the current app context so the agent
  * knows which app it is editing without needing to ask.
  */
 
@@ -21,12 +21,12 @@ Your working directory contains an \`apps/\` folder. Each app's files are stored
 - Keep responses concise and focused on the task
 `;
 
-export function buildSystemPrompt(appName: string): string {
+export function buildSystemPrompt(appSlug: string): string {
   return `${BASE_PROMPT}
 ## Current Context
 
-You are working on the app "${appName}".
-- All tool calls should target app_name="${appName}" unless the user explicitly asks about another app
+You are working on the app "${appSlug}".
+- All tool calls should target app_name="${appSlug}" unless the user explicitly asks about another app
 - Proactively call \`fetch_app\` with this app name at the start of a new conversation
 `;
 }

@@ -17,7 +17,7 @@ export function AppPageView() {
   const location = useLocation();
   const [busyAction, setBusyAction] = useState<'publish' | 'start' | 'stop' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pagePanelOpen, setPagePanelOpen] = useState(mode === 'draft');
+  const [pagePanelOpen, setPagePanelOpen] = useState(false);
 
   const subPathRef = useRef(subPath);
   subPathRef.current = subPath;
@@ -75,7 +75,7 @@ export function AppPageView() {
 
   const currentPageId = slotState.type === 'render' ? slotState.page.id : pagesJson?.pages[0]?.id;
   const currentPageTitle = pagesJson?.pages.find((page) => page.id === currentPageId)?.title ?? '页面';
-  const tone = getAppTone(app?.name ?? appName ?? 'app', app?.stableStatus ?? null);
+  const tone = getAppTone(app?.slug ?? appName ?? 'app', app?.stableStatus ?? null);
 
   const goToUrl = useCallback(
     (url: string) => {
@@ -161,12 +161,12 @@ export function AppPageView() {
             </Link>
 
             <div className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase', tone.iconBg, tone.iconText)}>
-              {getAppInitials(app?.name ?? appName ?? 'app')}
+              {getAppInitials(app?.displayName || app?.slug || appName || 'app')}
             </div>
 
             <div className="min-w-0 flex gap-2">
               <div className='truncate font-["Outfit",sans-serif] text-[22px] font-extrabold text-[#18181B]'>
-                {app?.name ?? appName ?? '应用详情'}
+                {app?.displayName || app?.slug || appName || '应用详情'}
               </div>
               {(mode === 'draft' || app?.stableStatus === 'stopped') && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -250,7 +250,7 @@ export function AppPageView() {
             ) : null}
 
             <div className="flex h-9 items-center gap-2 border-b border-[#E7EBF2] bg-white px-4 text-xs md:px-8">
-              <span className="font-medium text-[#94A3B8]">{app?.name ?? appName}</span>
+              <span className="font-medium text-[#94A3B8]">{app?.slug ?? appName}</span>
               <ChevronRight className="h-3.5 w-3.5 text-[#CBD5E1]" />
               <span className="font-semibold text-[#1E293B]">{currentPageTitle}</span>
             </div>

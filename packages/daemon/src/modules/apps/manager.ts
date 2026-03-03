@@ -12,10 +12,11 @@ import {
   BadRequestError,
 } from '../../core/errors';
 import type { AppRegistry, AppMode } from '@cozybase/runtime';
+import type { DraftReconciler } from '../../core/draft-reconciler';
 
 // --- Types ---
 
-const APP_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const APP_SLUG_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 /** Validate that a file path is safe (no traversal, no absolute paths) */
 function assertSafeFilePath(filePath: string): void {
@@ -32,7 +33,8 @@ function assertSafeFilePath(filePath: string): void {
 }
 
 export interface App {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
@@ -49,7 +51,8 @@ export interface AppFile {
 }
 
 export interface AppWithFiles {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
@@ -61,6 +64,7 @@ export interface AppWithFiles {
 export interface CreateAppResult {
   app: AppWithFiles;
   apiKey: string; // plain text, shown only once
+  reconcileError?: string; // non-fatal: app created but draft env failed
 }
 
 // Template function file content
@@ -73,7 +77,7 @@ export async function GET(ctx: FunctionContext) {
 
 /** Callback to clean up agent sessions when apps are deleted/renamed */
 export interface SessionCleanup {
-  remove(appName: string): void;
+  remove(appSlug: string): void;
 }
 
 // --- AppManager ---
@@ -84,6 +88,7 @@ export class AppManager {
   constructor(
     private workspace: Workspace,
     private registry?: AppRegistry,
+    private draftReconciler?: DraftReconciler,
   ) {}
 
   /** Set the session cleanup handler (called by server.ts after ChatSessionManager is created) */
@@ -91,22 +96,28 @@ export class AppManager {
     this.sessionCleanup = cleanup;
   }
 
+  /** Check if a slug exists */
+  exists(slug: string): boolean {
+    const db = this.workspace.getPlatformDb();
+    return !!db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
+  }
+
   /** List apps (basic info, no files), optionally filtered by mode */
   list(mode?: AppMode): (App & { has_ui: boolean })[] {
     const db = this.workspace.getPlatformDb();
     const apps = db.query(
-      'SELECT name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
+      'SELECT slug, display_name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
     ).all() as AppRecord[];
 
     // Batch-check which apps have ui/pages.json
     const uiFiles = db.query(
-      "SELECT DISTINCT app_name FROM app_files WHERE path = 'ui/pages.json'",
-    ).all() as { app_name: string }[];
-    const appsWithUi = new Set(uiFiles.map((f) => f.app_name));
+      "SELECT DISTINCT app_slug FROM app_files WHERE path = 'ui/pages.json'",
+    ).all() as { app_slug: string }[];
+    const appsWithUi = new Set(uiFiles.map((f) => f.app_slug));
 
     const summaries = apps.map((app) => ({
       ...this.toApp(app),
-      has_ui: appsWithUi.has(app.name),
+      has_ui: appsWithUi.has(app.slug),
     }));
 
     if (!mode) {
@@ -121,26 +132,27 @@ export class AppManager {
   }
 
   /** Get a single app's basic info */
-  get(name: string): App {
+  get(slug: string): App {
     const db = this.workspace.getPlatformDb();
     const app = db.query(
-      'SELECT name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps WHERE name = ?',
-    ).get(name) as AppRecord | null;
-    if (!app) throw new NotFoundError(`App '${name}' not found`);
+      'SELECT slug, display_name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps WHERE slug = ?',
+    ).get(slug) as AppRecord | null;
+    if (!app) throw new NotFoundError(`App '${slug}' not found`);
     return this.toApp(app);
   }
 
   /** Get a single app with all its files */
-  getAppWithFiles(name: string): AppWithFiles {
-    const app = this.get(name);
+  getAppWithFiles(slug: string): AppWithFiles {
+    const app = this.get(slug);
     const db = this.workspace.getPlatformDb();
 
     const files = db.query(
-      'SELECT path, content, immutable FROM app_files WHERE app_name = ? ORDER BY path',
-    ).all(name) as { path: string; content: string; immutable: number }[];
+      'SELECT path, content, immutable FROM app_files WHERE app_slug = ? ORDER BY path',
+    ).all(slug) as { path: string; content: string; immutable: number }[];
 
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName,
       description: app.description,
       stableStatus: app.stableStatus,
       hasDraft: app.hasDraft,
@@ -155,21 +167,21 @@ export class AppManager {
   }
 
   /** Create a new app with template files */
-  create(name: string, description = ''): CreateAppResult {
-    // Validate name
-    if (!APP_NAME_PATTERN.test(name)) {
-      throw new InvalidNameError(`Invalid app name '${name}'. Must match ${APP_NAME_PATTERN}`);
+  async create(slug: string, description = '', displayName = ''): Promise<CreateAppResult> {
+    // Validate slug
+    if (!APP_SLUG_PATTERN.test(slug)) {
+      throw new InvalidNameError(`Invalid app slug '${slug}'. Must match ${APP_SLUG_PATTERN}`);
     }
-    if (name.startsWith('_')) {
-      throw new InvalidNameError(`Invalid app name '${name}'. App names cannot start with '_'`);
+    if (slug.startsWith('_')) {
+      throw new InvalidNameError(`Invalid app slug '${slug}'. App slugs cannot start with '_'`);
     }
 
     const db = this.workspace.getPlatformDb();
 
-    // Check name uniqueness
-    const existing = db.query('SELECT name FROM apps WHERE name = ?').get(name);
+    // Check slug uniqueness
+    const existing = db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
     if (existing) {
-      throw new AlreadyExistsError(`App with name '${name}' already exists`);
+      throw new AlreadyExistsError(`App with slug '${slug}' already exists`);
     }
 
     // Wrap all writes in a transaction
@@ -177,37 +189,53 @@ export class AppManager {
     try {
       // Create app record with version = 1
       db.query(
-        'INSERT INTO apps (name, description, current_version, published_version) VALUES (?, ?, 1, 0)',
-      ).run(name, description);
+        'INSERT INTO apps (slug, display_name, description, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
+      ).run(slug, displayName, description);
 
       // Create template files in app_files
       const templateFiles = [
         { path: 'app.yaml', content: `description: ${description}\n` },
-        { path: 'migrations/001_init.sql', content: '-- Write your first migration here\n' },
         { path: 'functions/hello.ts', content: TEMPLATE_FUNCTION },
       ];
 
       for (const file of templateFiles) {
         db.query(
-          'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
-        ).run(name, file.path, file.content);
+          'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
+        ).run(slug, file.path, file.content);
       }
 
       // Generate a default service API key
       const rawKey = `cb_${nanoid(32)}`;
       const keyId = nanoid(12);
       db.query(
-        'INSERT INTO api_keys (id, app_name, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
-      ).run(keyId, name, hashApiKey(rawKey), 'Default Service Key', 'service');
+        'INSERT INTO api_keys (id, app_slug, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
+      ).run(keyId, slug, hashApiKey(rawKey), 'Default Service Key', 'service');
 
       db.exec('COMMIT');
 
       // Refresh app state cache
-      this.workspace.refreshAppState(name);
-      this.ensureDraftRuntime(name);
+      this.workspace.refreshAppState(slug);
 
-      const appWithFiles = this.getAppWithFiles(name);
-      return { app: appWithFiles, apiKey: rawKey };
+      // Auto-reconcile to initialize Draft environment (creates draft DB, functions, UI)
+      let reconcileError: string | undefined;
+      if (this.draftReconciler) {
+        try {
+          const reconcileResult = await this.draftReconciler.reconcile(slug);
+          if (!reconcileResult.success) {
+            reconcileError = reconcileResult.error ?? 'Draft reconcile failed';
+            console.error(`Auto-reconcile failed for '${slug}': ${reconcileError}`);
+          }
+        } catch (err) {
+          reconcileError = err instanceof Error ? err.message : String(err);
+          console.error(`Auto-reconcile failed for '${slug}':`, err);
+        }
+      }
+
+      // Start draft runtime (now with reconciled state)
+      this.ensureDraftRuntime(slug);
+
+      const appWithFiles = this.getAppWithFiles(slug);
+      return { app: appWithFiles, apiKey: rawKey, reconcileError };
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
@@ -216,7 +244,7 @@ export class AppManager {
 
   /** Whole-app update with optimistic locking */
   updateApp(
-    name: string,
+    slug: string,
     files: { path: string; content: string }[],
     baseVersion: number,
   ): AppWithFiles {
@@ -235,10 +263,10 @@ export class AppManager {
 
     // Check app exists and verify version
     const app = db.query(
-      'SELECT current_version FROM apps WHERE name = ?',
-    ).get(name) as { current_version: number } | null;
+      'SELECT current_version FROM apps WHERE slug = ?',
+    ).get(slug) as { current_version: number } | null;
 
-    if (!app) throw new NotFoundError(`App '${name}' not found`);
+    if (!app) throw new NotFoundError(`App '${slug}' not found`);
 
     if (app.current_version !== baseVersion) {
       throw new VersionConflictError(
@@ -248,8 +276,8 @@ export class AppManager {
 
     // Get current files from DB
     const currentFiles = db.query(
-      'SELECT path, content, immutable FROM app_files WHERE app_name = ?',
-    ).all(name) as { path: string; content: string; immutable: number }[];
+      'SELECT path, content, immutable FROM app_files WHERE app_slug = ?',
+    ).all(slug) as { path: string; content: string; immutable: number }[];
 
     const currentFileMap = new Map(currentFiles.map((f) => [f.path, f]));
     const requestedPaths = new Set(files.map((f) => f.path));
@@ -270,7 +298,7 @@ export class AppManager {
       // Delete non-immutable files that are not in the request
       for (const current of currentFiles) {
         if (!requestedPaths.has(current.path) && current.immutable !== 1) {
-          db.query('DELETE FROM app_files WHERE app_name = ? AND path = ?').run(name, current.path);
+          db.query('DELETE FROM app_files WHERE app_slug = ? AND path = ?').run(slug, current.path);
         }
       }
 
@@ -280,21 +308,21 @@ export class AppManager {
         if (!current) {
           // New file
           db.query(
-            'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
-          ).run(name, file.path, file.content);
+            'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
+          ).run(slug, file.path, file.content);
         } else if (current.content !== file.content && current.immutable !== 1) {
           // Modified non-immutable file
           db.query(
-            "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = ?",
-          ).run(file.content, name, file.path);
+            "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_slug = ? AND path = ?",
+          ).run(file.content, slug, file.path);
         }
         // Immutable files with same content: skip
       }
 
       // Increment version
       db.query(
-        "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?",
-      ).run(name);
+        "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?",
+      ).run(slug);
 
       db.exec('COMMIT');
     } catch (err) {
@@ -302,24 +330,24 @@ export class AppManager {
       throw err;
     }
 
-    this.workspace.refreshAppState(name);
-    this.ensureDraftRuntime(name);
-    return this.getAppWithFiles(name);
+    this.workspace.refreshAppState(slug);
+    this.ensureDraftRuntime(slug);
+    return this.getAppWithFiles(slug);
   }
 
   /** Single file update (no version lock needed) */
-  updateFile(name: string, path: string, content: string): AppFile {
+  updateFile(slug: string, path: string, content: string): AppFile {
     assertSafeFilePath(path);
     const db = this.workspace.getPlatformDb();
 
     // Check app exists
-    const app = db.query('SELECT name FROM apps WHERE name = ?').get(name);
-    if (!app) throw new NotFoundError(`App '${name}' not found`);
+    const app = db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
+    if (!app) throw new NotFoundError(`App '${slug}' not found`);
 
     // Check immutability
     const existing = db.query(
-      'SELECT immutable, content FROM app_files WHERE app_name = ? AND path = ?',
-    ).get(name, path) as { immutable: number; content: string } | null;
+      'SELECT immutable, content FROM app_files WHERE app_slug = ? AND path = ?',
+    ).get(slug, path) as { immutable: number; content: string } | null;
 
     if (existing && existing.immutable === 1 && existing.content !== content) {
       throw new ImmutableFileError(
@@ -329,69 +357,69 @@ export class AppManager {
 
     // UPSERT
     db.query(`
-      INSERT INTO app_files (app_name, path, content)
+      INSERT INTO app_files (app_slug, path, content)
       VALUES (?, ?, ?)
-      ON CONFLICT(app_name, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
-    `).run(name, path, content);
+      ON CONFLICT(app_slug, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
+    `).run(slug, path, content);
 
     // Increment version
     db.query(
-      "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?",
-    ).run(name);
+      "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?",
+    ).run(slug);
 
-    this.workspace.refreshAppState(name);
-    this.ensureDraftRuntime(name);
+    this.workspace.refreshAppState(slug);
+    this.ensureDraftRuntime(slug);
 
     const immutable = existing?.immutable === 1;
     return { path, content, immutable };
   }
 
   /** Delete an app entirely */
-  delete(name: string): void {
-    const app = this.get(name);
+  delete(slug: string): void {
+    const app = this.get(slug);
     if (app.stableStatus === 'running') {
-      throw new BadRequestError(`App '${name}' must be stopped before deletion`);
+      throw new BadRequestError(`App '${slug}' must be stopped before deletion`);
     }
 
     if (this.registry) {
       try {
-        this.registry.stop(name, 'stable');
+        this.registry.stop(slug, 'stable');
       } catch {
         // Ignore if the runtime was not running.
       }
       try {
-        this.registry.stop(name, 'draft');
+        this.registry.stop(slug, 'draft');
       } catch {
         // Ignore if the runtime was not running.
       }
     }
 
     // Clean up in-memory chat session (DB rows cascade-delete via FK)
-    this.sessionCleanup?.remove(name);
+    this.sessionCleanup?.remove(slug);
 
     // Remove from workspace caches (also closes DB connections)
-    this.workspace.removeApp(name);
+    this.workspace.removeApp(slug);
 
     // Remove platform records (CASCADE handles dependent app_files and api_keys rows)
     const db = this.workspace.getPlatformDb();
-    db.query('DELETE FROM apps WHERE name = ?').run(name);
+    db.query('DELETE FROM apps WHERE slug = ?').run(slug);
 
     // Remove app data directory (stable DB + functions)
-    const appDataDir = join(this.workspace.stableDir, name);
+    const appDataDir = join(this.workspace.stableDir, slug);
     if (existsSync(appDataDir)) {
       rmSync(appDataDir, { recursive: true, force: true });
     }
 
     // Remove draft data directory (draft DB + functions)
-    const draftDataDir = join(this.workspace.draftDir, name);
+    const draftDataDir = join(this.workspace.draftDir, slug);
     if (existsSync(draftDataDir)) {
       rmSync(draftDataDir, { recursive: true, force: true });
     }
   }
 
   /** Update app metadata (description only) */
-  update(name: string, data: { description?: string }): App {
-    const app = this.get(name);
+  update(slug: string, data: { description?: string }): App {
+    const app = this.get(slug);
     const db = this.workspace.getPlatformDb();
 
     const fields: string[] = [];
@@ -405,17 +433,17 @@ export class AppManager {
     if (fields.length === 0) return app;
 
     fields.push("updated_at = datetime('now')");
-    values.push(name);
+    values.push(slug);
 
-    db.query(`UPDATE apps SET ${fields.join(', ')} WHERE name = ?`).run(...values);
-    this.workspace.refreshAppState(name);
-    return this.get(name);
+    db.query(`UPDATE apps SET ${fields.join(', ')} WHERE slug = ?`).run(...values);
+    this.workspace.refreshAppState(slug);
+    return this.get(slug);
   }
 
-  startStable(name: string): App {
-    const app = this.get(name);
+  startStable(slug: string): App {
+    const app = this.get(slug);
     if (app.stableStatus === null) {
-      throw new BadRequestError(`App '${name}' has no stable version to start`);
+      throw new BadRequestError(`App '${slug}' has no stable version to start`);
     }
     if (app.stableStatus === 'running') {
       return app;
@@ -423,27 +451,27 @@ export class AppManager {
 
     const db = this.workspace.getPlatformDb();
     db.query(
-      "UPDATE apps SET stable_status = 'running', updated_at = datetime('now') WHERE name = ?",
-    ).run(name);
-    this.workspace.refreshAppState(name);
+      "UPDATE apps SET stable_status = 'running', updated_at = datetime('now') WHERE slug = ?",
+    ).run(slug);
+    this.workspace.refreshAppState(slug);
 
-    const appContext = this.workspace.getOrCreateApp(name);
+    const appContext = this.workspace.getOrCreateApp(slug);
     if (this.registry && appContext) {
-      const existing = this.registry.get(name, 'stable');
+      const existing = this.registry.get(slug, 'stable');
       if (existing?.status === 'running') {
-        this.registry.restart(name, this.getRuntimeConfig(name, 'stable'));
+        this.registry.restart(slug, this.getRuntimeConfig(slug, 'stable'));
       } else {
-        this.registry.start(name, this.getRuntimeConfig(name, 'stable'));
+        this.registry.start(slug, this.getRuntimeConfig(slug, 'stable'));
       }
     }
 
-    return this.get(name);
+    return this.get(slug);
   }
 
-  stopStable(name: string): App {
-    const app = this.get(name);
+  stopStable(slug: string): App {
+    const app = this.get(slug);
     if (app.stableStatus === null) {
-      throw new BadRequestError(`App '${name}' has no stable version to stop`);
+      throw new BadRequestError(`App '${slug}' has no stable version to stop`);
     }
     if (app.stableStatus === 'stopped') {
       return app;
@@ -451,64 +479,64 @@ export class AppManager {
 
     const db = this.workspace.getPlatformDb();
     db.query(
-      "UPDATE apps SET stable_status = 'stopped', updated_at = datetime('now') WHERE name = ?",
-    ).run(name);
-    this.workspace.refreshAppState(name);
+      "UPDATE apps SET stable_status = 'stopped', updated_at = datetime('now') WHERE slug = ?",
+    ).run(slug);
+    this.workspace.refreshAppState(slug);
 
     if (this.registry) {
       try {
-        this.registry.stop(name, 'stable');
+        this.registry.stop(slug, 'stable');
       } catch {
         // Ignore if the runtime was not running.
       }
     }
 
-    return this.get(name);
+    return this.get(slug);
   }
 
-  rename(oldName: string, newName: string): AppWithFiles {
-    const app = this.get(oldName);
+  rename(oldSlug: string, newSlug: string): AppWithFiles {
+    const app = this.get(oldSlug);
     if (app.stableStatus === 'running') {
-      throw new BadRequestError(`App '${oldName}' must be stopped before renaming`);
+      throw new BadRequestError(`App '${oldSlug}' must be stopped before renaming`);
     }
 
-    if (oldName === newName) {
-      return this.getAppWithFiles(oldName);
+    if (oldSlug === newSlug) {
+      return this.getAppWithFiles(oldSlug);
     }
 
-    if (!APP_NAME_PATTERN.test(newName)) {
-      throw new InvalidNameError(`Invalid app name '${newName}'. Must match ${APP_NAME_PATTERN}`);
+    if (!APP_SLUG_PATTERN.test(newSlug)) {
+      throw new InvalidNameError(`Invalid app slug '${newSlug}'. Must match ${APP_SLUG_PATTERN}`);
     }
-    if (newName.startsWith('_')) {
-      throw new InvalidNameError(`Invalid app name '${newName}'. App names cannot start with '_'`);
+    if (newSlug.startsWith('_')) {
+      throw new InvalidNameError(`Invalid app slug '${newSlug}'. App slugs cannot start with '_'`);
     }
 
     const db = this.workspace.getPlatformDb();
-    const existing = db.query('SELECT name FROM apps WHERE name = ?').get(newName);
+    const existing = db.query('SELECT slug FROM apps WHERE slug = ?').get(newSlug);
     if (existing) {
-      throw new AlreadyExistsError(`App with name '${newName}' already exists`);
+      throw new AlreadyExistsError(`App with slug '${newSlug}' already exists`);
     }
 
-    const oldContext = this.workspace.getOrCreateApp(oldName);
+    const oldContext = this.workspace.getOrCreateApp(oldSlug);
     oldContext?.close();
 
-    const oldDraftWasRunning = this.registry?.get(oldName, 'draft')?.status === 'running';
-    const oldStableWasRunning = this.registry?.get(oldName, 'stable')?.status === 'running';
+    const oldDraftWasRunning = this.registry?.get(oldSlug, 'draft')?.status === 'running';
+    const oldStableWasRunning = this.registry?.get(oldSlug, 'stable')?.status === 'running';
 
     if (this.registry && oldDraftWasRunning) {
-      this.registry.stop(oldName, 'draft');
+      this.registry.stop(oldSlug, 'draft');
     }
     if (this.registry && oldStableWasRunning) {
-      this.registry.stop(oldName, 'stable');
+      this.registry.stop(oldSlug, 'stable');
     }
 
-    const oldStableDir = join(this.workspace.stableDir, oldName);
-    const newStableDir = join(this.workspace.stableDir, newName);
-    const oldDraftDir = join(this.workspace.draftDir, oldName);
-    const newDraftDir = join(this.workspace.draftDir, newName);
+    const oldStableDir = join(this.workspace.stableDir, oldSlug);
+    const newStableDir = join(this.workspace.stableDir, newSlug);
+    const oldDraftDir = join(this.workspace.draftDir, oldSlug);
+    const newDraftDir = join(this.workspace.draftDir, newSlug);
 
     if (existsSync(newStableDir) || existsSync(newDraftDir)) {
-      throw new AlreadyExistsError(`Filesystem data for app '${newName}' already exists`);
+      throw new AlreadyExistsError(`Filesystem data for app '${newSlug}' already exists`);
     }
 
     let stableDirRenamed = false;
@@ -518,7 +546,8 @@ export class AppManager {
     try {
       db.query(`
         INSERT INTO apps (
-          name,
+          slug,
+          display_name,
           description,
           stable_status,
           current_version,
@@ -528,6 +557,7 @@ export class AppManager {
         )
         SELECT
           ?,
+          display_name,
           description,
           stable_status,
           current_version,
@@ -535,14 +565,14 @@ export class AppManager {
           created_at,
           datetime('now')
         FROM apps
-        WHERE name = ?
-      `).run(newName, oldName);
+        WHERE slug = ?
+      `).run(newSlug, oldSlug);
 
-      db.query('UPDATE app_files SET app_name = ? WHERE app_name = ?').run(newName, oldName);
-      db.query('UPDATE api_keys SET app_name = ? WHERE app_name = ?').run(newName, oldName);
-      db.query('UPDATE agent_sessions SET app_name = ? WHERE app_name = ?').run(newName, oldName);
-      db.query('UPDATE agent_messages SET app_name = ? WHERE app_name = ?').run(newName, oldName);
-      db.query('DELETE FROM apps WHERE name = ?').run(oldName);
+      db.query('UPDATE app_files SET app_slug = ? WHERE app_slug = ?').run(newSlug, oldSlug);
+      db.query('UPDATE api_keys SET app_slug = ? WHERE app_slug = ?').run(newSlug, oldSlug);
+      db.query('UPDATE agent_sessions SET app_slug = ? WHERE app_slug = ?').run(newSlug, oldSlug);
+      db.query('UPDATE agent_messages SET app_slug = ? WHERE app_slug = ?').run(newSlug, oldSlug);
+      db.query('DELETE FROM apps WHERE slug = ?').run(oldSlug);
 
       if (existsSync(oldStableDir)) {
         renameSync(oldStableDir, newStableDir);
@@ -565,43 +595,43 @@ export class AppManager {
       throw err;
     }
 
-    this.sessionCleanup?.remove(oldName);
-    this.workspace.removeApp(oldName);
-    this.workspace.refreshAppState(newName);
-    this.ensureDraftRuntime(newName);
+    this.sessionCleanup?.remove(oldSlug);
+    this.workspace.removeApp(oldSlug);
+    this.workspace.refreshAppState(newSlug);
+    this.ensureDraftRuntime(newSlug);
 
-    return this.getAppWithFiles(newName);
+    return this.getAppWithFiles(newSlug);
   }
 
-  private ensureDraftRuntime(name: string): void {
+  private ensureDraftRuntime(slug: string): void {
     if (!this.registry) return;
 
-    const state = this.workspace.getAppState(name) ?? this.workspace.refreshAppState(name);
+    const state = this.workspace.getAppState(slug) ?? this.workspace.refreshAppState(slug);
     if (!state?.hasDraft) return;
 
-    const existing = this.registry.get(name, 'draft');
+    const existing = this.registry.get(slug, 'draft');
     if (existing?.status === 'running') return;
 
     if (existing) {
-      this.registry.restart(name, this.getRuntimeConfig(name, 'draft'));
+      this.registry.restart(slug, this.getRuntimeConfig(slug, 'draft'));
       return;
     }
 
-    this.registry.start(name, this.getRuntimeConfig(name, 'draft'));
+    this.registry.start(slug, this.getRuntimeConfig(slug, 'draft'));
   }
 
-  private getStateInfo(name: string): AppStateInfo {
-    const state = this.workspace.getAppState(name) ?? this.workspace.refreshAppState(name);
+  private getStateInfo(slug: string): AppStateInfo {
+    const state = this.workspace.getAppState(slug) ?? this.workspace.refreshAppState(slug);
     if (!state) {
-      throw new NotFoundError(`App '${name}' not found`);
+      throw new NotFoundError(`App '${slug}' not found`);
     }
     return state;
   }
 
-  private getRuntimeConfig(name: string, mode: AppMode) {
-    const appContext = this.workspace.getOrCreateApp(name);
+  private getRuntimeConfig(slug: string, mode: AppMode) {
+    const appContext = this.workspace.getOrCreateApp(slug);
     if (!appContext) {
-      throw new NotFoundError(`App '${name}' not found`);
+      throw new NotFoundError(`App '${slug}' not found`);
     }
 
     if (mode === 'stable') {
@@ -622,9 +652,10 @@ export class AppManager {
   }
 
   private toApp(app: AppRecord): App {
-    const state = this.getStateInfo(app.name);
+    const state = this.getStateInfo(app.slug);
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.display_name,
       description: app.description,
       stableStatus: state.stableStatus,
       hasDraft: state.hasDraft,
@@ -637,7 +668,8 @@ export class AppManager {
 }
 
 interface AppRecord {
-  name: string;
+  slug: string;
+  display_name: string;
   description: string;
   stable_status: StableStatus | null;
   current_version: number;

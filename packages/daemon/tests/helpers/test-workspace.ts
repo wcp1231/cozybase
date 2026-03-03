@@ -65,19 +65,19 @@ export function createTestApp(
 
   // Create app record
   db.query(
-    'INSERT INTO apps (name, description, stable_status, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
+    'INSERT INTO apps (slug, description, stable_status, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
   ).run(appName, description, stableStatus);
 
   // Insert app.yaml
   db.query(
-    'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+    'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
   ).run(appName, 'app.yaml', stringifyYAML(spec));
 
   // Insert migrations
   if (opts.migrations) {
     for (const [filename, sql] of Object.entries(opts.migrations)) {
       db.query(
-        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+        'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
       ).run(appName, `migrations/${filename}`, sql);
     }
   }
@@ -86,7 +86,7 @@ export function createTestApp(
   if (opts.seeds) {
     for (const [filename, content] of Object.entries(opts.seeds)) {
       db.query(
-        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+        'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
       ).run(appName, `seeds/${filename}`, content);
     }
   }
@@ -95,7 +95,7 @@ export function createTestApp(
   if (opts.functions) {
     for (const [filename, code] of Object.entries(opts.functions)) {
       db.query(
-        'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+        'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
       ).run(appName, `functions/${filename}`, code);
     }
   }
@@ -103,7 +103,7 @@ export function createTestApp(
   // Insert UI definition
   if (opts.ui) {
     db.query(
-      'INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)',
+      'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
     ).run(appName, 'ui/pages.json', opts.ui);
   }
 }
@@ -113,31 +113,31 @@ export function createTestApp(
 export function addMigration(handle: TestWorkspaceHandle, appName: string, filename: string, sql: string): void {
   const db = handle.workspace.getPlatformDb();
   db.query(`
-    INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)
-    ON CONFLICT(app_name, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
+    INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)
+    ON CONFLICT(app_slug, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
   `).run(appName, `migrations/${filename}`, sql);
 
   // Increment current_version
-  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?").run(appName);
 }
 
 export function addFunction(handle: TestWorkspaceHandle, appName: string, filename: string, code: string): void {
   const db = handle.workspace.getPlatformDb();
   db.query(`
-    INSERT INTO app_files (app_name, path, content) VALUES (?, ?, ?)
-    ON CONFLICT(app_name, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
+    INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)
+    ON CONFLICT(app_slug, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
   `).run(appName, `functions/${filename}`, code);
 
   // Increment current_version
-  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?").run(appName);
 }
 
 export function deleteAppFile(handle: TestWorkspaceHandle, appName: string, path: string): void {
   const db = handle.workspace.getPlatformDb();
-  db.query('DELETE FROM app_files WHERE app_name = ? AND path = ?').run(appName, path);
+  db.query('DELETE FROM app_files WHERE app_slug = ? AND path = ?').run(appName, path);
 
   // Increment current_version
-  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?").run(appName);
 }
 
 export function modifyMigration(handle: TestWorkspaceHandle, appName: string, filename: string, newSql: string): void {
@@ -145,22 +145,22 @@ export function modifyMigration(handle: TestWorkspaceHandle, appName: string, fi
 
   // Check if immutable - force-clear immutable flag to simulate modification of published migration
   const record = db.query(
-    'SELECT immutable FROM app_files WHERE app_name = ? AND path = ?',
+    'SELECT immutable FROM app_files WHERE app_slug = ? AND path = ?',
   ).get(appName, `migrations/${filename}`) as { immutable: number } | null;
 
   if (record && record.immutable === 1) {
     // Clear immutable flag and update content (simulates someone tampering with a published migration)
     db.query(
-      "UPDATE app_files SET immutable = 0, content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = ?",
+      "UPDATE app_files SET immutable = 0, content = ?, updated_at = datetime('now') WHERE app_slug = ? AND path = ?",
     ).run(newSql, appName, `migrations/${filename}`);
   } else {
     db.query(
-      "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = ?",
+      "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_slug = ? AND path = ?",
     ).run(newSql, appName, `migrations/${filename}`);
   }
 
   // Increment current_version
-  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?").run(appName);
 }
 
 export function setAppSpec(handle: TestWorkspaceHandle, appName: string, spec: Record<string, unknown>): void {
@@ -168,12 +168,12 @@ export function setAppSpec(handle: TestWorkspaceHandle, appName: string, spec: R
   const content = stringifyYAML(spec);
 
   db.query(
-    "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_name = ? AND path = 'app.yaml'",
+    "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_slug = ? AND path = 'app.yaml'",
   ).run(content, appName);
 
   // Also update description and stable_status in apps table if provided
   if (spec.description !== undefined) {
-    db.query('UPDATE apps SET description = ? WHERE name = ?').run(String(spec.description), appName);
+    db.query('UPDATE apps SET description = ? WHERE slug = ?').run(String(spec.description), appName);
   }
   const stableStatus = spec.stable_status === 'running' || spec.stable_status === 'stopped'
     ? spec.stable_status
@@ -181,18 +181,18 @@ export function setAppSpec(handle: TestWorkspaceHandle, appName: string, spec: R
       ? spec.stableStatus
       : undefined;
   if (stableStatus !== undefined) {
-    db.query('UPDATE apps SET stable_status = ? WHERE name = ?').run(String(stableStatus), appName);
+    db.query('UPDATE apps SET stable_status = ? WHERE slug = ?').run(String(stableStatus), appName);
   }
 
   // Increment current_version
-  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE name = ?").run(appName);
+  db.query("UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?").run(appName);
 }
 
 /** Read a file's content from app_files DB */
 export function readAppFile(handle: TestWorkspaceHandle, appName: string, path: string): string | null {
   const db = handle.workspace.getPlatformDb();
   const record = db.query(
-    'SELECT content FROM app_files WHERE app_name = ? AND path = ?',
+    'SELECT content FROM app_files WHERE app_slug = ? AND path = ?',
   ).get(appName, path) as { content: string } | null;
   return record?.content ?? null;
 }
@@ -240,10 +240,10 @@ export function createStableDb(handle: TestWorkspaceHandle, appName: string, mig
   const platformDb = handle.workspace.getPlatformDb();
   for (const v of versions) {
     const versionPrefix = String(v).padStart(3, '0');
-    platformDb.query('UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?')
+    platformDb.query('UPDATE app_files SET immutable = 1 WHERE app_slug = ? AND path LIKE ?')
       .run(appName, `migrations/${versionPrefix}_%`);
   }
-  platformDb.query("UPDATE apps SET published_version = current_version, stable_status = 'running' WHERE name = ?").run(appName);
+  platformDb.query("UPDATE apps SET published_version = current_version, stable_status = 'running' WHERE slug = ?").run(appName);
 }
 
 // ---- Standard test fixtures ----

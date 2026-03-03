@@ -22,12 +22,12 @@ export class ChatSessionManager {
    * Get or create a ChatSession for the given app.
    * On first access, restores the SDK session ID from the store.
    */
-  getOrCreate(appName: string): ChatSession {
-    let session = this.sessions.get(appName);
+  getOrCreate(appSlug: string): ChatSession {
+    let session = this.sessions.get(appSlug);
     if (!session) {
-      const sdkSessionId = this.store.getSessionId(appName);
-      session = new ChatSession(appName, this.config, this.store, sdkSessionId);
-      this.sessions.set(appName, session);
+      const sdkSessionId = this.store.getSessionId(appSlug);
+      session = new ChatSession(appSlug, this.config, this.store, sdkSessionId);
+      this.sessions.set(appSlug, session);
     }
     return session;
   }
@@ -35,18 +35,18 @@ export class ChatSessionManager {
   /**
    * Get an existing ChatSession (returns undefined if not loaded).
    */
-  get(appName: string): ChatSession | undefined {
-    return this.sessions.get(appName);
+  get(appSlug: string): ChatSession | undefined {
+    return this.sessions.get(appSlug);
   }
 
   /**
    * Remove and shutdown a session (e.g., when an app is deleted or renamed).
    */
-  remove(appName: string): void {
-    const session = this.sessions.get(appName);
+  remove(appSlug: string): void {
+    const session = this.sessions.get(appSlug);
     if (session) {
       session.shutdown();
-      this.sessions.delete(appName);
+      this.sessions.delete(appSlug);
     }
   }
 

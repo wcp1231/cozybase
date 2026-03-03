@@ -62,11 +62,12 @@ export class LocalBackend implements CozybaseBackend {
 
   // --- App Lifecycle ---
 
-  async createApp(name: string, description?: string): Promise<AppSnapshot> {
-    const result = this.appManager.create(name, description);
+  async createApp(slug: string, description?: string, displayName?: string): Promise<AppSnapshot> {
+    const result = await this.appManager.create(slug, description, displayName);
     const app = result.app;
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName,
       description: app.description,
       stableStatus: app.stableStatus,
       hasDraft: app.hasDraft,
@@ -79,7 +80,8 @@ export class LocalBackend implements CozybaseBackend {
   async listApps(): Promise<AppInfo[]> {
     const apps = this.appManager.list();
     return apps.map((a) => ({
-      name: a.name,
+      slug: a.slug,
+      displayName: a.displayName,
       description: a.description,
       stableStatus: a.stableStatus,
       hasDraft: a.hasDraft,
@@ -88,10 +90,11 @@ export class LocalBackend implements CozybaseBackend {
     }));
   }
 
-  async fetchApp(name: string): Promise<AppSnapshot> {
-    const app = this.appManager.getAppWithFiles(name);
+  async fetchApp(slug: string): Promise<AppSnapshot> {
+    const app = this.appManager.getAppWithFiles(slug);
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName,
       description: app.description,
       stableStatus: app.stableStatus,
       hasDraft: app.hasDraft,
@@ -101,14 +104,15 @@ export class LocalBackend implements CozybaseBackend {
     };
   }
 
-  async deleteApp(name: string): Promise<void> {
-    this.appManager.delete(name);
+  async deleteApp(slug: string): Promise<void> {
+    this.appManager.delete(slug);
   }
 
-  async startApp(name: string): Promise<AppInfo> {
-    const app = this.appManager.startStable(name);
+  async startApp(slug: string): Promise<AppInfo> {
+    const app = this.appManager.startStable(slug);
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName,
       description: app.description,
       stableStatus: app.stableStatus,
       hasDraft: app.hasDraft,
@@ -117,10 +121,11 @@ export class LocalBackend implements CozybaseBackend {
     };
   }
 
-  async stopApp(name: string): Promise<AppInfo> {
-    const app = this.appManager.stopStable(name);
+  async stopApp(slug: string): Promise<AppInfo> {
+    const app = this.appManager.stopStable(slug);
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName,
       description: app.description,
       stableStatus: app.stableStatus,
       hasDraft: app.hasDraft,
@@ -131,11 +136,11 @@ export class LocalBackend implements CozybaseBackend {
 
   // --- File Sync ---
 
-  async pushFiles(name: string, files: FileEntry[]): Promise<PushResult> {
+  async pushFiles(slug: string, files: FileEntry[]): Promise<PushResult> {
     // Fetch current version for optimistic lock
-    const current = this.appManager.getAppWithFiles(name);
+    const current = this.appManager.getAppWithFiles(slug);
     const updatedApp = this.appManager.updateApp(
-      name,
+      slug,
       files.map((f) => ({ path: f.path, content: f.content })),
       current.current_version,
     );
@@ -169,23 +174,23 @@ export class LocalBackend implements CozybaseBackend {
     };
   }
 
-  async pushFile(name: string, path: string, content: string): Promise<'created' | 'updated'> {
-    const current = this.appManager.getAppWithFiles(name);
+  async pushFile(slug: string, path: string, content: string): Promise<'created' | 'updated'> {
+    const current = this.appManager.getAppWithFiles(slug);
     const existed = current.files.some((f) => f.path === path);
-    this.appManager.updateFile(name, path, content);
+    this.appManager.updateFile(slug, path, content);
     return existed ? 'updated' : 'created';
   }
 
   // --- Dev Workflow ---
 
-  async reconcile(name: string): Promise<DraftReconcileResult> {
-    this.workspace.refreshAppState(name);
-    const result = await this.draftReconciler.reconcile(name);
+  async reconcile(slug: string): Promise<DraftReconcileResult> {
+    this.workspace.refreshAppState(slug);
+    const result = await this.draftReconciler.reconcile(slug);
 
     // Restart draft runtime after reconcile
-    const appContext = this.workspace.getOrCreateApp(name);
+    const appContext = this.workspace.getOrCreateApp(slug);
     if (appContext) {
-      this.registry.restart(name, {
+      this.registry.restart(slug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,
         functionsDir: join(appContext.draftDataDir, 'functions'),
@@ -196,32 +201,32 @@ export class LocalBackend implements CozybaseBackend {
     return result;
   }
 
-  async verify(name: string): Promise<VerifyResult> {
-    this.workspace.refreshAppState(name);
-    return this.verifier.verify(name);
+  async verify(slug: string): Promise<VerifyResult> {
+    this.workspace.refreshAppState(slug);
+    return this.verifier.verify(slug);
   }
 
-  async publish(name: string): Promise<PublishResult> {
-    this.workspace.refreshAppState(name);
-    const result = await this.publisher.publish(name);
+  async publish(slug: string): Promise<PublishResult> {
+    this.workspace.refreshAppState(slug);
+    const result = await this.publisher.publish(slug);
 
     if (result.success) {
-      this.workspace.refreshAppState(name);
-      const state = this.workspace.getAppState(name);
-      const appContext = this.workspace.getOrCreateApp(name);
+      this.workspace.refreshAppState(slug);
+      const state = this.workspace.getAppState(slug);
+      const appContext = this.workspace.getOrCreateApp(slug);
 
       if (appContext && state?.stableStatus === 'running') {
-        this.registry.restart(name, {
+        this.registry.restart(slug, {
           mode: 'stable',
           dbPath: appContext.stableDbPath,
           functionsDir: join(appContext.stableDataDir, 'functions'),
           uiDir: join(appContext.stableDataDir, 'ui'),
         });
       } else {
-        try { this.registry.stop(name, 'stable'); } catch { /* ignore */ }
+        try { this.registry.stop(slug, 'stable'); } catch { /* ignore */ }
       }
 
-      try { this.registry.stop(name, 'draft'); } catch { /* ignore */ }
+      try { this.registry.stop(slug, 'draft'); } catch { /* ignore */ }
     }
 
     return result;
@@ -229,23 +234,17 @@ export class LocalBackend implements CozybaseBackend {
 
   // --- Runtime Interaction ---
 
-  async executeSql(name: string, sql: string, mode: string): Promise<SqlResult> {
+  async executeSql(slug: string, sql: string, mode: string): Promise<SqlResult> {
     const sqlMode: SqlMode = mode === 'stable' ? 'stable' : 'draft';
 
-    // Enforce the same permission model as the HTTP route:
-    // - Stable: SELECT only
-    // - Draft: SELECT + DML
-    // - DDL always forbidden
-    // - Multi-statement always forbidden
     const check = validateSql(sql, sqlMode);
     if (!check.allowed) {
       throw new Error(check.error ?? 'SQL statement not allowed');
     }
 
-    // Use read-only lookup — never lazily create databases for a query
-    const appContext = this.workspace.getApp(name);
+    const appContext = this.workspace.getApp(slug);
     if (!appContext) {
-      throw new Error(`App '${name}' not found`);
+      throw new Error(`App '${slug}' not found`);
     }
 
     const db = sqlMode === 'stable' ? appContext.stableDb : appContext.draftDb;
@@ -267,15 +266,14 @@ export class LocalBackend implements CozybaseBackend {
   }
 
   async callApi(
-    name: string,
+    slug: string,
     method: string,
     path: string,
     body?: unknown,
     mode?: string,
   ): Promise<ApiResponse> {
-    // Route through the Hono app internally (no network)
     const appMode = mode === 'stable' ? 'stable' : 'draft';
-    const reqPath = `/${appMode}/apps/${encodeURIComponent(name)}${path}`;
+    const reqPath = `/${appMode}/apps/${encodeURIComponent(slug)}${path}`;
     const url = `http://localhost${reqPath}`;
 
     const init: RequestInit = { method: method.toUpperCase() };
@@ -308,7 +306,7 @@ export class LocalBackend implements CozybaseBackend {
 
   // --- UI Inspection ---
 
-  async inspectUi(appName: string, page?: string): Promise<unknown> {
-    return this.uiBridge.inspectUi(appName, page);
+  async inspectUi(appSlug: string, page?: string): Promise<unknown> {
+    return this.uiBridge.inspectUi(appSlug, page);
   }
 }

@@ -38,7 +38,7 @@ interface WebSocketLike {
 }
 
 export class ChatSession {
-  readonly appName: string;
+  readonly appSlug: string;
   private config: ChatSessionConfig;
   private store: SessionStore;
   private activeQuery: Query | null = null;
@@ -47,12 +47,12 @@ export class ChatSession {
   private streaming = false;
 
   constructor(
-    appName: string,
+    appSlug: string,
     config: ChatSessionConfig,
     store: SessionStore,
     sdkSessionId: string | null = null,
   ) {
-    this.appName = appName;
+    this.appSlug = appSlug;
     this.config = config;
     this.store = store;
     this.sdkSessionId = sdkSessionId;
@@ -74,7 +74,7 @@ export class ChatSession {
     });
 
     // Send persisted message history
-    const history = this.store.getMessages(this.appName);
+    const history = this.store.getMessages(this.appSlug);
     if (history.length > 0) {
       this.sendToWs({
         type: 'chat:history',
@@ -140,6 +140,19 @@ export class ChatSession {
     this.streaming = false;
   }
 
+  /**
+   * Inject a prompt from the backend (no WebSocket required).
+   * Used by the AI app creation flow to start Agent work before the browser connects.
+   * Rejects if a query is already in progress.
+   */
+  async injectPrompt(text: string): Promise<void> {
+    if (this.streaming) {
+      throw new Error('Agent is busy processing a previous message');
+    }
+    // Delegate to the same handler used by WebSocket messages
+    await this.handleUserMessage(text);
+  }
+
   // --- Internal ---
 
   private async handleUserMessage(text: string): Promise<void> {
@@ -153,7 +166,7 @@ export class ChatSession {
     }
 
     // Persist user message
-    this.store.addMessage(this.appName, { role: 'user', content: text });
+    this.store.addMessage(this.appSlug, { role: 'user', content: text });
 
     this.streaming = true;
     this.sendToWs({ type: 'chat:streaming', streaming: true });
@@ -165,7 +178,7 @@ export class ChatSession {
       const options: Options = {
         model: this.config.model ?? 'claude-sonnet-4-6',
         cwd: this.config.agentDir,
-        systemPrompt: buildSystemPrompt(this.appName),
+        systemPrompt: buildSystemPrompt(this.appSlug),
         tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
         allowedTools: [
           'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
@@ -193,7 +206,7 @@ export class ChatSession {
 
         // Persist tool summaries
         if (msg.type === 'tool_use_summary') {
-          this.store.addMessage(this.appName, {
+          this.store.addMessage(this.appSlug, {
             role: 'tool',
             content: '',
             toolName: (msg as any).tool_name ?? (msg as any).name ?? 'tool',
@@ -205,13 +218,13 @@ export class ChatSession {
         // Capture session_id for subsequent resume
         if (msg.type === 'result' && !msg.is_error && 'session_id' in msg) {
           this.sdkSessionId = msg.session_id;
-          this.store.saveSessionId(this.appName, msg.session_id);
+          this.store.saveSessionId(this.appSlug, msg.session_id);
         }
       }
 
       // Persist final assistant message
       if (assistantText) {
-        this.store.addMessage(this.appName, { role: 'assistant', content: assistantText });
+        this.store.addMessage(this.appSlug, { role: 'assistant', content: assistantText });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -220,7 +233,7 @@ export class ChatSession {
       // If resume failed, clear stale SDK session ID but keep message history
       if (this.sdkSessionId && message.includes('session')) {
         this.sdkSessionId = null;
-        this.store.clearSessionId(this.appName);
+        this.store.clearSessionId(this.appSlug);
       }
     } finally {
       this.activeQuery = null;

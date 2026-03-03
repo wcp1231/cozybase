@@ -63,7 +63,7 @@ describe('Workspace', () => {
       const apps = handle.workspace.scanApps();
 
       expect(apps).toHaveLength(1);
-      expect(apps[0].name).toBe('myapp');
+      expect(apps[0].slug).toBe('myapp');
       expect(apps[0].current_version).toBe(1);
       expect(apps[0].published_version).toBe(0);
     });
@@ -133,7 +133,7 @@ describe('Workspace', () => {
       });
       createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
       handle.workspace.getPlatformDb().query(
-        "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+        "UPDATE apps SET stable_status = 'stopped' WHERE slug = ?",
       ).run('myapp');
 
       const state = handle.workspace.refreshAppState('myapp');

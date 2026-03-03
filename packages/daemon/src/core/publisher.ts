@@ -55,7 +55,7 @@ export class Publisher {
     try {
       // 2. Query migrations from app_files
       const migrationRecords = platformDb.query(
-        "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+        "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
       ).all(appName) as { path: string; content: string }[];
 
       const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
@@ -150,13 +150,13 @@ export class Publisher {
     for (const version of executedVersions) {
       const versionPrefix = String(version).padStart(3, '0');
       platformDb.query(
-        "UPDATE app_files SET immutable = 1 WHERE app_name = ? AND path LIKE ?",
+        "UPDATE app_files SET immutable = 1 WHERE app_slug = ? AND path LIKE ?",
       ).run(appName, `migrations/${versionPrefix}_%`);
     }
 
     // Update published_version = current_version
     platformDb.query(
-      "UPDATE apps SET published_version = current_version, stable_status = ?, updated_at = datetime('now') WHERE name = ?",
+      "UPDATE apps SET published_version = current_version, stable_status = ?, updated_at = datetime('now') WHERE slug = ?",
     ).run(previousStableStatus ?? 'running', appName);
   }
 
@@ -236,7 +236,7 @@ export class Publisher {
   ): Promise<PublishResult['npm']> {
     const platformDb = this.workspace.getPlatformDb();
     const record = platformDb
-      .query("SELECT content FROM app_files WHERE app_name = ? AND path = 'package.json'")
+      .query("SELECT content FROM app_files WHERE app_slug = ? AND path = 'package.json'")
       .get(appName) as { content: string } | null;
 
     if (!record) return undefined;

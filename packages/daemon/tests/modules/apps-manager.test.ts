@@ -29,10 +29,10 @@ describe('AppManager', () => {
 
     const db = handle.workspace.getPlatformDb();
     db.query(
-      'INSERT INTO api_keys (id, app_name, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO api_keys (id, app_slug, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
     ).run('target-key', 'target', 'hash-target', 'Target Key', 'service');
     db.query(
-      'INSERT INTO api_keys (id, app_name, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO api_keys (id, app_slug, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
     ).run('survivor-key', 'survivor', 'hash-survivor', 'Survivor Key', 'service');
 
     mkdirSync(join(handle.root, 'stable', 'target'), { recursive: true });
@@ -48,20 +48,20 @@ describe('AppManager', () => {
     const manager = new AppManager(handle.workspace);
     manager.delete('target');
 
-    expect(db.query('SELECT name FROM apps WHERE name = ?').get('target')).toBeNull();
+    expect(db.query('SELECT slug FROM apps WHERE slug = ?').get('target')).toBeNull();
     expect(
-      db.query('SELECT COUNT(*) AS count FROM app_files WHERE app_name = ?').get('target') as { count: number },
+      db.query('SELECT COUNT(*) AS count FROM app_files WHERE app_slug = ?').get('target') as { count: number },
     ).toEqual({ count: 0 });
     expect(
-      db.query('SELECT COUNT(*) AS count FROM api_keys WHERE app_name = ?').get('target') as { count: number },
+      db.query('SELECT COUNT(*) AS count FROM api_keys WHERE app_slug = ?').get('target') as { count: number },
     ).toEqual({ count: 0 });
 
-    expect(db.query('SELECT name FROM apps WHERE name = ?').get('survivor')).toEqual({ name: 'survivor' });
+    expect(db.query('SELECT slug FROM apps WHERE slug = ?').get('survivor')).toEqual({ slug: 'survivor' });
     expect(
-      db.query('SELECT COUNT(*) AS count FROM app_files WHERE app_name = ?').get('survivor') as { count: number },
+      db.query('SELECT COUNT(*) AS count FROM app_files WHERE app_slug = ?').get('survivor') as { count: number },
     ).toEqual({ count: 3 });
     expect(
-      db.query('SELECT COUNT(*) AS count FROM api_keys WHERE app_name = ?').get('survivor') as { count: number },
+      db.query('SELECT COUNT(*) AS count FROM api_keys WHERE app_slug = ?').get('survivor') as { count: number },
     ).toEqual({ count: 1 });
 
     expect(existsSync(join(handle.root, 'stable', 'target'))).toBe(false);

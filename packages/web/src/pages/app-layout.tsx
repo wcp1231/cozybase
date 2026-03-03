@@ -94,7 +94,8 @@ export function AppLayout() {
       const appData = appJson.data;
 
       setApp({
-        name: appData.name,
+        slug: appData.slug,
+        displayName: appData.displayName ?? '',
         description: appData.description,
         stableStatus: appData.stableStatus,
         hasDraft: appData.hasDraft,

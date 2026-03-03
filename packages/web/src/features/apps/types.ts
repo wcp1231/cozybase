@@ -1,7 +1,8 @@
 export type StableStatus = 'running' | 'stopped' | null;
 
 export interface AppSummary {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus;
   hasDraft: boolean;
@@ -13,7 +14,8 @@ export interface AppSummary {
 }
 
 export interface AppInfo {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus;
   hasDraft: boolean;

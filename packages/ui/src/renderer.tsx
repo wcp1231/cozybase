@@ -29,6 +29,14 @@ import {
 
 // ---- Public API ----
 
+/** Coerce a value that should be an array into one (handles null, undefined, single objects). */
+export function toArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value == null) return [];
+  if (typeof value === 'object') return [value as T];
+  return [];
+}
+
 export interface SchemaRendererProps {
   schema: PageSchema;
   baseUrl: string;
@@ -67,7 +75,7 @@ function PageBody({
 }) {
   return (
     <>
-      {body.map((child, i) => (
+      {toArray<ComponentSchema>(body).map((child, i) => (
         <NodeRenderer
           key={(child as { id?: string }).id ?? i}
           schema={child}

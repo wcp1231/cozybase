@@ -3,7 +3,8 @@ import { buildHomeMetrics, filterAppsByMode, getAppInitials } from './app-utils'
 
 const apps = [
   {
-    name: 'stable-app',
+    slug: 'stable-app',
+    displayName: '',
     description: '',
     stableStatus: 'running',
     hasDraft: false,
@@ -14,7 +15,8 @@ const apps = [
     has_ui: true,
   },
   {
-    name: 'draft-only',
+    slug: 'draft-only',
+    displayName: '',
     description: '',
     stableStatus: null,
     hasDraft: true,
@@ -25,7 +27,8 @@ const apps = [
     has_ui: false,
   },
   {
-    name: 'hybrid-app',
+    slug: 'hybrid-app',
+    displayName: '',
     description: '',
     stableStatus: 'stopped',
     hasDraft: true,
@@ -39,14 +42,14 @@ const apps = [
 
 describe('filterAppsByMode', () => {
   test('returns published apps for stable mode', () => {
-    expect(filterAppsByMode([...apps], 'stable').map((app) => app.name)).toEqual([
+    expect(filterAppsByMode([...apps], 'stable').map((app) => app.slug)).toEqual([
       'stable-app',
       'hybrid-app',
     ]);
   });
 
   test('returns apps with drafts for draft mode', () => {
-    expect(filterAppsByMode([...apps], 'draft').map((app) => app.name)).toEqual([
+    expect(filterAppsByMode([...apps], 'draft').map((app) => app.slug)).toEqual([
       'draft-only',
       'hybrid-app',
     ]);

@@ -4,6 +4,7 @@ import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/r
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
 import { resolveExpression } from '../engine/expression';
+import { toArray } from '../renderer';
 import {
   CzSwitch,
   CzCheckbox,
@@ -84,7 +85,7 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
         init[key] = resolveExpression(val, exprContext);
       }
     }
-    for (const field of s.fields) {
+    for (const field of toArray<FieldSchema>(s.fields)) {
       if (init[field.name] === undefined && field.defaultValue !== undefined) {
         init[field.name] = resolveExpression(field.defaultValue, exprContext);
       }
@@ -112,7 +113,7 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    for (const field of s.fields) {
+    for (const field of toArray<FieldSchema>(s.fields)) {
       if (field.required) {
         const v = values[field.name];
         if (v === undefined || v === null || v === '') {
@@ -214,7 +215,7 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
       )}
       style={s.style}
     >
-      {s.fields.map((field) => (
+      {toArray<FieldSchema>(s.fields).map((field) => (
         <FormField
           key={field.name}
           field={field}
@@ -329,7 +330,7 @@ function renderFieldInput(
             <CzSelectValue placeholder={placeholder || '-- Select --'} />
           </CzSelectTrigger>
           <CzSelectContent>
-            {(field.options ?? []).map((opt: OptionItem) => (
+            {toArray<OptionItem>(field.options).map((opt: OptionItem) => (
               <CzSelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </CzSelectItem>
@@ -385,7 +386,7 @@ function renderFieldInput(
           value={String(value ?? '')}
           onValueChange={(v) => onChange(v)}
         >
-          {(field.options ?? []).map((opt: OptionItem) => (
+          {toArray<OptionItem>(field.options).map((opt: OptionItem) => (
             <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
               <CzRadioGroupItem value={opt.value} />
               {opt.label}
@@ -572,7 +573,7 @@ function SelectRenderer({ schema, exprContext }: SchemaComponentProps) {
         className={clsx(baseInputClass, 'bg-bg', s.className)}
         style={s.style}
       >
-        {s.options.map((opt) => (
+        {toArray<OptionItem>(s.options).map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>
@@ -593,7 +594,7 @@ function SelectRenderer({ schema, exprContext }: SchemaComponentProps) {
         <CzSelectValue placeholder={s.placeholder || '-- Select --'} />
       </CzSelectTrigger>
       <CzSelectContent>
-        {s.options.map((opt) => (
+        {toArray<OptionItem>(s.options).map((opt) => (
           <CzSelectItem key={opt.value} value={opt.value}>
             {opt.label}
           </CzSelectItem>
@@ -736,7 +737,7 @@ function RadioRenderer({ schema, exprContext }: SchemaComponentProps) {
       className={s.className}
       style={s.style}
     >
-      {s.options.map((opt) => (
+      {toArray<OptionItem>(s.options).map((opt) => (
         <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm">
           <CzRadioGroupItem value={opt.value} />
           {opt.label}

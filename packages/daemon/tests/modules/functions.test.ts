@@ -453,7 +453,7 @@ describe('createServer() first-init auto-publish', () => {
     // Increment current_version in platform DB to simulate a new draft change
     const platformDbPath = join(tmpRoot, 'platform.sqlite');
     const db = new Database(platformDbPath);
-    db.query("UPDATE apps SET current_version = current_version + 1 WHERE name = 'welcome'").run();
+    db.query("UPDATE apps SET current_version = current_version + 1 WHERE slug = 'welcome'").run();
     db.close();
 
     // Second boot — should NOT auto-publish (workspace already initialized)

@@ -64,7 +64,7 @@ export class DraftReconciler {
     // 1. Query migrations from app_files
     const platformDb = this.workspace.getPlatformDb();
     const migrationRecords = platformDb.query(
-      "SELECT path, content, updated_at FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+      "SELECT path, content, updated_at FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
     ).all(appName) as { path: string; content: string; updated_at: string }[];
 
     const migrations = MigrationRunner.fromDbRecords(migrationRecords);
@@ -108,7 +108,7 @@ export class DraftReconciler {
 
       // 4. Load seeds from app_files only when the draft DB is rebuilt
       const seedRecords = platformDb.query(
-        "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'seeds/%' ORDER BY path",
+        "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'seeds/%' ORDER BY path",
       ).all(appName) as { path: string; content: string }[];
 
       seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
@@ -315,7 +315,7 @@ export class DraftReconciler {
   ): Promise<DraftReconcileResult['npm']> {
     const platformDb = this.workspace.getPlatformDb();
     const record = platformDb
-      .query("SELECT content FROM app_files WHERE app_name = ? AND path = 'package.json'")
+      .query("SELECT content FROM app_files WHERE app_slug = ? AND path = 'package.json'")
       .get(appName) as { content: string } | null;
 
     if (!record) return undefined;

@@ -57,13 +57,14 @@ export async function handleCreateApp(
   ctx: HandlerContext,
   input: CreateAppInput,
 ): Promise<CreateAppOutput> {
-  const snapshot = await ctx.backend.createApp(input.name, input.description);
-  writeAppToDir(ctx.appsDir, snapshot.name, snapshot.files);
+  const snapshot = await ctx.backend.createApp(input.name, input.description, input.display_name);
+  writeAppToDir(ctx.appsDir, snapshot.slug, snapshot.files);
 
   return {
-    name: snapshot.name,
+    slug: snapshot.slug,
+    displayName: snapshot.displayName,
     description: snapshot.description,
-    directory: getAppDir(ctx.appsDir, snapshot.name),
+    directory: getAppDir(ctx.appsDir, snapshot.slug),
     files: snapshot.files.map((f) => f.path),
   };
 }
@@ -72,7 +73,17 @@ export async function handleListApps(
   ctx: HandlerContext,
 ): Promise<ListAppsOutput> {
   const apps = await ctx.backend.listApps();
-  return { apps };
+  return {
+    apps: apps.map((a) => ({
+      slug: a.slug,
+      displayName: a.displayName,
+      description: a.description,
+      stableStatus: a.stableStatus,
+      hasDraft: a.hasDraft,
+      current_version: a.current_version,
+      published_version: a.published_version,
+    })),
+  };
 }
 
 export async function handleFetchApp(
@@ -86,7 +97,8 @@ export async function handleFetchApp(
   writeAppToDir(ctx.appsDir, input.app_name, snapshot.files);
 
   return {
-    name: snapshot.name,
+    slug: snapshot.slug,
+    displayName: snapshot.displayName,
     description: snapshot.description,
     stableStatus: snapshot.stableStatus,
     hasDraft: snapshot.hasDraft,
@@ -110,14 +122,30 @@ export async function handleStartApp(
   ctx: HandlerContext,
   input: StartAppInput,
 ): Promise<StartAppOutput> {
-  return ctx.backend.startApp(input.app_name);
+  const app = await ctx.backend.startApp(input.app_name);
+  return {
+    slug: app.slug,
+    displayName: app.displayName,
+    stableStatus: app.stableStatus,
+    hasDraft: app.hasDraft,
+    current_version: app.current_version,
+    published_version: app.published_version,
+  };
 }
 
 export async function handleStopApp(
   ctx: HandlerContext,
   input: StopAppInput,
 ): Promise<StopAppOutput> {
-  return ctx.backend.stopApp(input.app_name);
+  const app = await ctx.backend.stopApp(input.app_name);
+  return {
+    slug: app.slug,
+    displayName: app.displayName,
+    stableStatus: app.stableStatus,
+    hasDraft: app.hasDraft,
+    current_version: app.current_version,
+    published_version: app.published_version,
+  };
 }
 
 // --- File Sync ---

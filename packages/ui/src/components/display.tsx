@@ -7,6 +7,7 @@ import {
 import { usePageContext, useComponentStates } from '../engine/context';
 import { resolveExpression } from '../engine/expression';
 import { dispatchAction } from '../engine/action';
+import { toArray } from '../renderer';
 import type {
   TableComponent,
   ListComponent,
@@ -17,6 +18,7 @@ import type {
   ExpressionContext,
   ApiConfig,
   ActionSchema,
+  ColumnSchema,
 } from '../schema/types';
 import { NodeRenderer } from '../renderer';
 
@@ -297,8 +299,9 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
   }
 
   const rows = data;
+  const columns = toArray<ColumnSchema>(s.columns);
   const hasRowActions = s.rowActions && s.rowActions.length > 0;
-  const totalColumns = s.columns.length + (hasRowActions ? 1 : 0);
+  const totalColumns = columns.length + (hasRowActions ? 1 : 0);
   const isNextDisabled = rows.length < pageSize;
   const isPrevDisabled = currentPage === 0;
 
@@ -307,7 +310,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            {s.columns.map((col) => (
+            {columns.map((col) => (
               <th
                 key={col.name}
                 className="text-left px-3 py-2 bg-bg-subtle border-b border-border font-semibold text-[13px] text-text-secondary"
@@ -329,7 +332,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
               key={(row.id as string | number) ?? rowIndex}
               className="border-b border-border"
             >
-              {s.columns.map((col) => (
+              {columns.map((col) => (
                 <td
                   key={col.name}
                   className="px-3 py-2 text-text"

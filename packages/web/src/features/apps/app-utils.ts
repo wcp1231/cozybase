@@ -17,10 +17,10 @@ export function filterAppsByMode<T extends Pick<AppSummary, 'stableStatus' | 'ha
   return apps.filter((app) => (mode === 'stable' ? app.stableStatus !== null : app.hasDraft));
 }
 
-export function matchesAppQuery(app: Pick<AppSummary, 'name' | 'description'>, query: string): boolean {
+export function matchesAppQuery(app: Pick<AppSummary, 'slug' | 'displayName' | 'description'>, query: string): boolean {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
-  return `${app.name} ${app.description}`.toLowerCase().includes(normalized);
+  return `${app.displayName} ${app.slug} ${app.description}`.toLowerCase().includes(normalized);
 }
 
 export function getAppInitials(name: string): string {
@@ -45,28 +45,41 @@ export function getAppTone(name: string, stableStatus: StableStatus) {
   return APP_TONES[hash % APP_TONES.length];
 }
 
-export function getAppStatusLabel(app: Pick<AppSummary, 'stableStatus' | 'hasDraft'>, mode: AppMode): string {
+export function getAppStatusLabel(app: Pick<AppSummary, 'stableStatus' | 'hasDraft' | 'current_version' | 'published_version'>, mode: AppMode): string {
   if (mode === 'stable') {
     return app.stableStatus === 'running' ? '运行中' : '已停止';
   }
 
-  if (app.stableStatus === null) {
-    return '全新草稿';
+  if (app.published_version === 0) {
+    return '未发布';
   }
 
-  return '待发布';
+  if (app.current_version > app.published_version) {
+    return '有修改未发布';
+  }
+
+  return '已发布';
 }
 
-export function getAppStatusClasses(app: Pick<AppSummary, 'stableStatus' | 'hasDraft'>, mode: AppMode): string {
+export function getAppStatusClasses(app: Pick<AppSummary, 'stableStatus' | 'hasDraft' | 'current_version' | 'published_version'>, mode: AppMode): string {
   if (mode === 'stable') {
     return app.stableStatus === 'running'
       ? 'border-[#DCFCE7] bg-[#ECFDF5] text-[#166534]'
       : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]';
   }
 
-  return app.stableStatus === null
-    ? 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]'
-    : 'border-[#FDE68A] bg-[#FEF3C7] text-[#92400E]';
+  if (app.published_version === 0) {
+    // 未发布 — neutral gray
+    return 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]';
+  }
+
+  if (app.current_version > app.published_version) {
+    // 有修改未发布 — amber warning
+    return 'border-[#FDE68A] bg-[#FEF3C7] text-[#92400E]';
+  }
+
+  // 已发布 — green
+  return 'border-[#DCFCE7] bg-[#ECFDF5] text-[#166534]';
 }
 
 export function buildHomeMetrics(apps: AppSummary[], mode: AppMode): OverviewMetric[] {

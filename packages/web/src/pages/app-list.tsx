@@ -13,7 +13,10 @@ export function AppListPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const navigate = useNavigate();
 
-  const visibleApps = filterAppsByMode(apps, mode).filter((app) => matchesAppQuery(app, searchQuery));
+  // In draft (builder) mode, show ALL apps so users can manage everything.
+  // In stable mode, only show apps that have a stable version.
+  const filteredApps = mode === 'draft' ? apps : filterAppsByMode(apps, mode);
+  const visibleApps = filteredApps.filter((app) => matchesAppQuery(app, searchQuery));
   const title = mode === 'stable' ? '应用列表' : '应用管理';
   const sectionTitle = mode === 'stable' ? '全部应用' : '全部应用';
 
@@ -37,16 +40,16 @@ export function AppListPage() {
               </div>
             </div>
 
-            {visibleApps.length === 0 ? (
+            {visibleApps.length === 0 && mode !== 'draft' ? (
               <ListStateCard message={searchQuery ? '没有匹配的应用。' : '当前没有可展示的应用。'} />
             ) : (
               <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3">
                 {visibleApps.map((app) => (
                   <AppCard
-                    key={app.name}
+                    key={app.slug}
                     app={app}
                     mode={mode}
-                    to={toAppPagePath(app.name, undefined, mode)}
+                    to={toAppPagePath(app.slug, undefined, mode)}
                   />
                 ))}
 
@@ -62,10 +65,13 @@ export function AppListPage() {
       <CreateAppDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
-        onCreated={(appName) => {
+        onCreated={(slug, reconcileWarning) => {
           setDialogOpen(false);
+          if (reconcileWarning) {
+            console.warn(`[create-app] reconcile warning for '${slug}':`, reconcileWarning);
+          }
           void refreshApps().then(() => {
-            navigate(`/draft/apps/${appName}`);
+            navigate(`/draft/apps/${slug}`);
           });
         }}
       />

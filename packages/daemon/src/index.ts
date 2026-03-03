@@ -10,7 +10,7 @@ await startup;
 
 interface WsData {
   type: 'agent-bridge' | 'chat';
-  appName?: string;
+  appSlug?: string;
 }
 
 const server = Bun.serve<WsData>({
@@ -29,11 +29,11 @@ const server = Bun.serve<WsData>({
 
     // Handle WebSocket upgrade for Chat (per-app session)
     if (url.pathname === '/api/v1/chat/ws') {
-      const appName = url.searchParams.get('app');
-      if (!appName) {
+      const appSlug = url.searchParams.get('app');
+      if (!appSlug) {
         return new Response('Missing required "app" query parameter', { status: 400 });
       }
-      if (server.upgrade(req, { data: { type: 'chat', appName } })) {
+      if (server.upgrade(req, { data: { type: 'chat', appSlug } })) {
         return undefined as unknown as Response;
       }
       return new Response('WebSocket upgrade failed', { status: 400 });
@@ -44,8 +44,8 @@ const server = Bun.serve<WsData>({
   },
   websocket: {
     open(ws) {
-      if (ws.data.type === 'chat' && ws.data.appName) {
-        const session = chatSessionManager.getOrCreate(ws.data.appName);
+      if (ws.data.type === 'chat' && ws.data.appSlug) {
+        const session = chatSessionManager.getOrCreate(ws.data.appSlug);
         session.connect(ws as any);
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.addSession(ws as any);
@@ -53,16 +53,16 @@ const server = Bun.serve<WsData>({
     },
     message(ws, message) {
       const raw = typeof message === 'string' ? message : message.toString();
-      if (ws.data.type === 'chat' && ws.data.appName) {
-        const session = chatSessionManager.getOrCreate(ws.data.appName);
+      if (ws.data.type === 'chat' && ws.data.appSlug) {
+        const session = chatSessionManager.getOrCreate(ws.data.appSlug);
         session.handleMessage(ws as any, raw);
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.handleMessage(ws as any, raw);
       }
     },
     close(ws) {
-      if (ws.data.type === 'chat' && ws.data.appName) {
-        const session = chatSessionManager.get(ws.data.appName);
+      if (ws.data.type === 'chat' && ws.data.appSlug) {
+        const session = chatSessionManager.get(ws.data.appSlug);
         session?.disconnect(ws as any);
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.removeSession(ws as any);

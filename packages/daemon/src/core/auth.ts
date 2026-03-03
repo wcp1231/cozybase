@@ -45,9 +45,9 @@ export function verifyApiKey(
   const keyHash = hashApiKey(key);
   const row = platformDb
     .query(
-      `SELECT app_name, role, expires_at FROM api_keys WHERE key_hash = ?`,
+      `SELECT app_slug, role, expires_at FROM api_keys WHERE key_hash = ?`,
     )
-    .get(keyHash) as { app_name: string; role: string; expires_at: string | null } | null;
+    .get(keyHash) as { app_slug: string; role: string; expires_at: string | null } | null;
 
   if (!row) return null;
 
@@ -55,5 +55,5 @@ export function verifyApiKey(
     return null;
   }
 
-  return { appName: row.app_name, role: row.role };
+  return { appName: row.app_slug, role: row.role };
 }

@@ -57,13 +57,13 @@ describe('Publisher', () => {
       // 4. Migrations marked immutable in platform DB
       const platformDb = handle.workspace.getPlatformDb();
       const migFile = platformDb.query(
-        "SELECT immutable FROM app_files WHERE app_name = 'myapp' AND path LIKE 'migrations/001%'",
+        "SELECT immutable FROM app_files WHERE app_slug = 'myapp' AND path LIKE 'migrations/001%'",
       ).get() as { immutable: number };
       expect(migFile.immutable).toBe(1);
 
       // 5. published_version updated
       const appRow = platformDb.query(
-        "SELECT published_version, current_version FROM apps WHERE name = 'myapp'",
+        "SELECT published_version, current_version FROM apps WHERE slug = 'myapp'",
       ).get() as { published_version: number; current_version: number };
       expect(appRow.published_version).toBe(appRow.current_version);
 
@@ -123,7 +123,7 @@ describe('Publisher', () => {
       // 4. Both migrations marked immutable
       const platformDb = handle.workspace.getPlatformDb();
       const immutableCount = platformDb.query(
-        "SELECT COUNT(*) as cnt FROM app_files WHERE app_name = 'myapp' AND path LIKE 'migrations/%' AND immutable = 1",
+        "SELECT COUNT(*) as cnt FROM app_files WHERE app_slug = 'myapp' AND path LIKE 'migrations/%' AND immutable = 1",
       ).get() as { cnt: number };
       expect(immutableCount.cnt).toBe(2);
 
@@ -202,7 +202,7 @@ describe('Publisher', () => {
       });
       createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
       handle.workspace.getPlatformDb().query(
-        "UPDATE apps SET stable_status = 'stopped' WHERE name = ?",
+        "UPDATE apps SET stable_status = 'stopped' WHERE slug = ?",
       ).run('myapp');
       addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
       handle.workspace.refreshAppState('myapp');

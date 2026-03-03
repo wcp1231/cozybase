@@ -14,7 +14,7 @@ export function AppCard({
   mode: AppMode;
   to: string;
 }) {
-  const tone = getAppTone(app.name, app.stableStatus);
+  const tone = getAppTone(app.slug, app.stableStatus);
   const isStopped = app.stableStatus === 'stopped' && mode === 'stable';
 
   return (
@@ -36,12 +36,12 @@ export function AppCard({
                 tone.iconText,
               )}
             >
-              {getAppInitials(app.name)}
+              {getAppInitials(app.displayName || app.slug)}
             </span>
 
             <div className="min-w-0 flex-1 flex gap-2">
               <div className={clsx('truncate font-["Outfit",sans-serif] text-base font-bold', isStopped ? 'text-[#64748B]' : 'text-[#0F172A]')}>
-                {app.name}
+                {app.displayName || app.slug}
               </div>
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {!(mode === 'stable' && app.stableStatus === 'running') && (

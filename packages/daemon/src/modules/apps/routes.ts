@@ -1,12 +1,10 @@
 import { Hono } from 'hono';
 import type { Workspace } from '../../core/workspace';
-import type { AppRegistry } from '@cozybase/runtime';
-import { AppManager } from './manager';
+import type { AppManager } from './manager';
 import { BadRequestError } from '../../core/errors';
 
-export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
+export function createAppRoutes(workspace: Workspace, manager: AppManager) {
   const app = new Hono();
-  const manager = new AppManager(workspace, registry);
 
   // GET /apps - List all apps with derived states
   app.get('/apps', (c) => {
@@ -28,25 +26,35 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
       throw new BadRequestError('Invalid JSON body');
     }
 
-    if (typeof body.name !== 'string' || !body.name.trim()) {
-      throw new BadRequestError('Request body must include a non-empty "name" field');
+    // Accept either "slug" or "name" for the app identifier
+    const slug = typeof body.slug === 'string' ? body.slug.trim()
+      : typeof body.name === 'string' ? body.name.trim()
+      : '';
+
+    if (!slug) {
+      throw new BadRequestError('Request body must include a non-empty "slug" (or "name") field');
     }
 
     const description = typeof body.description === 'string' ? body.description : '';
-    const result = manager.create(body.name.trim(), description);
-    return c.json({ data: { ...result.app, api_key: result.apiKey } }, 201);
+    const displayName = typeof body.display_name === 'string' ? body.display_name : '';
+    const result = await manager.create(slug, description, displayName);
+    const data: Record<string, unknown> = { ...result.app, api_key: result.apiKey };
+    if (result.reconcileError) {
+      data.reconcileError = result.reconcileError;
+    }
+    return c.json({ data }, 201);
   });
 
-  // GET /apps/:name - Get single app with files
-  app.get('/apps/:name', (c) => {
-    const name = c.req.param('name')!;
-    const appWithFiles = manager.getAppWithFiles(name);
+  // GET /apps/:slug - Get single app with files
+  app.get('/apps/:slug', (c) => {
+    const slug = c.req.param('slug')!;
+    const appWithFiles = manager.getAppWithFiles(slug);
     return c.json({ data: appWithFiles });
   });
 
-  // PUT /apps/:name - Whole-app update (optimistic lock)
-  app.put('/apps/:name', async (c) => {
-    const name = c.req.param('name')!;
+  // PUT /apps/:slug - Whole-app update (optimistic lock)
+  app.put('/apps/:slug', async (c) => {
+    const slug = c.req.param('slug')!;
 
     let body: Record<string, unknown>;
     try {
@@ -60,17 +68,17 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
     }
 
     const result = manager.updateApp(
-      name,
+      slug,
       body.files as { path: string; content: string }[],
       body.base_version,
     );
     return c.json({ data: result });
   });
 
-  // PUT /apps/:name/files/* - Single file update
-  app.put('/apps/:name/files/*', async (c) => {
-    const name = c.req.param('name')!;
-    const filePath = c.req.path.replace(`/api/v1/apps/${name}/files/`, '');
+  // PUT /apps/:slug/files/* - Single file update
+  app.put('/apps/:slug/files/*', async (c) => {
+    const slug = c.req.param('slug')!;
+    const filePath = c.req.path.replace(`/api/v1/apps/${slug}/files/`, '');
 
     let body: Record<string, unknown>;
     try {
@@ -86,35 +94,35 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
     // Check existence before upsert to determine created vs updated
     const db = workspace.getPlatformDb();
     const existing = db.query(
-      'SELECT 1 FROM app_files WHERE app_name = ? AND path = ?',
-    ).get(name, filePath);
+      'SELECT 1 FROM app_files WHERE app_slug = ? AND path = ?',
+    ).get(slug, filePath);
 
-    const result = manager.updateFile(name, filePath, body.content);
+    const result = manager.updateFile(slug, filePath, body.content);
     const status = existing ? 'updated' : 'created';
     return c.json({ data: { ...result, status } });
   });
 
-  // DELETE /apps/:name - Delete an app
-  app.delete('/apps/:name', (c) => {
-    const name = c.req.param('name')!;
-    manager.delete(name);
-    return c.json({ data: { message: `App '${name}' deleted` } });
+  // DELETE /apps/:slug - Delete an app
+  app.delete('/apps/:slug', (c) => {
+    const slug = c.req.param('slug')!;
+    manager.delete(slug);
+    return c.json({ data: { message: `App '${slug}' deleted` } });
   });
 
-  app.post('/apps/:name/start', (c) => {
-    const name = c.req.param('name')!;
-    const result = manager.startStable(name);
+  app.post('/apps/:slug/start', (c) => {
+    const slug = c.req.param('slug')!;
+    const result = manager.startStable(slug);
     return c.json({ data: result });
   });
 
-  app.post('/apps/:name/stop', (c) => {
-    const name = c.req.param('name')!;
-    const result = manager.stopStable(name);
+  app.post('/apps/:slug/stop', (c) => {
+    const slug = c.req.param('slug')!;
+    const result = manager.stopStable(slug);
     return c.json({ data: result });
   });
 
-  app.post('/apps/:name/rename', async (c) => {
-    const name = c.req.param('name')!;
+  app.post('/apps/:slug/rename', async (c) => {
+    const slug = c.req.param('slug')!;
 
     let body: Record<string, unknown>;
     try {
@@ -123,17 +131,17 @@ export function createAppRoutes(workspace: Workspace, registry?: AppRegistry) {
       throw new BadRequestError('Invalid JSON body');
     }
 
-    const nextName = typeof body.new_name === 'string'
-      ? body.new_name.trim()
-      : typeof body.newName === 'string'
-        ? body.newName.trim()
+    const newSlug = typeof body.new_slug === 'string'
+      ? body.new_slug.trim()
+      : typeof body.new_name === 'string'
+        ? body.new_name.trim()
         : '';
 
-    if (!nextName) {
-      throw new BadRequestError('Request body must include a non-empty "new_name" field');
+    if (!newSlug) {
+      throw new BadRequestError('Request body must include a non-empty "new_slug" field');
     }
 
-    const result = manager.rename(name, nextName);
+    const result = manager.rename(slug, newSlug);
     return c.json({ data: result });
   });
 

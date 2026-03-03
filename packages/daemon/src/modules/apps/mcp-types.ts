@@ -1,7 +1,7 @@
 /**
  * MCP Tool Type Definitions for CozyBase
  *
- * These types define the input/output interfaces for 11 MCP tools
+ * These types define the input/output interfaces for MCP tools
  * that allow AI Agents to manage CozyBase APPs via the MCP protocol.
  *
  * Architecture: Agent reads/writes files in a local working directory,
@@ -17,10 +17,12 @@ import type { StableStatus } from '../../core/workspace';
 export interface CreateAppInput {
   name: string;
   description?: string;
+  display_name?: string;
 }
 
 export interface CreateAppOutput {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   directory: string;
   files: string[];
@@ -30,7 +32,8 @@ export interface CreateAppOutput {
 
 export interface ListAppsOutput {
   apps: {
-    name: string;
+    slug: string;
+    displayName: string;
     description: string;
     stableStatus: StableStatus | null;
     hasDraft: boolean;
@@ -46,7 +49,8 @@ export interface FetchAppInput {
 }
 
 export interface FetchAppOutput {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
@@ -100,7 +104,8 @@ export interface StartAppInput {
 }
 
 export interface StartAppOutput {
-  name: string;
+  slug: string;
+  displayName: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
   current_version: number;
@@ -114,7 +119,8 @@ export interface StopAppInput {
 }
 
 export interface StopAppOutput {
-  name: string;
+  slug: string;
+  displayName: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
   current_version: number;
@@ -179,7 +185,7 @@ export const TOOL_DESCRIPTIONS = {
     'For the complete development workflow, call `get_guide("workflow")`.',
 
   list_apps:
-    'List all APPs with their basic info (name, description, stableStatus, hasDraft, versions).',
+    'List all APPs with their basic info (slug, displayName, description, stableStatus, hasDraft, versions).',
 
   fetch_app:
     'Fetch an APP from cozybase and write all files to the Agent working directory.\n\n' +
@@ -286,8 +292,9 @@ export const INPUT_SCHEMAS = {
   create_app: {
     type: 'object' as const,
     properties: {
-      name: { type: 'string', description: 'APP name (alphanumeric, hyphens, underscores)' },
+      name: { type: 'string', description: 'APP slug — URL-safe identifier (alphanumeric, hyphens, underscores)' },
       description: { type: 'string', description: 'APP description (optional)' },
+      display_name: { type: 'string', description: 'Human-friendly display name (supports unicode). Defaults to slug if omitted.' },
     },
     required: ['name'],
   },
@@ -300,7 +307,7 @@ export const INPUT_SCHEMAS = {
   fetch_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -308,7 +315,7 @@ export const INPUT_SCHEMAS = {
   update_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -316,7 +323,7 @@ export const INPUT_SCHEMAS = {
   update_app_file: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
       path: { type: 'string', description: 'File path relative to APP directory (e.g. "functions/hello.ts")' },
     },
     required: ['app_name', 'path'],
@@ -325,7 +332,7 @@ export const INPUT_SCHEMAS = {
   delete_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -333,7 +340,7 @@ export const INPUT_SCHEMAS = {
   start_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -341,7 +348,7 @@ export const INPUT_SCHEMAS = {
   stop_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -349,7 +356,7 @@ export const INPUT_SCHEMAS = {
   reconcile_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -357,7 +364,7 @@ export const INPUT_SCHEMAS = {
   verify_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -365,7 +372,7 @@ export const INPUT_SCHEMAS = {
   publish_app: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
     },
     required: ['app_name'],
   },
@@ -373,7 +380,7 @@ export const INPUT_SCHEMAS = {
   execute_sql: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
       sql: { type: 'string', description: 'SQL statement to execute' },
       mode: { type: 'string', enum: ['draft', 'stable'], description: 'Database mode (default: draft)' },
     },
@@ -383,7 +390,7 @@ export const INPUT_SCHEMAS = {
   call_api: {
     type: 'object' as const,
     properties: {
-      app_name: { type: 'string', description: 'APP name' },
+      app_name: { type: 'string', description: 'APP slug' },
       method: { type: 'string', description: 'HTTP method (GET, POST, PUT, DELETE, etc.)' },
       path: { type: 'string', description: 'API path (e.g. /fn/_db/tables/tasks, /fn/hello)' },
       body: { description: 'Request body (optional, for POST/PUT)' },

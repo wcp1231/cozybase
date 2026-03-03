@@ -23,7 +23,8 @@ export interface FileEntry {
 
 /** Full app snapshot including file contents (returned by createApp/fetchApp) */
 export interface AppSnapshot {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
@@ -34,7 +35,8 @@ export interface AppSnapshot {
 
 /** App summary info without file contents (returned by listApps) */
 export interface AppInfo {
-  name: string;
+  slug: string;
+  displayName: string;
   description: string;
   stableStatus: StableStatus | null;
   hasDraft: boolean;
@@ -71,31 +73,31 @@ export interface ApiResponse {
 /**
  * Abstraction layer for cozybase operations.
  *
- * Implemented by RemoteBackend, which calls the cozybase daemon via HTTP API.
+ * Implemented by LocalBackend, which calls core services directly.
  * MCP tool handlers use this interface exclusively.
  */
 export interface CozybaseBackend {
   // App lifecycle
-  createApp(name: string, description?: string): Promise<AppSnapshot>;
+  createApp(slug: string, description?: string, displayName?: string): Promise<AppSnapshot>;
   listApps(): Promise<AppInfo[]>;
-  fetchApp(name: string): Promise<AppSnapshot>;
-  deleteApp(name: string): Promise<void>;
-  startApp(name: string): Promise<AppInfo>;
-  stopApp(name: string): Promise<AppInfo>;
+  fetchApp(slug: string): Promise<AppSnapshot>;
+  deleteApp(slug: string): Promise<void>;
+  startApp(slug: string): Promise<AppInfo>;
+  stopApp(slug: string): Promise<AppInfo>;
 
   // File sync
-  pushFiles(name: string, files: FileEntry[]): Promise<PushResult>;
-  pushFile(name: string, path: string, content: string): Promise<'created' | 'updated'>;
+  pushFiles(slug: string, files: FileEntry[]): Promise<PushResult>;
+  pushFile(slug: string, path: string, content: string): Promise<'created' | 'updated'>;
 
   // Dev workflow
-  reconcile(name: string): Promise<DraftReconcileResult>;
-  verify(name: string): Promise<VerifyResult>;
-  publish(name: string): Promise<PublishResult>;
+  reconcile(slug: string): Promise<DraftReconcileResult>;
+  verify(slug: string): Promise<VerifyResult>;
+  publish(slug: string): Promise<PublishResult>;
 
   // Runtime interaction
-  executeSql(name: string, sql: string, mode: string): Promise<SqlResult>;
-  callApi(name: string, method: string, path: string, body?: unknown, mode?: string): Promise<ApiResponse>;
+  executeSql(slug: string, sql: string, mode: string): Promise<SqlResult>;
+  callApi(slug: string, method: string, path: string, body?: unknown, mode?: string): Promise<ApiResponse>;
 
   // UI inspection (requires browser session)
-  inspectUi(appName: string, page?: string): Promise<unknown>;
+  inspectUi(appSlug: string, page?: string): Promise<unknown>;
 }

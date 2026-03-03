@@ -120,7 +120,7 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 7: Migrations marked immutable
       const platformDb = handle.workspace.getPlatformDb();
       const migFile = platformDb.query(
-        "SELECT immutable FROM app_files WHERE app_name = 'todos' AND path LIKE 'migrations/001%'",
+        "SELECT immutable FROM app_files WHERE app_slug = 'todos' AND path LIKE 'migrations/001%'",
       ).get() as { immutable: number };
       expect(migFile.immutable).toBe(1);
 

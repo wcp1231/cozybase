@@ -53,7 +53,7 @@ export class Verifier {
     // 2. Query all migrations from app_files and determine pending ones
     const platformDb = this.workspace.getPlatformDb();
     const migrationRecords = platformDb.query(
-      "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'migrations/%' ORDER BY path",
+      "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
     ).all(appName) as { path: string; content: string }[];
 
     const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
@@ -137,7 +137,7 @@ export class Verifier {
     for (const version of executedVersions) {
       const versionPrefix = String(version).padStart(3, '0');
       const record = platformDb.query(
-        "SELECT path, immutable FROM app_files WHERE app_name = ? AND path LIKE ? LIMIT 1",
+        "SELECT path, immutable FROM app_files WHERE app_slug = ? AND path LIKE ? LIMIT 1",
       ).get(appName, `migrations/${versionPrefix}_%`) as { path: string; immutable: number } | null;
 
       if (!record) {

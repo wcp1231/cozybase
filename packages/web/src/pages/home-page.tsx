@@ -80,10 +80,10 @@ export function HomePage() {
               <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3">
                 {filteredApps.map((app) => (
                   <AppCard
-                    key={app.name}
+                    key={app.slug}
                     app={app}
                     mode="stable"
-                    to={toAppPagePath(app.name, undefined, 'stable')}
+                    to={toAppPagePath(app.slug, undefined, 'stable')}
                   />
                 ))}
               </div>

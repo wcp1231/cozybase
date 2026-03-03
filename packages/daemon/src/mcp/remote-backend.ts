@@ -25,14 +25,16 @@ export class RemoteBackend implements CozybaseBackend {
 
   // --- App Lifecycle ---
 
-  async createApp(name: string, description?: string): Promise<AppSnapshot> {
+  async createApp(slug: string, description?: string, displayName?: string): Promise<AppSnapshot> {
     const res = await this.request('POST', '/api/v1/apps', {
-      name,
+      slug,
       description: description ?? '',
+      displayName: displayName ?? '',
     });
     const app = res.data;
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName ?? '',
       description: app.description ?? '',
       stableStatus: app.stableStatus ?? null,
       hasDraft: app.hasDraft ?? false,
@@ -45,7 +47,8 @@ export class RemoteBackend implements CozybaseBackend {
   async listApps(): Promise<AppInfo[]> {
     const res = await this.request('GET', '/api/v1/apps');
     return (res.data ?? []).map((a: any) => ({
-      name: a.name,
+      slug: a.slug,
+      displayName: a.displayName ?? '',
       description: a.description ?? '',
       stableStatus: a.stableStatus ?? null,
       hasDraft: a.hasDraft ?? false,
@@ -54,11 +57,12 @@ export class RemoteBackend implements CozybaseBackend {
     }));
   }
 
-  async fetchApp(name: string): Promise<AppSnapshot> {
-    const res = await this.request('GET', `/api/v1/apps/${encodeURIComponent(name)}`);
+  async fetchApp(slug: string): Promise<AppSnapshot> {
+    const res = await this.request('GET', `/api/v1/apps/${encodeURIComponent(slug)}`);
     const app = res.data;
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName ?? '',
       description: app.description ?? '',
       stableStatus: app.stableStatus ?? null,
       hasDraft: app.hasDraft ?? false,
@@ -72,14 +76,15 @@ export class RemoteBackend implements CozybaseBackend {
     await this.request('DELETE', `/api/v1/apps/${encodeURIComponent(name)}`);
   }
 
-  async startApp(name: string): Promise<AppInfo> {
+  async startApp(slug: string): Promise<AppInfo> {
     const res = await this.request(
       'POST',
-      `/api/v1/apps/${encodeURIComponent(name)}/start`,
+      `/api/v1/apps/${encodeURIComponent(slug)}/start`,
     );
     const app = res.data;
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName ?? '',
       description: app.description ?? '',
       stableStatus: app.stableStatus ?? null,
       hasDraft: app.hasDraft ?? false,
@@ -88,14 +93,15 @@ export class RemoteBackend implements CozybaseBackend {
     };
   }
 
-  async stopApp(name: string): Promise<AppInfo> {
+  async stopApp(slug: string): Promise<AppInfo> {
     const res = await this.request(
       'POST',
-      `/api/v1/apps/${encodeURIComponent(name)}/stop`,
+      `/api/v1/apps/${encodeURIComponent(slug)}/stop`,
     );
     const app = res.data;
     return {
-      name: app.name,
+      slug: app.slug,
+      displayName: app.displayName ?? '',
       description: app.description ?? '',
       stableStatus: app.stableStatus ?? null,
       hasDraft: app.hasDraft ?? false,

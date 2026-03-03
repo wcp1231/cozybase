@@ -45,7 +45,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
       tool(
         'create_app',
         TOOL_DESCRIPTIONS.create_app,
-        { name: z.string(), description: z.string().optional() },
+        { name: z.string(), description: z.string().optional(), display_name: z.string().optional() },
         async (args) => jsonResult(await handleCreateApp(ctx, args)),
       ),
 

@@ -13,7 +13,7 @@ export function exportUiFromDb(
   targetDir: string,
 ): boolean {
   const record = platformDb.query(
-    "SELECT content FROM app_files WHERE app_name = ? AND path = 'ui/pages.json'",
+    "SELECT content FROM app_files WHERE app_slug = ? AND path = 'ui/pages.json'",
   ).get(appName) as { content: string } | null;
 
   const uiFilePath = join(targetDir, 'ui', 'pages.json');
@@ -47,7 +47,7 @@ export function exportFunctionsFromDb(
 
   // Query function files
   const records = platformDb.query(
-    "SELECT path, content FROM app_files WHERE app_name = ? AND path LIKE 'functions/%'",
+    "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'functions/%'",
   ).all(appName) as { path: string; content: string }[];
 
   if (records.length === 0) return [];

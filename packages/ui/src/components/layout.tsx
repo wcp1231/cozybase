@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
+import { toArray } from '../renderer';
 import { CzTabs, CzTabsList, CzTabsTrigger, CzTabsContent } from '../primitives';
 import type {
   PageComponent,
@@ -180,7 +181,7 @@ function TabsComp({ schema, renderChild }: SchemaComponentProps) {
       {items.map((item) =>
         item.body ? (
           <CzTabsContent key={item.value} value={item.value}>
-            {item.body.map((child: ComponentSchema, i: number) =>
+            {toArray<ComponentSchema>(item.body).map((child: ComponentSchema, i: number) =>
               renderChild(child, (child as { id?: string }).id ?? i),
             )}
           </CzTabsContent>
