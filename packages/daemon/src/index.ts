@@ -3,13 +3,14 @@ import { createServer } from './server';
 import { writePidFile, cleanupPidFile } from './daemon-ctl';
 
 const config = loadConfig();
-const { app, workspace, registry, uiBridge, chatService, startup } = createServer(config);
+const { app, workspace, registry, uiBridge, chatSessionManager, startup } = createServer(config);
 
 // Wait for all apps to start before accepting requests
 await startup;
 
 interface WsData {
   type: 'agent-bridge' | 'chat';
+  appName?: string;
 }
 
 const server = Bun.serve<WsData>({
@@ -26,9 +27,13 @@ const server = Bun.serve<WsData>({
       return new Response('WebSocket upgrade failed', { status: 400 });
     }
 
-    // Handle WebSocket upgrade for Chat
+    // Handle WebSocket upgrade for Chat (per-app session)
     if (url.pathname === '/api/v1/chat/ws') {
-      if (server.upgrade(req, { data: { type: 'chat' } })) {
+      const appName = url.searchParams.get('app');
+      if (!appName) {
+        return new Response('Missing required "app" query parameter', { status: 400 });
+      }
+      if (server.upgrade(req, { data: { type: 'chat', appName } })) {
         return undefined as unknown as Response;
       }
       return new Response('WebSocket upgrade failed', { status: 400 });
@@ -39,24 +44,27 @@ const server = Bun.serve<WsData>({
   },
   websocket: {
     open(ws) {
-      if (ws.data.type === 'chat') {
-        chatService.connect(ws as any);
-      } else {
+      if (ws.data.type === 'chat' && ws.data.appName) {
+        const session = chatSessionManager.getOrCreate(ws.data.appName);
+        session.connect(ws as any);
+      } else if (ws.data.type === 'agent-bridge') {
         uiBridge.addSession(ws as any);
       }
     },
     message(ws, message) {
       const raw = typeof message === 'string' ? message : message.toString();
-      if (ws.data.type === 'chat') {
-        chatService.handleMessage(ws as any, raw);
-      } else {
+      if (ws.data.type === 'chat' && ws.data.appName) {
+        const session = chatSessionManager.getOrCreate(ws.data.appName);
+        session.handleMessage(ws as any, raw);
+      } else if (ws.data.type === 'agent-bridge') {
         uiBridge.handleMessage(ws as any, raw);
       }
     },
     close(ws) {
-      if (ws.data.type === 'chat') {
-        chatService.disconnect(ws as any);
-      } else {
+      if (ws.data.type === 'chat' && ws.data.appName) {
+        const session = chatSessionManager.get(ws.data.appName);
+        session?.disconnect(ws as any);
+      } else if (ws.data.type === 'agent-bridge') {
         uiBridge.removeSession(ws as any);
       }
     },
@@ -81,7 +89,7 @@ console.log(`
     GET  /api/v1/apps
     GET  /api/v1/apps/:appName
     WS   /api/v1/agent/ws
-    WS   /api/v1/chat/ws
+    WS   /api/v1/chat/ws?app=<appName>
     POST /api/v1/ui/inspect
     *    /stable/apps/:appName/fn/:fnName
     *    /stable/apps/:appName/fn/_db/*
@@ -100,8 +108,8 @@ async function shutdown() {
   // Close all browser WebSocket sessions
   uiBridge.shutdown();
 
-  // Shutdown chat service
-  chatService.shutdown();
+  // Shutdown all chat sessions
+  chatSessionManager.shutdown();
 
   // Shutdown all apps in Runtime
   registry.shutdownAll();

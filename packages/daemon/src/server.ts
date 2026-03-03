@@ -18,8 +18,8 @@ import { UiBridge } from './core/ui-bridge';
 import { AppManager } from './modules/apps/manager';
 import { LocalBackend } from './agent/local-backend';
 import { createCozybaseSdkMcpServer } from './agent/sdk-mcp-server';
-import { ChatService } from './agent/chat-service';
-import { COZYBASE_SYSTEM_PROMPT } from './agent/system-prompt';
+import { ChatSessionManager } from './agent/chat-session-manager';
+import { SessionStore } from './agent/session-store';
 import { initWorkspace } from './workspace-init';
 
 export function createServer(config: Config) {
@@ -242,11 +242,18 @@ export function createServer(config: Config) {
     appsDir: join(agentDir, 'apps'),
   });
 
-  const chatService = new ChatService({
-    mcpServer: sdkMcpServer,
-    agentDir,
-    systemPrompt: COZYBASE_SYSTEM_PROMPT,
-  });
+  const sessionStore = new SessionStore(workspace.getPlatformDb());
+
+  const chatSessionManager = new ChatSessionManager(
+    {
+      mcpServer: sdkMcpServer,
+      agentDir,
+    },
+    sessionStore,
+  );
+
+  // Wire session cleanup so app delete/rename cleans up in-memory chat sessions
+  appManager.setSessionCleanup(chatSessionManager);
 
   // --- Web UI static files ---
   const webDistDir = resolve(import.meta.dir, '..', '..', 'web', 'dist');
@@ -269,7 +276,7 @@ export function createServer(config: Config) {
     });
   }
 
-  return { app, workspace, registry, uiBridge, chatService, draftReconciler, verifier, publisher, startup };
+  return { app, workspace, registry, uiBridge, chatSessionManager, draftReconciler, verifier, publisher, startup };
 }
 
 /**

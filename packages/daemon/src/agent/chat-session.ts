@@ -1,12 +1,11 @@
 /**
- * ChatService — Orchestrates browser WebSocket ↔ Claude Agent SDK sessions.
+ * ChatSession — Per-app AI Agent session.
  *
- * Manages the SDKSession lifecycle, bridges browser messages to the SDK query,
- * and forwards SDK messages back to the browser via WebSocket.
+ * Each ChatSession is bound to a single app. It orchestrates the browser
+ * WebSocket ↔ Claude Agent SDK communication and persists messages + session
+ * state to the SessionStore.
  *
- * Design note: Uses V1 query() API with resume for multi-turn conversations.
- * V2 unstable_v2_createSession is not used because SDKSessionOptions does not
- * support mcpServers, cwd, or systemPrompt.
+ * Refactored from the former single-instance ChatService.
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -16,14 +15,14 @@ import type {
   SDKMessage,
   McpSdkServerConfigWithInstance,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionStore } from './session-store';
+import { buildSystemPrompt } from './system-prompt';
 
-export interface ChatServiceConfig {
+export interface ChatSessionConfig {
   /** In-process MCP server config from createSdkMcpServer() */
   mcpServer: McpSdkServerConfigWithInstance;
   /** Agent working directory (CWD for Claude built-in tools) */
   agentDir: string;
-  /** System prompt */
-  systemPrompt: string;
   /** Model to use */
   model?: string;
 }
@@ -38,31 +37,60 @@ interface WebSocketLike {
   readyState: number;
 }
 
-export class ChatService {
-  private config: ChatServiceConfig;
+export class ChatSession {
+  readonly appName: string;
+  private config: ChatSessionConfig;
+  private store: SessionStore;
   private activeQuery: Query | null = null;
-  private sessionId: string | null = null;
+  private sdkSessionId: string | null;
   private ws: WebSocketLike | null = null;
   private streaming = false;
 
-  constructor(config: ChatServiceConfig) {
+  constructor(
+    appName: string,
+    config: ChatSessionConfig,
+    store: SessionStore,
+    sdkSessionId: string | null = null,
+  ) {
+    this.appName = appName;
     this.config = config;
+    this.store = store;
+    this.sdkSessionId = sdkSessionId;
   }
 
   /**
-   * Connect a browser WebSocket to this service.
-   * Only one WebSocket is supported at a time (MVP single session).
+   * Connect a browser WebSocket to this session.
+   * Sends status + chat history on connect.
    */
   connect(ws: WebSocketLike): void {
     this.ws = ws;
 
-    // Send current session state to browser
+    // Send current session state
     this.sendToWs({
       type: 'chat:status',
       connected: true,
-      hasSession: this.sessionId !== null,
+      hasSession: this.sdkSessionId !== null,
       streaming: this.streaming,
     });
+
+    // Send persisted message history
+    const history = this.store.getMessages(this.appName);
+    if (history.length > 0) {
+      this.sendToWs({
+        type: 'chat:history',
+        messages: history.map((m) => {
+          if (m.role === 'tool') {
+            return {
+              role: 'tool',
+              toolName: m.toolName,
+              status: m.toolStatus ?? 'done',
+              summary: m.toolSummary,
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
+      });
+    }
   }
 
   /**
@@ -101,7 +129,7 @@ export class ChatService {
   }
 
   /**
-   * Shutdown the service and clean up resources.
+   * Shutdown the session and clean up resources.
    */
   shutdown(): void {
     if (this.activeQuery) {
@@ -109,7 +137,6 @@ export class ChatService {
       this.activeQuery = null;
     }
     this.ws = null;
-    this.sessionId = null;
     this.streaming = false;
   }
 
@@ -125,14 +152,20 @@ export class ChatService {
       return;
     }
 
+    // Persist user message
+    this.store.addMessage(this.appName, { role: 'user', content: text });
+
     this.streaming = true;
     this.sendToWs({ type: 'chat:streaming', streaming: true });
+
+    // Accumulate assistant text for persistence
+    let assistantText = '';
 
     try {
       const options: Options = {
         model: this.config.model ?? 'claude-sonnet-4-6',
         cwd: this.config.agentDir,
-        systemPrompt: this.config.systemPrompt,
+        systemPrompt: buildSystemPrompt(this.appName),
         tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
         allowedTools: [
           'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
@@ -140,13 +173,12 @@ export class ChatService {
         ],
         mcpServers: { cozybase: this.config.mcpServer },
         permissionMode: 'acceptEdits',
-        // Load project settings so the SDK picks up CLAUDE.md and .claude/skills
         settingSources: ['project'],
       };
 
       // Resume previous session if available
-      if (this.sessionId) {
-        options.resume = this.sessionId;
+      if (this.sdkSessionId) {
+        options.resume = this.sdkSessionId;
       }
 
       this.activeQuery = query({ prompt: text, options });
@@ -154,14 +186,42 @@ export class ChatService {
       for await (const msg of this.activeQuery) {
         this.forwardSdkMessage(msg);
 
+        // Capture assistant text from result
+        if (msg.type === 'assistant' && msg.message?.content) {
+          assistantText = this.extractTextContent(msg.message.content);
+        }
+
+        // Persist tool summaries
+        if (msg.type === 'tool_use_summary') {
+          this.store.addMessage(this.appName, {
+            role: 'tool',
+            content: '',
+            toolName: (msg as any).tool_name ?? (msg as any).name ?? 'tool',
+            toolStatus: 'done',
+            toolSummary: (msg as any).summary ?? '',
+          });
+        }
+
         // Capture session_id for subsequent resume
         if (msg.type === 'result' && !msg.is_error && 'session_id' in msg) {
-          this.sessionId = msg.session_id;
+          this.sdkSessionId = msg.session_id;
+          this.store.saveSessionId(this.appName, msg.session_id);
         }
+      }
+
+      // Persist final assistant message
+      if (assistantText) {
+        this.store.addMessage(this.appName, { role: 'assistant', content: assistantText });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.sendToWs({ type: 'chat:error', error: message });
+
+      // If resume failed, clear stale SDK session ID but keep message history
+      if (this.sdkSessionId && message.includes('session')) {
+        this.sdkSessionId = null;
+        this.store.clearSessionId(this.appName);
+      }
     } finally {
       this.activeQuery = null;
       this.streaming = false;
@@ -179,8 +239,7 @@ export class ChatService {
    * Forward an SDKMessage to the browser, filtering/transforming as needed.
    */
   private forwardSdkMessage(msg: SDKMessage): void {
-    // Forward all message types — let the frontend decide what to render.
-    // Skip user message replays (they are re-sent by resume).
+    // Skip user message replays (they are re-sent by resume)
     if (msg.type === 'user') {
       return;
     }
@@ -192,5 +251,15 @@ export class ChatService {
     if (this.ws && this.ws.readyState === 1) {
       this.ws.send(JSON.stringify(data));
     }
+  }
+
+  /** Extract plain text from Anthropic message content blocks. */
+  private extractTextContent(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter((block: any) => block.type === 'text')
+      .map((block: any) => block.text)
+      .join('');
   }
 }

@@ -1,8 +1,8 @@
 /**
  * useChatStore — Zustand store for AI chat state.
  *
- * WebSocket lifecycle is managed outside of React (no useEffect),
- * so StrictMode / re-renders never create duplicate connections.
+ * WebSocket lifecycle is driven by `setActiveApp(appName)`, not by module load.
+ * Each APP gets its own WebSocket connection to `/api/v1/chat/ws?app=<appName>`.
  */
 
 import { create } from 'zustand';
@@ -25,9 +25,11 @@ export interface ChatToolMessage {
 export type ChatMessage = ChatTextMessage | ChatToolMessage;
 
 export interface ChatState {
+  activeApp: string | null;
   messages: ChatMessage[];
   streaming: boolean;
   connected: boolean;
+  setActiveApp: (appName: string | null) => void;
   send: (text: string) => void;
   cancel: () => void;
 }
@@ -35,11 +37,16 @@ export interface ChatState {
 // --- Stream buffer (plain variable, not reactive) ---
 let streamBuffer = '';
 
-// --- WebSocket client singleton ---
+// --- WebSocket client (managed outside React) ---
 let client: ChatClient | null = null;
 
-function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, msg: any) {
+// --- Generation counter to guard against stale callbacks ---
+let generation = 0;
+
+function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, gen: number, msg: any) {
   if (!msg || typeof msg !== 'object') return;
+  // Stale callback from a previous client — ignore
+  if (gen !== generation) return;
 
   switch (msg.type) {
     case 'chat:status':
@@ -47,6 +54,24 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
         connected: msg.connected ?? false,
         streaming: msg.streaming ?? false,
       }));
+      break;
+
+    case 'chat:history':
+      // Server pushes full history on connect — replace local messages
+      if (Array.isArray(msg.messages)) {
+        const restored: ChatMessage[] = msg.messages.map((m: any) => {
+          if (m.role === 'tool') {
+            return {
+              role: 'tool' as const,
+              toolName: m.toolName ?? 'tool',
+              status: m.status ?? 'done',
+              summary: m.summary,
+            };
+          }
+          return { role: m.role, content: m.content ?? '' };
+        });
+        set(() => ({ messages: restored }));
+      }
       break;
 
     case 'chat:streaming':
@@ -147,34 +172,54 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
   }
 }
 
-export const useChatStore = create<ChatState>((set) => {
-  // Create the WebSocket client once at store creation time (module load).
-  // This runs outside of React, so StrictMode has no effect.
-  client = new ChatClient(getChatWsUrl(), {
-    onMessage: (msg) => handleMessage(set, msg),
-    onStatus: (connected) => set({ connected }),
-  });
-  client.connect();
+export const useChatStore = create<ChatState>((set) => ({
+  activeApp: null,
+  messages: [],
+  streaming: false,
+  connected: false,
 
-  return {
-    messages: [],
-    streaming: false,
-    connected: false,
+  setActiveApp(appName: string | null) {
+    // Bump generation so stale callbacks from the old client are ignored
+    const gen = ++generation;
 
-    send(text: string) {
-      if (!text.trim()) return;
-      set((s) => ({
-        messages: [...s.messages, { role: 'user', content: text }],
-      }));
-      streamBuffer = '';
-      client?.send({ type: 'chat:send', message: text });
-    },
+    // Tear down existing connection
+    if (client) {
+      client.disconnect();
+      client = null;
+    }
+    streamBuffer = '';
 
-    cancel() {
-      client?.send({ type: 'chat:cancel' });
-    },
-  };
-});
+    if (!appName) {
+      set({ activeApp: null, messages: [], streaming: false, connected: false });
+      return;
+    }
+
+    set({ activeApp: appName, messages: [], streaming: false, connected: false });
+
+    // Create new connection scoped to the app
+    client = new ChatClient(getChatWsUrl(appName), {
+      onMessage: (msg) => handleMessage(set, gen, msg),
+      onStatus: (connected) => {
+        if (gen !== generation) return;
+        set({ connected });
+      },
+    });
+    client.connect();
+  },
+
+  send(text: string) {
+    if (!text.trim()) return;
+    set((s) => ({
+      messages: [...s.messages, { role: 'user', content: text }],
+    }));
+    streamBuffer = '';
+    client?.send({ type: 'chat:send', message: text });
+  },
+
+  cancel() {
+    client?.send({ type: 'chat:cancel' });
+  },
+}));
 
 /** Extract plain text from Anthropic message content blocks. */
 function extractTextContent(content: unknown): string {

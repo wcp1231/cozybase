@@ -85,7 +85,7 @@ export class ChatClient {
 }
 
 /** Build the WebSocket URL for the chat endpoint based on current page location. */
-export function getChatWsUrl(): string {
+export function getChatWsUrl(appName: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/v1/chat/ws`;
+  return `${protocol}//${window.location.host}/api/v1/chat/ws?app=${encodeURIComponent(appName)}`;
 }

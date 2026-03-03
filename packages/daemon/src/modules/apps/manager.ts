@@ -71,13 +71,25 @@ export async function GET(ctx: FunctionContext) {
 }
 `;
 
+/** Callback to clean up agent sessions when apps are deleted/renamed */
+export interface SessionCleanup {
+  remove(appName: string): void;
+}
+
 // --- AppManager ---
 
 export class AppManager {
+  private sessionCleanup: SessionCleanup | null = null;
+
   constructor(
     private workspace: Workspace,
     private registry?: AppRegistry,
   ) {}
+
+  /** Set the session cleanup handler (called by server.ts after ChatSessionManager is created) */
+  setSessionCleanup(cleanup: SessionCleanup): void {
+    this.sessionCleanup = cleanup;
+  }
 
   /** List apps (basic info, no files), optionally filtered by mode */
   list(mode?: AppMode): (App & { has_ui: boolean })[] {
@@ -354,6 +366,9 @@ export class AppManager {
       }
     }
 
+    // Clean up in-memory chat session (DB rows cascade-delete via FK)
+    this.sessionCleanup?.remove(name);
+
     // Remove from workspace caches (also closes DB connections)
     this.workspace.removeApp(name);
 
@@ -525,6 +540,8 @@ export class AppManager {
 
       db.query('UPDATE app_files SET app_name = ? WHERE app_name = ?').run(newName, oldName);
       db.query('UPDATE api_keys SET app_name = ? WHERE app_name = ?').run(newName, oldName);
+      db.query('UPDATE agent_sessions SET app_name = ? WHERE app_name = ?').run(newName, oldName);
+      db.query('UPDATE agent_messages SET app_name = ? WHERE app_name = ?').run(newName, oldName);
       db.query('DELETE FROM apps WHERE name = ?').run(oldName);
 
       if (existsSync(oldStableDir)) {
@@ -548,6 +565,7 @@ export class AppManager {
       throw err;
     }
 
+    this.sessionCleanup?.remove(oldName);
     this.workspace.removeApp(oldName);
     this.workspace.refreshAppState(newName);
     this.ensureDraftRuntime(newName);

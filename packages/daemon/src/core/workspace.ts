@@ -225,6 +225,29 @@ export class Workspace {
     if (!columnNames.has('stable_status')) {
       db.exec("ALTER TABLE apps ADD COLUMN stable_status TEXT DEFAULT NULL");
     }
+
+    // Agent session tables
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        app_name TEXT PRIMARY KEY REFERENCES apps(name) ON DELETE CASCADE,
+        sdk_session_id TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        app_name TEXT NOT NULL REFERENCES apps(name) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        tool_name TEXT,
+        tool_status TEXT,
+        tool_summary TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agent_messages_app
+        ON agent_messages(app_name, id);
+    `);
   }
 
   // --- App State ---

@@ -5,6 +5,7 @@ import { MessageSquare } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AppSidebar } from '../features/shell/app-sidebar';
 import { ChatPanel } from '../features/shell/chat-panel';
+import { useChatStore } from '../stores/chat-store';
 import { isAppMode, type AppMode } from './content-slot';
 import type { AppInfo, AppSummary } from '../features/apps/types';
 
@@ -137,6 +138,19 @@ export function AppLayout() {
       setSidebarDrawerOpen(false);
     }
   }, [sidebarVisible]);
+
+  // Drive per-app chat WebSocket connection based on mode + selected app
+  useEffect(() => {
+    const { setActiveApp } = useChatStore.getState();
+    if (selectedMode === 'draft' && appName) {
+      setActiveApp(appName);
+    } else {
+      setActiveApp(null);
+    }
+    return () => {
+      useChatStore.getState().setActiveApp(null);
+    };
+  }, [selectedMode, appName]);
 
   if (!selectedMode) {
     return <Navigate to="/stable" replace />;

@@ -14,6 +14,40 @@ export function ChatPanel({
   onClose?: () => void;
   dismissible: boolean;
 }) {
+  // Stable mode: placeholder UI
+  if (mode === 'stable') {
+    return (
+      <ChatShell title="AI 助手" dismissible={dismissible} onClose={onClose}>
+        <PlaceholderMessage text="Home 模式暂不支持 AI 助手" />
+      </ChatShell>
+    );
+  }
+
+  // Draft mode without an app selected: prompt UI
+  if (!appName) {
+    return (
+      <ChatShell title="AI Builder" dismissible={dismissible} onClose={onClose}>
+        <PlaceholderMessage text="请先选择或创建一个应用" />
+      </ChatShell>
+    );
+  }
+
+  // Draft mode with an app selected: full chat UI
+  return (
+    <ActiveChat appName={appName} dismissible={dismissible} onClose={onClose} />
+  );
+}
+
+/** Full chat UI — only rendered when draft + appName is present */
+function ActiveChat({
+  appName,
+  onClose,
+  dismissible,
+}: {
+  appName: string;
+  onClose?: () => void;
+  dismissible: boolean;
+}) {
   const { messages, streaming, connected, send, cancel } = useChatStore();
   const [input, setInput] = useState('');
 
@@ -23,19 +57,8 @@ export function ChatPanel({
     container.scrollTop = container.scrollHeight;
   }, [messages, streaming]);
 
-  const suggestions = appName
-    ? ['新增页面', '生成表单', '调整布局']
-    : mode === 'draft'
-      ? ['创建新应用', '补齐页面', '整理数据结构']
-      : ['创建新应用', '修改应用', '使用帮助'];
-
-  const introMessage = appName
-    ? `我可以继续帮你修改「${appName}」的界面、组件和交互。`
-    : mode === 'draft'
-      ? '告诉我你想构建什么应用，我会帮你把 Draft 往前推进。'
-      : '你好，我是 CozyBase AI 助手。我可以帮你创建、修改和管理应用。';
-
-  const title = mode === 'draft' ? 'AI Builder' : 'AI 助手';
+  const suggestions = ['新增页面', '生成表单', '调整布局'];
+  const introMessage = `我可以继续帮你修改「${appName}」的界面、组件和交互。`;
 
   const handleSend = (value: string) => {
     if (!value.trim() || streaming || !connected) return;
@@ -50,7 +73,7 @@ export function ChatPanel({
           <Bot className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className='truncate font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>{title}</div>
+          <div className='truncate font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>AI Builder</div>
         </div>
         {!connected && <span className="rounded bg-[#FEF2F2] px-1.5 py-0.5 text-[10px] text-[#DC2626]">离线</span>}
         {dismissible && onClose && (
@@ -104,7 +127,7 @@ export function ChatPanel({
                 handleSend(input);
               }
             }}
-            placeholder={appName ? '告诉 AI 如何修改这个应用...' : '输入消息，与 AI 助手对话...'}
+            placeholder="告诉 AI 如何修改这个应用..."
             disabled={!connected}
             className="h-[38px] min-w-0 flex-1 rounded-full border border-[#E2E8F0] bg-white px-4 text-sm text-[#27272A] outline-none placeholder:text-[#A1A1AA] focus:border-[#94A3B8] disabled:opacity-60"
           />
@@ -131,6 +154,52 @@ export function ChatPanel({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Lightweight shell with header — used for placeholder states */
+function ChatShell({
+  title,
+  dismissible,
+  onClose,
+  children,
+}: {
+  title: string;
+  dismissible: boolean;
+  onClose?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-full w-full flex-col bg-white">
+      <div className="flex h-[60px] items-center gap-3 border-b border-[#EEF2F7] px-5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#18181B] text-white">
+          <Bot className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className='truncate font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>{title}</div>
+        </div>
+        {dismissible && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#E2E8F0] bg-white text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+            aria-label="Close chat"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Centered placeholder message for inactive states */
+function PlaceholderMessage({ text }: { text: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-[#F8FAFC] px-5">
+      <div className="text-center text-sm text-[#94A3B8]">{text}</div>
     </div>
   );
 }

@@ -1,0 +1,103 @@
+/**
+ * SessionStore — Persistence layer for AI Agent sessions.
+ *
+ * Stores SDK session IDs and chat message history in platform.sqlite.
+ * Tables are created by Workspace.initPlatformSchema().
+ */
+
+import type { Database } from 'bun:sqlite';
+
+export interface StoredMessage {
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  toolName?: string;
+  toolStatus?: string;
+  toolSummary?: string;
+}
+
+export class SessionStore {
+  constructor(private db: Database) {}
+
+  // --- Session CRUD ---
+
+  getSessionId(appName: string): string | null {
+    const row = this.db.query(
+      'SELECT sdk_session_id FROM agent_sessions WHERE app_name = ?',
+    ).get(appName) as { sdk_session_id: string | null } | null;
+    return row?.sdk_session_id ?? null;
+  }
+
+  saveSessionId(appName: string, sdkSessionId: string): void {
+    this.db.query(`
+      INSERT INTO agent_sessions (app_name, sdk_session_id, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(app_name) DO UPDATE SET
+        sdk_session_id = excluded.sdk_session_id,
+        updated_at = datetime('now')
+    `).run(appName, sdkSessionId);
+  }
+
+  /** Clear only the SDK session ID (keeps message history intact). */
+  clearSessionId(appName: string): void {
+    this.db.query(`
+      UPDATE agent_sessions SET sdk_session_id = NULL, updated_at = datetime('now')
+      WHERE app_name = ?
+    `).run(appName);
+  }
+
+  /** Delete the session row and all associated messages. */
+  deleteSession(appName: string): void {
+    this.db.query('DELETE FROM agent_sessions WHERE app_name = ?').run(appName);
+    this.db.query('DELETE FROM agent_messages WHERE app_name = ?').run(appName);
+  }
+
+  // --- Message CRUD ---
+
+  getMessages(appName: string, limit = 100): StoredMessage[] {
+    const rows = this.db.query(`
+      SELECT role, content, tool_name, tool_status, tool_summary
+      FROM agent_messages
+      WHERE app_name = ?
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(appName, limit) as {
+      role: string;
+      content: string;
+      tool_name: string | null;
+      tool_status: string | null;
+      tool_summary: string | null;
+    }[];
+
+    // Reverse to get chronological order (we fetched newest-first for LIMIT)
+    rows.reverse();
+
+    return rows.map((row) => {
+      const msg: StoredMessage = {
+        role: row.role as StoredMessage['role'],
+        content: row.content,
+      };
+      if (row.tool_name) msg.toolName = row.tool_name;
+      if (row.tool_status) msg.toolStatus = row.tool_status;
+      if (row.tool_summary) msg.toolSummary = row.tool_summary;
+      return msg;
+    });
+  }
+
+  addMessage(appName: string, msg: StoredMessage): void {
+    this.db.query(`
+      INSERT INTO agent_messages (app_name, role, content, tool_name, tool_status, tool_summary)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      appName,
+      msg.role,
+      msg.content,
+      msg.toolName ?? null,
+      msg.toolStatus ?? null,
+      msg.toolSummary ?? null,
+    );
+  }
+
+  clearMessages(appName: string): void {
+    this.db.query('DELETE FROM agent_messages WHERE app_name = ?').run(appName);
+  }
+}
