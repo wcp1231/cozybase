@@ -63,7 +63,7 @@ export function handleGetGuide(topic: string): string {
     );
   }
 
-  let content = readFileSync(filePath, 'utf-8');
+  let content = stripMarkdownHtmlComments(readFileSync(filePath, 'utf-8'));
 
   // Append subtopics if this is a directory-level topic
   if (isDirectory) {
@@ -142,6 +142,69 @@ function listTopLevelTopics(): string[] {
 function extractTitle(content: string): string | undefined {
   const match = content.match(/^#\s+(.+)$/m);
   return match?.[1]?.trim();
+}
+
+export function stripMarkdownHtmlComments(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let inFence = false;
+  let fenceMarker: '```' | '~~~' | null = null;
+  let inHtmlComment = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    const marker = trimmed.startsWith('```')
+      ? '```'
+      : trimmed.startsWith('~~~')
+        ? '~~~'
+        : null;
+
+    if (marker) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+      } else if (marker === fenceMarker) {
+        inFence = false;
+        fenceMarker = null;
+      }
+      result.push(line);
+      continue;
+    }
+
+    if (inFence) {
+      result.push(line);
+      continue;
+    }
+
+    let nextLine = '';
+    let index = 0;
+    while (index < line.length) {
+      if (inHtmlComment) {
+        const commentEnd = line.indexOf('-->', index);
+        if (commentEnd === -1) {
+          index = line.length;
+          break;
+        }
+        inHtmlComment = false;
+        index = commentEnd + 3;
+        continue;
+      }
+
+      const commentStart = line.indexOf('<!--', index);
+      if (commentStart === -1) {
+        nextLine += line.slice(index);
+        break;
+      }
+
+      nextLine += line.slice(index, commentStart);
+      inHtmlComment = true;
+      index = commentStart + 4;
+    }
+
+    result.push(nextLine);
+  }
+
+  return result.join('\n');
 }
 
 function formatError(message: string): string {

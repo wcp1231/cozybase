@@ -4,10 +4,12 @@ Toggle switch for boolean values.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | boolean | No | Current value |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `boolean` | No | Current value |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example
 

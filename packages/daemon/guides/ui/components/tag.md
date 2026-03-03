@@ -4,10 +4,12 @@ Tag / badge for displaying status labels or categories.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | string | Yes | Tag text (supports expressions) |
-| `color` | string | No | Color: `default`, `success`, `warning`, `error`, `info`, or any custom color value |
+| `text` | `string` | Yes | Tag text (supports expressions) |
+| `color` | `'default' \| 'success' \| 'warning' \| 'error' \| 'info' \| (string & {})` | No | Color: `default`, `success`, `warning`, `error`, `info`, or any custom color value |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

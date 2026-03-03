@@ -9,7 +9,9 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "test": "bun test tests/",
-    "mcp": "bun run src/mcp/mcp-entry.ts"
+    "mcp": "bun run src/mcp/mcp-entry.ts",
+    "sync:ui-guide-props": "bun run scripts/sync-ui-guide-props.ts",
+    "check:ui-guide-props": "bun run scripts/sync-ui-guide-props.ts --check"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",

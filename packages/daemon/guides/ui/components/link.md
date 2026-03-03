@@ -4,10 +4,12 @@ Text link that triggers an action on click.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | string | Yes | Link text |
-| `action` | Action/Action[] | Yes | Action(s) triggered on click |
+| `text` | `string` | Yes | Link text |
+| `action` | `Action/Action[]` | Yes | Action(s) triggered on click |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

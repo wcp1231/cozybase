@@ -4,13 +4,15 @@ Horizontal layout container.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `children` | Component[] | Yes | Child components |
-| `justify` | string | No | Horizontal alignment: `start`, `end`, `center`, `space-between`, `space-around` |
-| `align` | string | No | Vertical alignment: `start`, `center`, `end`, `stretch` |
-| `gap` | number | No | Spacing between children (px) |
-| `wrap` | boolean | No | Whether to wrap children to next line |
+| `children` | `Component[]` | Yes | Child components |
+| `justify` | `'start' \| 'end' \| 'center' \| 'space-between' \| 'space-around'` | No | Horizontal alignment: `start`, `end`, `center`, `space-between`, `space-around` |
+| `align` | `'start' \| 'center' \| 'end' \| 'stretch'` | No | Vertical alignment: `start`, `center`, `end`, `stretch` |
+| `gap` | `number` | No | Spacing between children (px) |
+| `wrap` | `boolean` | No | Whether to wrap children to next line |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

@@ -4,10 +4,12 @@ Displays a message banner with a severity level.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `message` | string | Yes | Alert text |
-| `alertType` | string | No | Severity: `info`, `success`, `warning`, `error` |
+| `message` | `string` | Yes | Alert text |
+| `alertType` | `'info' \| 'success' \| 'warning' \| 'error'` | No | Severity: `info`, `success`, `warning`, `error` |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

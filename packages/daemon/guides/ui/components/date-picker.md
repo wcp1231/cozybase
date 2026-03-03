@@ -4,11 +4,13 @@ Date selection input with calendar popup.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | string | No | Current value (date string) |
-| `format` | string | No | Date format |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `string` | No | Current value (date string) |
+| `format` | `string` | No | Date format |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example
 

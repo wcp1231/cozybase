@@ -4,13 +4,15 @@ Number input field with optional min/max/step constraints.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | number | No | Current value |
-| `min` | number | No | Minimum value |
-| `max` | number | No | Maximum value |
-| `step` | number | No | Step increment |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `number` | No | Current value |
+| `min` | `number` | No | Minimum value |
+| `max` | `number` | No | Maximum value |
+| `step` | `number` | No | Step increment |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example
 

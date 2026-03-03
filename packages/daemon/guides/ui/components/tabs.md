@@ -4,10 +4,12 @@ Tab switcher for data filtering or content grouping.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `items` | TabItem[] | Yes | Tab items |
-| `defaultValue` | string | No | Default selected value |
+| `items` | `TabItem[]` | Yes | Tab items |
+| `defaultValue` | `string` | No | Default selected value |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ### TabItem
 

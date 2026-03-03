@@ -4,10 +4,12 @@ Displays a heading (h1–h6).
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | string | Yes | Heading text (supports expressions) |
-| `level` | 1–6 | No | Heading level (default 1) |
+| `text` | `string` | Yes | Heading text (supports expressions) |
+| `level` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | No | Heading level (default 1) |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

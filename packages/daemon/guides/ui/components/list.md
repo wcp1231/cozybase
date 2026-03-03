@@ -8,10 +8,12 @@ Same as the Table component — the API must return `{ "data": [...] }`. If the 
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `api` | ApiConfig | Yes | Data source configuration |
-| `itemRender` | Component | Yes | Render template for each item (use `${row.xxx}` to access item data) |
+| `api` | `ApiConfig` | Yes | Data source configuration |
+| `itemRender` | `Component` | Yes | Render template for each item (use `${row.xxx}` to access item data) |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example
 

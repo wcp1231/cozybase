@@ -4,11 +4,13 @@ Radio button group for single-value selection.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | string | No | Current selected value |
-| `options` | OptionItem[] | Yes | `{ label, value }` array |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `string` | No | Current selected value |
+| `options` | `OptionItem[]` | Yes | `{ label, value }` array |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example
 

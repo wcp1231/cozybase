@@ -4,11 +4,13 @@ Text input field.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | string | No | Current value |
-| `placeholder` | string | No | Placeholder text |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `string` | No | Current value |
+| `placeholder` | `string` | No | Placeholder text |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

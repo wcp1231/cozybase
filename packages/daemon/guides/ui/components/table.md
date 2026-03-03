@@ -53,13 +53,15 @@ export function GET(ctx) {
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `api` | ApiConfig | Yes | Data source configuration |
-| `columns` | ColumnSchema[] | Yes | Column definitions |
-| `rowActions` | RowActionSchema[] | No | Row action buttons |
-| `pagination` | boolean | No | Enable pagination |
-| `pageSize` | number | No | Rows per page |
+| `api` | `ApiConfig` | Yes | Data source configuration |
+| `columns` | `ColumnSchema[]` | Yes | Column definitions |
+| `rowActions` | `RowAction[]` | No | Row action buttons |
+| `pagination` | `boolean` | No | Enable pagination |
+| `pageSize` | `number` | No | Rows per page |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Column Definition (ColumnSchema)
 

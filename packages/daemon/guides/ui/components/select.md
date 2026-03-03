@@ -4,13 +4,15 @@ Dropdown selector with single or multi-select support.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | string/string[] | No | Current value |
-| `options` | OptionItem[] | Yes | `{ label, value }` array |
-| `multiple` | boolean | No | Enable multi-select |
-| `placeholder` | string | No | Placeholder text |
-| `onChange` | Action[] | No | Action(s) triggered on value change |
+| `value` | `string \| string[]` | No | Current value |
+| `options` | `OptionItem[]` | Yes | `{ label, value }` array |
+| `multiple` | `boolean` | No | Enable multi-select |
+| `placeholder` | `string` | No | Placeholder text |
+| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

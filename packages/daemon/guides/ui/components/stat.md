@@ -4,12 +4,14 @@ Displays a statistical value with label and optional prefix/suffix.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `label` | string | Yes | Metric name |
-| `value` | string/number | Yes | Displayed value (supports expressions) |
-| `prefix` | string | No | Prefix text (e.g. `$`) |
-| `suffix` | string | No | Suffix text (e.g. `%`) |
+| `label` | `string` | Yes | Metric name |
+| `value` | `string \| number` | Yes | Displayed value (supports expressions) |
+| `prefix` | `string` | No | Prefix text (e.g. `$`) |
+| `suffix` | `string` | No | Suffix text (e.g. `%`) |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

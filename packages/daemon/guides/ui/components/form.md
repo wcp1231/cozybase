@@ -24,14 +24,16 @@ Form component for collecting user input and submitting to an API.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `fields` | FieldSchema[] | Yes | Form field definitions |
-| `api` | ApiConfig | No | Submission target API |
-| `onSuccess` | Action/Action[] | No | Executed after successful submission |
-| `onError` | Action/Action[] | No | Executed after failed submission |
-| `initialValues` | object | No | Initial values |
-| `layout` | string | No | Layout: `vertical` (default), `horizontal`, `inline` |
+| `fields` | `FieldSchema[]` | Yes | Form field definitions |
+| `api` | `ApiConfig` | No | Submission target API |
+| `onSuccess` | `Action/Action[]` | No | Executed after successful submission |
+| `onError` | `Action/Action[]` | No | Executed after failed submission |
+| `initialValues` | `object` | No | Initial values |
+| `layout` | `'vertical' \| 'horizontal' \| 'inline'` | No | Layout: `vertical` (default), `horizontal`, `inline` |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Field Definition (FieldSchema)
 

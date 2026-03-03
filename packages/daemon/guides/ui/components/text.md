@@ -4,9 +4,11 @@ Displays a text string. Supports expressions.
 
 ## Properties
 
+<!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | string | Yes | Text content (supports expressions) |
+| `text` | `string` | Yes | Text content (supports expressions) |
+<!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples
 

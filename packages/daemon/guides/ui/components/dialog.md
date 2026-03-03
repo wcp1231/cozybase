@@ -2,6 +2,16 @@
 
 Dialog component for displaying content or collecting user input in a modal window.
 
+## Properties
+
+<!-- AUTO-GENERATED-PROPS:START -->
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `title` | `string` | Yes | Dialog title |
+| `children` | `Component[]` | Yes | Child components rendered inside the dialog |
+| `width` | `number \| string` | No | Dialog width |
+<!-- AUTO-GENERATED-PROPS:END -->
+
 ## Opening via Action
 
 Dialogs are typically opened via the `dialog` Action type, rather than placed directly in `body`:

@@ -1,11 +1,23 @@
 # Components
 
-Catalog of 26 built-in UI components. Each uses the `type` field to specify its kind. All share base properties `id`, `visible`, `className`, and `style`. For full details on any component, call `get_guide("ui/components/<name>")`.
+Catalog of 26 built-in UI components. Each uses the `type` field to specify its kind.
+
+Shared JSON fields for all components:
+
+- `type`
+- `id`
+- `visible`
+- `className`
+- `style`
+
+See `get_guide("ui/common-properties")` for full semantics.
+See `get_guide("ui/styling")` for supported styling patterns and limits.
+For full details on any component, call `get_guide("ui/components/<name>")`.
 
 ## Layout Components
 
 ### page
-Container with a title and child components. Props: `title` (string), `children` (Component[]).
+Vertical container for child components. Props: `children` (Component[]), `title` (string, optional metadata; not rendered automatically by the current renderer).
 
 ### row
 Horizontal layout. Props: `children` (Component[]), `justify` (`start`|`end`|`center`|`space-between`|`space-around`), `align` (`start`|`center`|`end`|`stretch`), `gap` (number, px), `wrap` (boolean).
@@ -14,7 +26,7 @@ Horizontal layout. Props: `children` (Component[]), `justify` (`start`|`end`|`ce
 Vertical layout. Props: `children` (Component[]), `align` (`start`|`center`|`end`|`stretch`), `gap` (number, px).
 
 ### card
-Card container with optional title. Props: `title` (string), `children` (Component[]), `padding` (number, px).
+Card container with optional title. Props: `title` (string), `children` (Component[]), `padding` (number, px), `action` (Action/Action[]; makes the card clickable).
 
 ### tabs
 Tab switcher for filtering or content grouping. Reference selected value via `${tabs-id.value}`. Props: `items` (TabItem[]), `defaultValue` (string). TabItem: `{ label, value, body? }` — `body` displays content when selected. → `get_guide("ui/components/tabs")`
