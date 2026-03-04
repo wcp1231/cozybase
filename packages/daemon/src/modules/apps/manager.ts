@@ -98,18 +98,17 @@ export class AppManager {
 
   /** Check if a slug exists */
   exists(slug: string): boolean {
-    const db = this.workspace.getPlatformDb();
-    return !!db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
+    const repo = this.workspace.getPlatformRepo();
+    return repo.apps.exists(slug);
   }
 
   /** List apps (basic info, no files), optionally filtered by mode */
   list(mode?: AppMode): (App & { has_ui: boolean })[] {
-    const db = this.workspace.getPlatformDb();
-    const apps = db.query(
-      'SELECT slug, display_name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps ORDER BY created_at DESC',
-    ).all() as AppRecord[];
+    const repo = this.workspace.getPlatformRepo();
+    const apps = repo.apps.findAll();
 
     // Batch-check which apps have ui/pages.json
+    const db = this.workspace.getPlatformDb();
     const uiFiles = db.query(
       "SELECT DISTINCT app_slug FROM app_files WHERE path = 'ui/pages.json'",
     ).all() as { app_slug: string }[];
@@ -133,10 +132,8 @@ export class AppManager {
 
   /** Get a single app's basic info */
   get(slug: string): App {
-    const db = this.workspace.getPlatformDb();
-    const app = db.query(
-      'SELECT slug, display_name, description, stable_status, current_version, published_version, created_at, updated_at FROM apps WHERE slug = ?',
-    ).get(slug) as AppRecord | null;
+    const repo = this.workspace.getPlatformRepo();
+    const app = repo.apps.findBySlug(slug);
     if (!app) throw new NotFoundError(`App '${slug}' not found`);
     return this.toApp(app);
   }
@@ -144,11 +141,9 @@ export class AppManager {
   /** Get a single app with all its files */
   getAppWithFiles(slug: string): AppWithFiles {
     const app = this.get(slug);
-    const db = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
-    const files = db.query(
-      'SELECT path, content, immutable FROM app_files WHERE app_slug = ? ORDER BY path',
-    ).all(slug) as { path: string; content: string; immutable: number }[];
+    const files = repo.appFiles.findByApp(slug);
 
     return {
       slug: app.slug,
@@ -176,42 +171,47 @@ export class AppManager {
       throw new InvalidNameError(`Invalid app slug '${slug}'. App slugs cannot start with '_'`);
     }
 
-    const db = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
     // Check slug uniqueness
-    const existing = db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
-    if (existing) {
+    if (repo.apps.exists(slug)) {
       throw new AlreadyExistsError(`App with slug '${slug}' already exists`);
     }
 
     // Wrap all writes in a transaction
-    db.exec('BEGIN');
+    let rawKey = '';
     try {
-      // Create app record with version = 1
-      db.query(
-        'INSERT INTO apps (slug, display_name, description, current_version, published_version) VALUES (?, ?, ?, 1, 0)',
-      ).run(slug, displayName, description);
+      repo.transaction(() => {
+        // Create app record with version = 1
+        repo.apps.create({
+          slug,
+          displayName,
+          description,
+          currentVersion: 1,
+          publishedVersion: 0,
+        });
 
-      // Create template files in app_files
-      const templateFiles = [
-        { path: 'app.yaml', content: `description: ${description}\n` },
-        { path: 'functions/hello.ts', content: TEMPLATE_FUNCTION },
-      ];
+        // Create template files in app_files
+        const templateFiles = [
+          { path: 'app.yaml', content: `description: ${description}\n` },
+          { path: 'functions/hello.ts', content: TEMPLATE_FUNCTION },
+        ];
 
-      for (const file of templateFiles) {
-        db.query(
-          'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
-        ).run(slug, file.path, file.content);
-      }
+        for (const file of templateFiles) {
+          repo.appFiles.create(slug, file.path, file.content);
+        }
 
-      // Generate a default service API key
-      const rawKey = `cb_${nanoid(32)}`;
-      const keyId = nanoid(12);
-      db.query(
-        'INSERT INTO api_keys (id, app_slug, key_hash, name, role) VALUES (?, ?, ?, ?, ?)',
-      ).run(keyId, slug, hashApiKey(rawKey), 'Default Service Key', 'service');
-
-      db.exec('COMMIT');
+        // Generate a default service API key
+        rawKey = `cb_${nanoid(32)}`;
+        const keyId = nanoid(12);
+        repo.apiKeys.create({
+          id: keyId,
+          appSlug: slug,
+          keyHash: hashApiKey(rawKey),
+          name: 'Default Service Key',
+          role: 'service',
+        });
+      });
 
       // Refresh app state cache
       this.workspace.refreshAppState(slug);
@@ -237,7 +237,6 @@ export class AppManager {
       const appWithFiles = this.getAppWithFiles(slug);
       return { app: appWithFiles, apiKey: rawKey, reconcileError };
     } catch (err) {
-      db.exec('ROLLBACK');
       throw err;
     }
   }
@@ -248,7 +247,7 @@ export class AppManager {
     files: { path: string; content: string }[],
     baseVersion: number,
   ): AppWithFiles {
-    const db = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
     // Validate all file entries before any DB work
     for (const file of files) {
@@ -262,23 +261,17 @@ export class AppManager {
     }
 
     // Check app exists and verify version
-    const app = db.query(
-      'SELECT current_version FROM apps WHERE slug = ?',
-    ).get(slug) as { current_version: number } | null;
+    const versionInfo = repo.apps.getVersionInfo(slug);
+    if (!versionInfo) throw new NotFoundError(`App '${slug}' not found`);
 
-    if (!app) throw new NotFoundError(`App '${slug}' not found`);
-
-    if (app.current_version !== baseVersion) {
+    if (versionInfo.current_version !== baseVersion) {
       throw new VersionConflictError(
-        `Version conflict: expected ${baseVersion}, current is ${app.current_version}. Please fetch and retry.`,
+        `Version conflict: expected ${baseVersion}, current is ${versionInfo.current_version}. Please fetch and retry.`,
       );
     }
 
     // Get current files from DB
-    const currentFiles = db.query(
-      'SELECT path, content, immutable FROM app_files WHERE app_slug = ?',
-    ).all(slug) as { path: string; content: string; immutable: number }[];
-
+    const currentFiles = repo.appFiles.findByApp(slug);
     const currentFileMap = new Map(currentFiles.map((f) => [f.path, f]));
     const requestedPaths = new Set(files.map((f) => f.path));
 
@@ -293,12 +286,11 @@ export class AppManager {
     }
 
     // Process changes in a transaction
-    db.exec('BEGIN');
-    try {
+    repo.transaction(() => {
       // Delete non-immutable files that are not in the request
       for (const current of currentFiles) {
         if (!requestedPaths.has(current.path) && current.immutable !== 1) {
-          db.query('DELETE FROM app_files WHERE app_slug = ? AND path = ?').run(slug, current.path);
+          repo.appFiles.delete(slug, current.path);
         }
       }
 
@@ -307,28 +299,17 @@ export class AppManager {
         const current = currentFileMap.get(file.path);
         if (!current) {
           // New file
-          db.query(
-            'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
-          ).run(slug, file.path, file.content);
+          repo.appFiles.create(slug, file.path, file.content);
         } else if (current.content !== file.content && current.immutable !== 1) {
           // Modified non-immutable file
-          db.query(
-            "UPDATE app_files SET content = ?, updated_at = datetime('now') WHERE app_slug = ? AND path = ?",
-          ).run(file.content, slug, file.path);
+          repo.appFiles.update(slug, file.path, file.content);
         }
         // Immutable files with same content: skip
       }
 
       // Increment version
-      db.query(
-        "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?",
-      ).run(slug);
-
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      repo.apps.incrementVersion(slug);
+    });
 
     this.workspace.refreshAppState(slug);
     this.ensureDraftRuntime(slug);
@@ -338,17 +319,15 @@ export class AppManager {
   /** Single file update (no version lock needed) */
   updateFile(slug: string, path: string, content: string): AppFile {
     assertSafeFilePath(path);
-    const db = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
     // Check app exists
-    const app = db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
-    if (!app) throw new NotFoundError(`App '${slug}' not found`);
+    if (!repo.apps.exists(slug)) {
+      throw new NotFoundError(`App '${slug}' not found`);
+    }
 
     // Check immutability
-    const existing = db.query(
-      'SELECT immutable, content FROM app_files WHERE app_slug = ? AND path = ?',
-    ).get(slug, path) as { immutable: number; content: string } | null;
-
+    const existing = repo.appFiles.findByAppAndPath(slug, path);
     if (existing && existing.immutable === 1 && existing.content !== content) {
       throw new ImmutableFileError(
         `Cannot modify immutable file '${path}'. Already-published migrations are immutable.`,
@@ -356,16 +335,10 @@ export class AppManager {
     }
 
     // UPSERT
-    db.query(`
-      INSERT INTO app_files (app_slug, path, content)
-      VALUES (?, ?, ?)
-      ON CONFLICT(app_slug, path) DO UPDATE SET content = excluded.content, updated_at = datetime('now')
-    `).run(slug, path, content);
+    repo.appFiles.upsert(slug, path, content);
 
     // Increment version
-    db.query(
-      "UPDATE apps SET current_version = current_version + 1, updated_at = datetime('now') WHERE slug = ?",
-    ).run(slug);
+    repo.apps.incrementVersion(slug);
 
     this.workspace.refreshAppState(slug);
     this.ensureDraftRuntime(slug);
@@ -401,8 +374,8 @@ export class AppManager {
     this.workspace.removeApp(slug);
 
     // Remove platform records (CASCADE handles dependent app_files and api_keys rows)
-    const db = this.workspace.getPlatformDb();
-    db.query('DELETE FROM apps WHERE slug = ?').run(slug);
+    const repo = this.workspace.getPlatformRepo();
+    repo.apps.delete(slug);
 
     // Remove app data directory (stable DB + functions)
     const appDataDir = join(this.workspace.stableDir, slug);
@@ -420,22 +393,12 @@ export class AppManager {
   /** Update app metadata (description only) */
   update(slug: string, data: { description?: string }): App {
     const app = this.get(slug);
-    const db = this.workspace.getPlatformDb();
-
-    const fields: string[] = [];
-    const values: any[] = [];
+    const repo = this.workspace.getPlatformRepo();
 
     if (data.description !== undefined) {
-      fields.push('description = ?');
-      values.push(data.description);
+      repo.apps.update(slug, { description: data.description });
     }
 
-    if (fields.length === 0) return app;
-
-    fields.push("updated_at = datetime('now')");
-    values.push(slug);
-
-    db.query(`UPDATE apps SET ${fields.join(', ')} WHERE slug = ?`).run(...values);
     this.workspace.refreshAppState(slug);
     return this.get(slug);
   }
@@ -449,10 +412,8 @@ export class AppManager {
       return app;
     }
 
-    const db = this.workspace.getPlatformDb();
-    db.query(
-      "UPDATE apps SET stable_status = 'running', updated_at = datetime('now') WHERE slug = ?",
-    ).run(slug);
+    const repo = this.workspace.getPlatformRepo();
+    repo.apps.update(slug, { stable_status: 'running' });
     this.workspace.refreshAppState(slug);
 
     const appContext = this.workspace.getOrCreateApp(slug);
@@ -477,10 +438,8 @@ export class AppManager {
       return app;
     }
 
-    const db = this.workspace.getPlatformDb();
-    db.query(
-      "UPDATE apps SET stable_status = 'stopped', updated_at = datetime('now') WHERE slug = ?",
-    ).run(slug);
+    const repo = this.workspace.getPlatformRepo();
+    repo.apps.update(slug, { stable_status: 'stopped' });
     this.workspace.refreshAppState(slug);
 
     if (this.registry) {

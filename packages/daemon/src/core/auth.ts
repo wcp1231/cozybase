@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import type { Config } from '../config';
-import type { Database } from 'bun:sqlite';
+import type { PlatformRepository } from './platform-repository';
 
 export interface JwtPayload {
   sub: string;
@@ -40,14 +40,10 @@ export function hashApiKey(key: string): string {
 
 export function verifyApiKey(
   key: string,
-  platformDb: Database,
+  platformRepo: PlatformRepository,
 ): { appName: string; role: string } | null {
   const keyHash = hashApiKey(key);
-  const row = platformDb
-    .query(
-      `SELECT app_slug, role, expires_at FROM api_keys WHERE key_hash = ?`,
-    )
-    .get(keyHash) as { app_slug: string; role: string; expires_at: string | null } | null;
+  const row = platformRepo.apiKeys.findByKeyHash(keyHash);
 
   if (!row) return null;
 
