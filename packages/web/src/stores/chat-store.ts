@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { ChatClient, getChatWsUrl } from '../lib/chat-client';
+import type { AgentEvent, SessionEvent } from '@cozybase/agent/types';
 
 // --- Message types for the UI ---
 
@@ -35,11 +36,13 @@ export interface ChatState {
   setOnReconciled: (callback: (() => void) | null) => void;
 }
 
-// --- Stream buffer (plain variable, not reactive) ---
-let streamBuffer = '';
+// --- Index maps for correlating streaming events (plain variables, not reactive) ---
 
-// --- Tracks whether we are currently accumulating a streaming assistant message ---
-let isAccumulating = false;
+/** messageId → index in the messages array */
+let messageIndex = new Map<string, number>();
+
+/** toolUseId → index in the messages array */
+let toolIndex = new Map<string, number>();
 
 // --- WebSocket client (managed outside React) ---
 let client: ChatClient | null = null;
@@ -50,23 +53,33 @@ let generation = 0;
 // --- Reconcile callback (plain variable, not reactive) ---
 let onReconciledCallback: (() => void) | null = null;
 
-function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, gen: number, msg: any) {
+type WireEvent = AgentEvent | SessionEvent | { type: string; [k: string]: unknown };
+
+function handleMessage(
+  set: (fn: (s: ChatState) => Partial<ChatState>) => void,
+  gen: number,
+  msg: WireEvent,
+) {
   if (!msg || typeof msg !== 'object') return;
   // Stale callback from a previous client — ignore
   if (gen !== generation) return;
 
   switch (msg.type) {
-    case 'chat:status':
+    // --- session.* events ---
+
+    case 'session.connected':
       set(() => ({
-        connected: msg.connected ?? false,
-        streaming: msg.streaming ?? false,
+        connected: true,
+        streaming: (msg as any).streaming ?? false,
       }));
       break;
 
-    case 'chat:history':
-      // Server pushes full history on connect — replace local messages
-      if (Array.isArray(msg.messages)) {
-        const restored: ChatMessage[] = msg.messages.map((m: any) => {
+    case 'session.history': {
+      const raw = (msg as any).messages;
+      if (Array.isArray(raw)) {
+        // Reset index maps: reconnect invalidates any in-flight streaming positions
+        resetIndexMaps();
+        const restored: ChatMessage[] = raw.map((m: any) => {
           if (m.role === 'tool') {
             return {
               role: 'tool' as const,
@@ -80,138 +93,129 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
         set(() => ({ messages: restored }));
       }
       break;
-
-    case 'chat:streaming':
-      set(() => ({ streaming: msg.streaming ?? false }));
-      if (!msg.streaming) {
-        streamBuffer = '';
-        isAccumulating = false;
-      }
-      break;
-
-    case 'chat:error':
-      set((s) => ({
-        messages: [...s.messages, { role: 'assistant', content: `Error: ${msg.error}` }],
-      }));
-      break;
-
-    // SDK message: streaming text delta
-    case 'stream_event': {
-      const event = msg.event;
-      if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-        streamBuffer += event.delta.text;
-        const text = streamBuffer;
-        const shouldReplace = isAccumulating;
-        if (!isAccumulating) {
-          isAccumulating = true;
-        }
-        set((s) => {
-          if (shouldReplace) {
-            const last = s.messages[s.messages.length - 1];
-            if (last?.role === 'assistant' && !('toolName' in last)) {
-              return {
-                messages: [
-                  ...s.messages.slice(0, -1),
-                  { role: 'assistant', content: text },
-                ],
-              };
-            }
-          }
-          return {
-            messages: [...s.messages, { role: 'assistant', content: text }],
-          };
-        });
-      }
-      break;
     }
 
-    // SDK message: complete assistant message (replaces streaming)
-    case 'assistant': {
-      const wasAccumulating = isAccumulating;
-      streamBuffer = '';
-      isAccumulating = false;
-      const content = extractTextContent(msg.message?.content);
-      if (content) {
-        set((s) => {
-          if (wasAccumulating) {
-            const last = s.messages[s.messages.length - 1];
-            if (last?.role === 'assistant' && !('toolName' in last)) {
-              return { messages: [...s.messages.slice(0, -1), { role: 'assistant', content }] };
-            }
-          }
-          return { messages: [...s.messages, { role: 'assistant', content }] };
-        });
-      }
-      // Extract tool_use blocks from the assistant message and add as running tool messages
-      const toolUses = extractToolUseBlocks(msg.message?.content);
-      if (toolUses.length > 0) {
-        set((s) => ({
-          messages: [
-            ...s.messages,
-            ...toolUses.map((t) => ({
-              role: 'tool' as const,
-              toolName: t.name,
-              status: 'running' as const,
-            })),
-          ],
-        }));
-      }
-      break;
-    }
-
-    // SDK message: tool execution progress
-    case 'tool_progress': {
-      const toolName = msg.tool_name ?? msg.name ?? 'tool';
-      set((s) => {
-        const last = s.messages[s.messages.length - 1];
-        if (last?.role === 'tool' && last.toolName === toolName && last.status === 'running') {
-          return s; // Already showing this tool
-        }
-        return { messages: [...s.messages, { role: 'tool', toolName, status: 'running' }] };
-      });
-      break;
-    }
-
-    // SDK message: tool execution summary
-    case 'tool_use_summary': {
-      const summary = msg.summary ?? '';
-      set((s) => {
-        // Mark all currently running tool messages as done with this summary
-        let foundRunning = false;
-        const updated = s.messages.map((m) => {
-          if (m.role === 'tool' && m.status === 'running') {
-            foundRunning = true;
-            return { ...m, status: 'done' as const, summary };
-          }
-          return m;
-        });
-        if (foundRunning) {
-          return { messages: updated };
-        }
-        // Fallback: no running tool found, add a standalone entry
-        return { messages: [...s.messages, { role: 'tool', toolName: 'tool', status: 'done', summary }] };
-      });
-      break;
-    }
-
-    // SDK message: result (turn complete)
-    case 'result':
-      streamBuffer = '';
-      isAccumulating = false;
-      break;
-
-    // Task messages (subagent activity)
-    case 'system':
-      break;
-
-    // App reconciled — notify listeners to refresh UI
-    case 'app:reconciled':
+    case 'session.reconciled':
       onReconciledCallback?.();
       break;
 
+    case 'session.error':
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          { role: 'assistant', content: `Error: ${(msg as any).message ?? ''}` },
+        ],
+        streaming: false,
+      }));
+      break;
+
+    // --- conversation.run.* ---
+
+    case 'conversation.run.started':
+      set(() => ({ streaming: true }));
+      break;
+
+    case 'conversation.run.completed':
+      set(() => ({ streaming: false }));
+      break;
+
+    // --- conversation.message.* ---
+
+    case 'conversation.message.started': {
+      const { messageId } = msg as any;
+      set((s) => {
+        const idx = s.messages.length;
+        messageIndex.set(messageId, idx);
+        return {
+          messages: [
+            ...s.messages,
+            { role: 'assistant' as const, content: '' },
+          ],
+        };
+      });
+      break;
+    }
+
+    case 'conversation.message.delta': {
+      const { messageId, delta } = msg as any;
+      const idx = messageIndex.get(messageId);
+      if (idx === undefined) break;
+      set((s) => {
+        const entry = s.messages[idx];
+        if (!entry || entry.role === 'tool') return s;
+        const updated = [...s.messages];
+        updated[idx] = { ...entry, content: (entry as ChatTextMessage).content + delta };
+        return { messages: updated };
+      });
+      break;
+    }
+
+    case 'conversation.message.completed': {
+      const { messageId, content } = msg as any;
+      const idx = messageIndex.get(messageId);
+      if (idx === undefined) break;
+      messageIndex.delete(messageId);
+      set((s) => {
+        const entry = s.messages[idx];
+        if (!entry || entry.role === 'tool') return s;
+        const updated = [...s.messages];
+        updated[idx] = { role: 'assistant', content: content ?? '' };
+        return { messages: updated };
+      });
+      break;
+    }
+
+    // --- conversation.tool.* ---
+
+    case 'conversation.tool.started': {
+      const { toolUseId, toolName } = msg as any;
+      set((s) => {
+        const idx = s.messages.length;
+        toolIndex.set(toolUseId, idx);
+        return {
+          messages: [
+            ...s.messages,
+            { role: 'tool' as const, toolName: toolName ?? 'tool', status: 'running' as const },
+          ],
+        };
+      });
+      break;
+    }
+
+    case 'conversation.tool.completed': {
+      const { toolUseId, summary } = msg as any;
+      const idx = toolIndex.get(toolUseId);
+      if (idx === undefined) break;
+      toolIndex.delete(toolUseId);
+      set((s) => {
+        const entry = s.messages[idx];
+        if (!entry || entry.role !== 'tool') return s;
+        const updated = [...s.messages];
+        updated[idx] = { ...entry, status: 'done' as const, summary };
+        return { messages: updated };
+      });
+      break;
+    }
+
+    case 'conversation.error':
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          { role: 'assistant' as const, content: `Error: ${(msg as any).message ?? ''}` },
+        ],
+        streaming: false,
+      }));
+      break;
+
+    // conversation.notice, conversation.tool.progress — no UI action needed
     default:
       break;
   }
+}
+
+function resetIndexMaps() {
+  messageIndex = new Map();
+  toolIndex = new Map();
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -229,8 +233,7 @@ export const useChatStore = create<ChatState>((set) => ({
       client.disconnect();
       client = null;
     }
-    streamBuffer = '';
-    isAccumulating = false;
+    resetIndexMaps();
 
     if (!appName) {
       set({ activeApp: null, messages: [], streaming: false, connected: false });
@@ -241,7 +244,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
     // Create new connection scoped to the app
     client = new ChatClient(getChatWsUrl(appName), {
-      onMessage: (msg) => handleMessage(set, gen, msg),
+      onMessage: (msg) => handleMessage(set, gen, msg as WireEvent),
       onStatus: (connected) => {
         if (gen !== generation) return;
         set({ connected });
@@ -255,8 +258,6 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => ({
       messages: [...s.messages, { role: 'user', content: text }],
     }));
-    streamBuffer = '';
-    isAccumulating = false;
     client?.send({ type: 'chat:send', message: text });
   },
 
@@ -268,22 +269,3 @@ export const useChatStore = create<ChatState>((set) => ({
     onReconciledCallback = callback;
   },
 }));
-
-/** Extract plain text from Anthropic message content blocks. */
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-
-  return content
-    .filter((block: any) => block.type === 'text')
-    .map((block: any) => block.text)
-    .join('');
-}
-
-/** Extract tool_use blocks from Anthropic message content. */
-function extractToolUseBlocks(content: unknown): Array<{ id: string; name: string }> {
-  if (!Array.isArray(content)) return [];
-  return content
-    .filter((block: any) => block.type === 'tool_use' && block.name)
-    .map((block: any) => ({ id: block.id, name: block.name }));
-}

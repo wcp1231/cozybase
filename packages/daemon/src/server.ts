@@ -23,6 +23,7 @@ import { SessionStore } from './agent/session-store';
 import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
 import { initWorkspace } from './workspace-init';
 import { eventBus } from './core/event-bus';
+import { ClaudeCodeProvider } from '@cozybase/agent';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -246,12 +247,15 @@ export function createServer(config: Config) {
     appsDir: join(agentDir, 'apps'),
   });
 
+  const agentProvider = new ClaudeCodeProvider();
+
   const sessionStore = new SessionStore(workspace.getPlatformDb());
 
   const chatSessionManager = new ChatSessionManager(
     {
-      mcpServer: sdkMcpServer,
+      agentProvider,
       agentDir,
+      mcpServers: { cozybase: sdkMcpServer },
     },
     sessionStore,
     eventBus,

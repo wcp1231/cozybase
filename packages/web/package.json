@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cozybase/agent": "workspace:*",
     "@cozybase/ui": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^0.575.0",

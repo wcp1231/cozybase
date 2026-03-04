@@ -2,30 +2,25 @@
  * ChatSession — Per-app AI Agent session.
  *
  * Each ChatSession is bound to a single app. It orchestrates the browser
- * WebSocket ↔ Claude Agent SDK communication and persists messages + session
+ * WebSocket ↔ AgentProvider communication and persists messages + session
  * state to the SessionStore.
- *
- * Refactored from the former single-instance ChatService.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  Query,
-  Options,
-  SDKMessage,
-  McpSdkServerConfigWithInstance,
-} from '@anthropic-ai/claude-agent-sdk';
+import type { AgentProvider, AgentQuery, AgentEvent } from '@cozybase/agent';
+import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from './session-store';
 import { buildSystemPrompt } from './system-prompt';
 import type { EventBus } from '../core/event-bus';
 
 export interface ChatSessionConfig {
-  /** In-process MCP server config from createSdkMcpServer() */
-  mcpServer: McpSdkServerConfigWithInstance;
+  /** AgentProvider instance injected from daemon initialization */
+  agentProvider: AgentProvider;
   /** Agent working directory (CWD for Claude built-in tools) */
   agentDir: string;
   /** Model to use */
   model?: string;
+  /** MCP servers to register with the agent (passed through to providerOptions) */
+  mcpServers?: Record<string, McpSdkServerConfigWithInstance>;
 }
 
 /** Message from browser → daemon */
@@ -42,12 +37,13 @@ export class ChatSession {
   readonly appSlug: string;
   private config: ChatSessionConfig;
   private store: SessionStore;
-  private activeQuery: Query | null = null;
+  private activeQuery: AgentQuery | null = null;
   private sdkSessionId: string | null;
   private ws: WebSocketLike | null = null;
   private streaming = false;
   private unsubscribeReconcile: (() => void) | null = null;
-  private toolUseMap = new Map<string, string>();
+  /** Buffers AgentEvents emitted during the active run so a reconnecting client can catch up. */
+  private runEventBuffer: AgentEvent[] = [];
 
   constructor(
     appSlug: string,
@@ -65,7 +61,7 @@ export class ChatSession {
     if (eventBus) {
       this.unsubscribeReconcile = eventBus.on('app:reconciled', (data: { appSlug: string }) => {
         if (data.appSlug === this.appSlug) {
-          this.sendToWs({ type: 'app:reconciled', appSlug: data.appSlug });
+          this.sendToWs({ type: 'session.reconciled', appSlug: data.appSlug });
         }
       });
     }
@@ -80,8 +76,7 @@ export class ChatSession {
 
     // Send current session state
     this.sendToWs({
-      type: 'chat:status',
-      connected: true,
+      type: 'session.connected',
       hasSession: this.sdkSessionId !== null,
       streaming: this.streaming,
     });
@@ -90,7 +85,7 @@ export class ChatSession {
     const history = this.store.getMessages(this.appSlug);
     if (history.length > 0) {
       this.sendToWs({
-        type: 'chat:history',
+        type: 'session.history',
         messages: history.map((m) => {
           if (m.role === 'tool') {
             return {
@@ -104,6 +99,14 @@ export class ChatSession {
         }),
       });
     }
+
+    // If an agent run is in progress, replay its events so the client can
+    // rebuild messageIndex/toolIndex and continue receiving deltas correctly.
+    if (this.streaming && this.runEventBuffer.length > 0) {
+      for (const event of this.runEventBuffer) {
+        this.sendToWs(event);
+      }
+    }
   }
 
   /**
@@ -114,7 +117,7 @@ export class ChatSession {
     try {
       msg = JSON.parse(raw);
     } catch {
-      this.sendToWs({ type: 'chat:error', error: 'Invalid JSON' });
+      this.sendToWs({ type: 'session.error', message: 'Invalid JSON' });
       return;
     }
 
@@ -128,7 +131,7 @@ export class ChatSession {
         break;
 
       default:
-        this.sendToWs({ type: 'chat:error', error: `Unknown message type: ${(msg as any).type}` });
+        this.sendToWs({ type: 'session.error', message: `Unknown message type: ${(msg as any).type}` });
     }
   }
 
@@ -155,6 +158,7 @@ export class ChatSession {
     }
     this.ws = null;
     this.streaming = false;
+    this.runEventBuffer = [];
   }
 
   /**
@@ -166,7 +170,6 @@ export class ChatSession {
     if (this.streaming) {
       throw new Error('Agent is busy processing a previous message');
     }
-    // Delegate to the same handler used by WebSocket messages
     await this.handleUserMessage(text);
   }
 
@@ -174,7 +177,7 @@ export class ChatSession {
 
   private async handleUserMessage(text: string): Promise<void> {
     if (this.streaming) {
-      this.sendToWs({ type: 'chat:error', error: 'Agent is busy processing a previous message' });
+      this.sendToWs({ type: 'session.error', message: 'Agent is busy processing a previous message' });
       return;
     }
 
@@ -186,78 +189,86 @@ export class ChatSession {
     this.store.addMessage(this.appSlug, { role: 'user', content: text });
 
     this.streaming = true;
-    this.toolUseMap.clear();
-    this.sendToWs({ type: 'chat:streaming', streaming: true });
 
     try {
-      const options: Options = {
-        model: this.config.model ?? 'claude-sonnet-4-6',
-        cwd: this.config.agentDir,
+      const agentQuery = this.config.agentProvider.createQuery({
+        prompt: text,
         systemPrompt: buildSystemPrompt(this.appSlug),
-        tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
-        allowedTools: [
-          'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
-          'mcp__cozybase__*',
-        ],
-        mcpServers: { cozybase: this.config.mcpServer },
-        permissionMode: 'acceptEdits',
-        settingSources: ['project'],
-      };
+        cwd: this.config.agentDir,
+        model: this.config.model,
+        resumeSessionId: this.sdkSessionId,
+        providerOptions: {
+          tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
+          allowedTools: [
+            'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
+            'mcp__cozybase__*',
+          ],
+          mcpServers: this.config.mcpServers,
+        },
+      });
 
-      // Resume previous session if available
-      if (this.sdkSessionId) {
-        options.resume = this.sdkSessionId;
-      }
+      this.activeQuery = agentQuery;
 
-      this.activeQuery = query({ prompt: text, options });
+      for await (const event of agentQuery) {
+        // Buffer for reconnect replay, then forward to the browser
+        this.runEventBuffer.push(event);
+        this.sendToWs(event);
 
-      for await (const msg of this.activeQuery) {
-        this.forwardSdkMessage(msg);
-
-        // Persist assistant messages and track tool_use blocks
-        if (msg.type === 'assistant' && msg.message?.content) {
-          const content = msg.message.content;
-
-          // Track tool_use_id → tool_name for later tool_use_summary lookup
-          if (Array.isArray(content)) {
-            for (const block of content as any[]) {
-              if (block.type === 'tool_use' && block.id && block.name) {
-                this.toolUseMap.set(block.id, block.name);
-              }
+        // Handle persistence and state based on event type
+        switch (event.type) {
+          case 'conversation.message.completed':
+            if (event.role === 'assistant' && event.content) {
+              this.store.addMessage(this.appSlug, {
+                role: 'assistant',
+                content: event.content,
+              });
             }
-          }
+            // Remove this message's events from buffer: they're now in session.history
+            // so a reconnecting client would otherwise receive them twice.
+            this.trimMessageFromBuffer(event.messageId);
+            break;
 
-          const text = this.extractTextContent(content);
-          if (text) {
-            this.store.addMessage(this.appSlug, { role: 'assistant', content: text });
-          }
-        }
+          case 'conversation.tool.completed':
+            this.store.addMessage(this.appSlug, {
+              role: 'tool',
+              content: '',
+              toolName: event.toolName,
+              toolStatus: 'done',
+              toolSummary: event.summary,
+            });
+            // Same dedup: trim tool events now that they're in session.history
+            this.trimToolFromBuffer(event.toolUseId);
+            break;
 
-        // Persist tool summaries with resolved tool name
-        if (msg.type === 'tool_use_summary') {
-          const ids: string[] = (msg as any).preceding_tool_use_ids ?? [];
-          const toolNames = ids.map((id: string) => this.toolUseMap.get(id)).filter(Boolean);
-          const toolName = toolNames.length > 0 ? toolNames.join(', ') : 'tool';
-          this.store.addMessage(this.appSlug, {
-            role: 'tool',
-            content: '',
-            toolName,
-            toolStatus: 'done',
-            toolSummary: (msg as any).summary ?? '',
-          });
-        }
+          case 'conversation.run.completed':
+            // sessionId is empty when the run was interrupted — don't overwrite
+            if (event.sessionId) {
+              this.sdkSessionId = event.sessionId;
+              this.store.saveSessionId(this.appSlug, event.sessionId);
+            }
+            break;
 
-        // Capture session_id for subsequent resume
-        if (msg.type === 'result' && !msg.is_error && 'session_id' in msg) {
-          this.sdkSessionId = msg.session_id;
-          this.store.saveSessionId(this.appSlug, msg.session_id);
+          case 'conversation.error':
+            this.store.addMessage(this.appSlug, {
+              role: 'assistant',
+              content: `Error: ${event.message}`,
+            });
+            // If resume failed, clear stale SDK session ID but keep message history
+            if (this.sdkSessionId && event.message.includes('session')) {
+              this.sdkSessionId = null;
+              this.store.clearSessionId(this.appSlug);
+            }
+            break;
         }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.sendToWs({ type: 'chat:error', error: message });
-
-      // If resume failed, clear stale SDK session ID but keep message history
+      this.sendToWs({ type: 'session.error', message });
+      this.store.addMessage(this.appSlug, {
+        role: 'assistant',
+        content: `Error: ${message}`,
+      });
+      // If resume failed, clear stale SDK session ID
       if (this.sdkSessionId && message.includes('session')) {
         this.sdkSessionId = null;
         this.store.clearSessionId(this.appSlug);
@@ -265,27 +276,16 @@ export class ChatSession {
     } finally {
       this.activeQuery = null;
       this.streaming = false;
-      this.toolUseMap.clear();
-      this.sendToWs({ type: 'chat:streaming', streaming: false });
+      this.runEventBuffer = [];
     }
   }
 
   private handleCancel(): void {
     if (this.activeQuery) {
-      this.activeQuery.interrupt();
+      this.activeQuery.interrupt().catch((err) => {
+        console.error(`[ChatSession:${this.appSlug}] interrupt() failed:`, err);
+      });
     }
-  }
-
-  /**
-   * Forward an SDKMessage to the browser, filtering/transforming as needed.
-   */
-  private forwardSdkMessage(msg: SDKMessage): void {
-    // Skip user message replays (they are re-sent by resume)
-    if (msg.type === 'user') {
-      return;
-    }
-
-    this.sendToWs(msg);
   }
 
   private sendToWs(data: unknown): void {
@@ -294,13 +294,24 @@ export class ChatSession {
     }
   }
 
-  /** Extract plain text from Anthropic message content blocks. */
-  private extractTextContent(content: unknown): string {
-    if (typeof content === 'string') return content;
-    if (!Array.isArray(content)) return '';
-    return content
-      .filter((block: any) => block.type === 'text')
-      .map((block: any) => block.text)
-      .join('');
+  /**
+   * Remove all buffered events that belong to the given messageId.
+   * Called after a conversation.message.completed is persisted to the store so
+   * a reconnecting client won't see them again via both session.history and the buffer.
+   */
+  private trimMessageFromBuffer(messageId: string): void {
+    this.runEventBuffer = this.runEventBuffer.filter(
+      (e) => !('messageId' in e && (e as any).messageId === messageId),
+    );
+  }
+
+  /**
+   * Remove all buffered events that belong to the given toolUseId.
+   * Called after a conversation.tool.completed is persisted.
+   */
+  private trimToolFromBuffer(toolUseId: string): void {
+    this.runEventBuffer = this.runEventBuffer.filter(
+      (e) => !('toolUseId' in e && (e as any).toolUseId === toolUseId),
+    );
   }
 }

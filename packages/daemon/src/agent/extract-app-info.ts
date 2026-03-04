@@ -32,7 +32,7 @@ export async function extractAppInfo(idea: string): Promise<ExtractedAppInfo> {
   const q = query({
     prompt: idea,
     options: {
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-haiku-4-5',
       systemPrompt: SYSTEM_PROMPT,
       tools: [],
       allowedTools: [],
@@ -49,7 +49,7 @@ export async function extractAppInfo(idea: string): Promise<ExtractedAppInfo> {
     // Also check result for text
     if (msg.type === 'result') {
       if ((msg as any).is_error) {
-        throw new Error(`LLM extraction failed: ${(msg as any).error ?? 'unknown error'}`);
+        throw new Error(`LLM extraction failed: ${(msg as any).result ?? 'unknown error'}`);
       }
       if ('result_text' in msg && typeof (msg as any).result_text === 'string') {
         assistantText = (msg as any).result_text || assistantText;
