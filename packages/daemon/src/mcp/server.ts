@@ -35,6 +35,12 @@ import { handleGetGuide } from './guide-handler';
 
 import { TOOL_DESCRIPTIONS } from '../modules/apps/mcp-types';
 
+function jsonText(result: unknown) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+  };
+}
+
 /**
  * Create and configure a McpServer with all cozybase tools registered.
  */
@@ -46,157 +52,173 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
 
   // --- App Lifecycle ---
 
-  server.tool(
+  server.registerTool(
     'create_app',
-    TOOL_DESCRIPTIONS.create_app,
-    { name: z.string(), description: z.string().optional() },
+    {
+      description: TOOL_DESCRIPTIONS.create_app,
+      inputSchema: { name: z.string(), description: z.string().optional() },
+    },
     async (args) => {
-      const result = await handleCreateApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleCreateApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'list_apps',
-    TOOL_DESCRIPTIONS.list_apps,
+    {
+      description: TOOL_DESCRIPTIONS.list_apps,
+      inputSchema: {},
+    },
     async () => {
-      const result = await handleListApps(ctx);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleListApps(ctx));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'fetch_app',
-    TOOL_DESCRIPTIONS.fetch_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.fetch_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleFetchApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleFetchApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'delete_app',
-    TOOL_DESCRIPTIONS.delete_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.delete_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleDeleteApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleDeleteApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'start_app',
-    TOOL_DESCRIPTIONS.start_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.start_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleStartApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleStartApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'stop_app',
-    TOOL_DESCRIPTIONS.stop_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.stop_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleStopApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleStopApp(ctx, args));
     },
   );
 
   // --- File Sync ---
 
-  server.tool(
+  server.registerTool(
     'update_app',
-    TOOL_DESCRIPTIONS.update_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.update_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleUpdateApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleUpdateApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'update_app_file',
-    TOOL_DESCRIPTIONS.update_app_file,
-    { app_name: z.string(), path: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.update_app_file,
+      inputSchema: { app_name: z.string(), path: z.string() },
+    },
     async (args) => {
-      const result = await handleUpdateAppFile(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleUpdateAppFile(ctx, args));
     },
   );
 
   // --- Dev Workflow ---
 
-  server.tool(
+  server.registerTool(
     'reconcile_app',
-    TOOL_DESCRIPTIONS.reconcile_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.reconcile_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleReconcileApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleReconcileApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'verify_app',
-    TOOL_DESCRIPTIONS.verify_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.verify_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handleVerifyApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleVerifyApp(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'publish_app',
-    TOOL_DESCRIPTIONS.publish_app,
-    { app_name: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.publish_app,
+      inputSchema: { app_name: z.string() },
+    },
     async (args) => {
-      const result = await handlePublishApp(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handlePublishApp(ctx, args));
     },
   );
 
   // --- Runtime Interaction ---
 
-  server.tool(
+  server.registerTool(
     'execute_sql',
-    TOOL_DESCRIPTIONS.execute_sql,
     {
-      app_name: z.string(),
-      sql: z.string(),
-      mode: z.enum(['draft', 'stable']).optional(),
+      description: TOOL_DESCRIPTIONS.execute_sql,
+      inputSchema: {
+        app_name: z.string(),
+        sql: z.string(),
+        mode: z.enum(['draft', 'stable']).optional(),
+      },
     },
     async (args) => {
-      const result = await handleExecuteSql(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleExecuteSql(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'call_api',
-    TOOL_DESCRIPTIONS.call_api,
     {
-      app_name: z.string(),
-      method: z.string(),
-      path: z.string(),
-      body: z.any().optional(),
-      mode: z.enum(['draft', 'stable']).optional(),
+      description: TOOL_DESCRIPTIONS.call_api,
+      inputSchema: {
+        app_name: z.string(),
+        method: z.string(),
+        path: z.string(),
+        body: z.any().optional(),
+        mode: z.enum(['draft', 'stable']).optional(),
+      },
     },
     async (args) => {
-      const result = await handleCallApi(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleCallApi(ctx, args));
     },
   );
 
   // --- Documentation ---
 
-  server.tool(
+  server.registerTool(
     'get_guide',
-    TOOL_DESCRIPTIONS.get_guide,
-    { topic: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.get_guide,
+      inputSchema: { topic: z.string() },
+    },
     async (args) => {
       const content = handleGetGuide(args.topic);
       return { content: [{ type: 'text', text: content }] };
@@ -205,92 +227,99 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
 
   // --- UI Inspection ---
 
-  server.tool(
+  server.registerTool(
     'inspect_ui',
-    TOOL_DESCRIPTIONS.inspect_ui,
     {
-      app_name: z.string(),
-      page: z.string().optional(),
+      description: TOOL_DESCRIPTIONS.inspect_ui,
+      inputSchema: {
+        app_name: z.string(),
+        page: z.string().optional(),
+      },
     },
     async (args) => {
-      const result = await handleInspectUi(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(await handleInspectUi(ctx, args));
     },
   );
 
   // --- Page Editing ---
 
-  server.tool(
+  server.registerTool(
     'page_outline',
-    TOOL_DESCRIPTIONS.page_outline,
-    { app_name: z.string(), page_id: z.string().optional() },
+    {
+      description: TOOL_DESCRIPTIONS.page_outline,
+      inputSchema: { app_name: z.string(), page_id: z.string().optional() },
+    },
     (args) => {
-      const result = handlePageOutline(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageOutline(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'page_get',
-    TOOL_DESCRIPTIONS.page_get,
-    { app_name: z.string(), node_id: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.page_get,
+      inputSchema: { app_name: z.string(), node_id: z.string() },
+    },
     (args) => {
-      const result = handlePageGet(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageGet(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'page_insert',
-    TOOL_DESCRIPTIONS.page_insert,
     {
-      app_name: z.string(),
-      parent_id: z.string(),
-      node: z.record(z.unknown()),
-      index: z.number().int().nonnegative().optional(),
+      description: TOOL_DESCRIPTIONS.page_insert,
+      inputSchema: {
+        app_name: z.string(),
+        parent_id: z.string(),
+        node: z.record(z.unknown()),
+        index: z.number().int().nonnegative().optional(),
+      },
     },
     (args) => {
-      const result = handlePageInsert(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageInsert(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'page_update',
-    TOOL_DESCRIPTIONS.page_update,
     {
-      app_name: z.string(),
-      node_id: z.string(),
-      props: z.record(z.unknown()),
+      description: TOOL_DESCRIPTIONS.page_update,
+      inputSchema: {
+        app_name: z.string(),
+        node_id: z.string(),
+        props: z.record(z.unknown()),
+      },
     },
     (args) => {
-      const result = handlePageUpdate(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageUpdate(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'page_move',
-    TOOL_DESCRIPTIONS.page_move,
     {
-      app_name: z.string(),
-      node_id: z.string(),
-      new_parent_id: z.string(),
-      index: z.number().int().nonnegative().optional(),
+      description: TOOL_DESCRIPTIONS.page_move,
+      inputSchema: {
+        app_name: z.string(),
+        node_id: z.string(),
+        new_parent_id: z.string(),
+        index: z.number().int().nonnegative().optional(),
+      },
     },
     (args) => {
-      const result = handlePageMove(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageMove(ctx, args));
     },
   );
 
-  server.tool(
+  server.registerTool(
     'page_delete',
-    TOOL_DESCRIPTIONS.page_delete,
-    { app_name: z.string(), node_id: z.string() },
+    {
+      description: TOOL_DESCRIPTIONS.page_delete,
+      inputSchema: { app_name: z.string(), node_id: z.string() },
+    },
     (args) => {
-      const result = handlePageDelete(ctx, args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return jsonText(handlePageDelete(ctx, args));
     },
   );
 
