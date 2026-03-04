@@ -468,6 +468,7 @@ describe('createServer() first-init auto-publish', () => {
     // State should retain stable and show draft changes - auto-publish did NOT run
     const state = ws2.getAppState('welcome');
     expect(state).toEqual({ stableStatus: 'running', hasDraft: true });
+    expect(reg2.get('welcome', 'draft')).toBeUndefined();
 
     reg2.shutdownAll();
     ws2.close();

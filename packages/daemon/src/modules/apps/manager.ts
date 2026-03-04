@@ -609,6 +609,9 @@ export class AppManager {
     const state = this.workspace.getAppState(slug) ?? this.workspace.refreshAppState(slug);
     if (!state?.hasDraft) return;
 
+    const appContext = this.workspace.getOrCreateApp(slug);
+    if (!appContext?.hasDraftReconcileState()) return;
+
     const existing = this.registry.get(slug, 'draft');
     if (existing?.status === 'running') return;
 

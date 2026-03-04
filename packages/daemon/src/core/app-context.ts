@@ -46,6 +46,11 @@ export class AppContext {
     return this._draftDb;
   }
 
+  /** Return whether the draft environment has been materialized by reconcile */
+  hasDraftReconcileState(): boolean {
+    return existsSync(join(this.draftDataDir, '.reconcile-state.json'));
+  }
+
   /** Destroy and reset the draft database (for draft reconcile) */
   resetDraft(): void {
     // Close existing connection

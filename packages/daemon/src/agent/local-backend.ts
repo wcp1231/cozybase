@@ -193,7 +193,7 @@ export class LocalBackend implements CozybaseBackend {
 
     // Restart draft runtime after reconcile
     const appContext = this.workspace.getOrCreateApp(slug);
-    if (appContext) {
+    if (result.success && appContext?.hasDraftReconcileState()) {
       this.registry.restart(slug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,

@@ -4,7 +4,6 @@ import {
   readdirSync,
   mkdirSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from 'fs';
 import { createHash } from 'crypto';
@@ -64,8 +63,8 @@ export class DraftReconciler {
     // 1. Query migrations from app_files
     const platformDb = this.workspace.getPlatformDb();
     const migrationRecords = platformDb.query(
-      "SELECT path, content, updated_at FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
-    ).all(appName) as { path: string; content: string; updated_at: string }[];
+      "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
+    ).all(appName) as { path: string; content: string }[];
 
     const migrations = MigrationRunner.fromDbRecords(migrationRecords);
     const migrationSignature = this.buildMigrationSignature(migrationRecords);
@@ -73,7 +72,6 @@ export class DraftReconciler {
       appContext.draftDbPath,
       appContext.draftDataDir,
       migrationSignature,
-      this.getLatestMigrationUpdatedAt(migrationRecords),
     );
 
     let migrationResult = { success: true, executed: [] } as {
@@ -163,7 +161,6 @@ export class DraftReconciler {
     draftDbPath: string,
     draftDataDir: string,
     migrationSignature: string,
-    latestMigrationUpdatedAt: Date | null,
   ): boolean {
     if (!existsSync(draftDbPath)) {
       return true;
@@ -171,7 +168,7 @@ export class DraftReconciler {
 
     const previousState = this.readDraftReconcileState(draftDataDir);
     if (!previousState) {
-      return !this.canReuseLegacyDraftDb(draftDbPath, latestMigrationUpdatedAt);
+      return true;
     }
 
     return previousState.migrationSignature !== migrationSignature;
@@ -219,44 +216,6 @@ export class DraftReconciler {
       JSON.stringify({ migrationSignature }, null, 2),
       'utf-8',
     );
-  }
-
-  private getLatestMigrationUpdatedAt(
-    records: { updated_at: string }[],
-  ): Date | null {
-    let latest: Date | null = null;
-    for (const record of records) {
-      const parsed = this.parseSqliteDateTime(record.updated_at);
-      if (parsed && (!latest || parsed > latest)) {
-        latest = parsed;
-      }
-    }
-    return latest;
-  }
-
-  private canReuseLegacyDraftDb(
-    draftDbPath: string,
-    latestMigrationUpdatedAt: Date | null,
-  ): boolean {
-    if (!existsSync(draftDbPath)) {
-      return false;
-    }
-
-    if (!latestMigrationUpdatedAt) {
-      return true;
-    }
-
-    try {
-      const draftDbMtime = statSync(draftDbPath).mtime;
-      return draftDbMtime >= latestMigrationUpdatedAt;
-    } catch {
-      return false;
-    }
-  }
-
-  private parseSqliteDateTime(value: string): Date | null {
-    const parsed = new Date(value.replace(' ', 'T') + 'Z');
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   /** Validate all function files for an app (non-blocking, reads from draft dir) */

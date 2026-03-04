@@ -149,7 +149,7 @@ export function createServer(config: Config) {
 
     // Restart draft in Runtime after reconcile
     const appContext = workspace.getOrCreateApp(appSlug);
-    if (appContext) {
+    if (result.success && appContext?.hasDraftReconcileState()) {
       registry.restart(appSlug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,
@@ -377,6 +377,10 @@ async function initializeRuntime(
     }
 
     if (state.hasDraft) {
+      if (!appContext.hasDraftReconcileState()) {
+        continue;
+      }
+
       try {
         registry.start(appDef.slug, {
           mode: 'draft',
