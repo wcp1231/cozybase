@@ -7,11 +7,11 @@ Dropdown selector with single or multi-select support.
 <!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `value` | `string \| string[]` | No | Current value |
-| `options` | `OptionItem[]` | Yes | `{ label, value }` array |
+| `value` | `union` | No | Current value |
+| `options` | `Option[][]` | Yes | `{ label, value }` array |
 | `multiple` | `boolean` | No | Enable multi-select |
 | `placeholder` | `string` | No | Placeholder text |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples

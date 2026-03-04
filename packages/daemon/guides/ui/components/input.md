@@ -9,7 +9,7 @@ Text input field.
 |----------|------|----------|-------------|
 | `value` | `string` | No | Current value |
 | `placeholder` | `string` | No | Placeholder text |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples

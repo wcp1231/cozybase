@@ -81,7 +81,7 @@ describe('CardRenderer', () => {
           children: [
             { type: 'text', text: 'Hello' },
           ],
-        } as CardComponent,
+        } as unknown as CardComponent,
       ],
     };
 
@@ -113,7 +113,7 @@ describe('CardRenderer', () => {
             method: 'POST',
             url: '/fn/track-click',
           },
-        } as CardComponent,
+        } as unknown as CardComponent,
       ],
     };
 
@@ -148,7 +148,7 @@ describe('CardRenderer', () => {
             method: 'POST',
             url: '/fn/noop',
           },
-        } as CardComponent,
+        } as unknown as CardComponent,
       ],
     };
 
@@ -183,14 +183,14 @@ describe('CardRenderer', () => {
                 method: 'POST',
                 url: '/fn/button-action',
               },
-            } as ButtonComponent,
+            } as unknown as ButtonComponent,
           ],
           action: {
             type: 'api',
             method: 'POST',
             url: '/fn/card-action',
           },
-        } as CardComponent,
+        } as unknown as CardComponent,
       ],
     };
 
@@ -233,14 +233,14 @@ describe('CardRenderer', () => {
                 method: 'POST',
                 url: '/fn/link-action',
               },
-            } as LinkComponent,
+            } as unknown as LinkComponent,
           ],
           action: {
             type: 'api',
             method: 'POST',
             url: '/fn/card-action',
           },
-        } as CardComponent,
+        } as unknown as CardComponent,
       ],
     };
 
@@ -288,8 +288,8 @@ describe('CardRenderer', () => {
                 "${row.status === 'allergic' ? '#ff4d4f' : row.status === 'not_allergic' ? '#52c41a' : '#ffffff'}",
             },
             children: [{ type: 'text', text: '${row.name}' }],
-          } as CardComponent,
-        } as ListComponent,
+          } as unknown as CardComponent,
+        } as unknown as ListComponent,
       ],
     };
 

@@ -8,7 +8,7 @@ Vertical container component for grouping child content.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `title` | `string` | No | Optional metadata field. The current renderer does not display it automatically. |
-| `children` | `Component[]` | Yes | Child components |
+| `children` | `Component \| Component[]` | Yes | Child components |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

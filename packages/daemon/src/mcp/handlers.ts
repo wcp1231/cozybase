@@ -40,7 +40,23 @@ import type {
   ExecuteSqlOutput,
   CallApiInput,
   CallApiOutput,
+  PageOutlineInput,
+  PageGetInput,
+  PageInsertInput,
+  PageUpdateInput,
+  PageMoveInput,
+  PageDeleteInput,
 } from '../modules/apps/mcp-types';
+
+import {
+  getPageOutline,
+  getNode,
+  insertNode,
+  updateNode,
+  moveNode,
+  deleteNode,
+  PageEditorError,
+} from '../modules/apps/page-editor';
 
 import type { DraftReconcileResult } from '../core/draft-reconciler';
 import type { VerifyResult } from '../core/verifier';
@@ -225,6 +241,71 @@ export async function handleCallApi(
   const mode = input.mode ?? 'draft';
   return ctx.backend.callApi(input.app_name, input.method, input.path, input.body, mode);
 }
+
+// --- Page Editing ---
+
+function makePageEditorCtx(ctx: HandlerContext, appName: string) {
+  return { appsDir: ctx.appsDir, appName };
+}
+
+export function handlePageOutline(
+  ctx: HandlerContext,
+  input: PageOutlineInput,
+): ReturnType<typeof getPageOutline> {
+  return getPageOutline(makePageEditorCtx(ctx, input.app_name), input.page_id);
+}
+
+export function handlePageGet(
+  ctx: HandlerContext,
+  input: PageGetInput,
+): ReturnType<typeof getNode> {
+  return getNode(makePageEditorCtx(ctx, input.app_name), input.node_id);
+}
+
+export function handlePageInsert(
+  ctx: HandlerContext,
+  input: PageInsertInput,
+): ReturnType<typeof insertNode> {
+  return insertNode(
+    makePageEditorCtx(ctx, input.app_name),
+    input.parent_id,
+    input.node,
+    input.index,
+  );
+}
+
+export function handlePageUpdate(
+  ctx: HandlerContext,
+  input: PageUpdateInput,
+): ReturnType<typeof updateNode> {
+  return updateNode(
+    makePageEditorCtx(ctx, input.app_name),
+    input.node_id,
+    input.props,
+  );
+}
+
+export function handlePageMove(
+  ctx: HandlerContext,
+  input: PageMoveInput,
+): ReturnType<typeof moveNode> {
+  return moveNode(
+    makePageEditorCtx(ctx, input.app_name),
+    input.node_id,
+    input.new_parent_id,
+    input.index,
+  );
+}
+
+export function handlePageDelete(
+  ctx: HandlerContext,
+  input: PageDeleteInput,
+): { deleted: string } {
+  deleteNode(makePageEditorCtx(ctx, input.app_name), input.node_id);
+  return { deleted: input.node_id };
+}
+
+export { PageEditorError };
 
 // --- UI Inspection ---
 

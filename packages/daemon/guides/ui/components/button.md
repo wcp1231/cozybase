@@ -8,8 +8,8 @@ Button that triggers an action on click.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `label` | `string` | Yes | Button text |
-| `action` | `Action/Action[]` | Yes | Action(s) triggered on click |
-| `variant` | `'primary' \| 'secondary' \| 'danger' \| 'ghost'` | No | Style variant: `primary`, `secondary`, `danger`, `ghost` |
+| `action` | `Action \| Action[]` | Yes | Action(s) triggered on click |
+| `variant` | `primary \| secondary \| danger \| ghost` | No | Style variant: `primary`, `secondary`, `danger`, `ghost` |
 | `disabled` | `string \| boolean` | No | Whether disabled (supports expressions) |
 | `loading` | `string \| boolean` | No | Whether to show loading state |
 <!-- AUTO-GENERATED-PROPS:END -->

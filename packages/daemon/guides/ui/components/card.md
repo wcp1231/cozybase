@@ -8,9 +8,9 @@ Card container with optional title.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `title` | `string` | No | Card title |
-| `children` | `Component[]` | Yes | Child components |
+| `children` | `Component \| Component[]` | Yes | Child components |
 | `padding` | `number` | No | Inner padding (px) |
-| `action` | `Action/Action[]` | No | Optional click action. When provided, the whole card becomes clickable. |
+| `action` | `Action \| Action[]` | No | Optional click action. When provided, the whole card becomes clickable. |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

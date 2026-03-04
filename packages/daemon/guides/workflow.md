@@ -46,6 +46,70 @@ Use your file tools (read/write) to edit files in the working directory:
 - **ui/pages.json** — Declarative UI page definitions
 - **package.json** — npm dependencies; `bun install` runs automatically during reconcile
 
+### Editing UI Pages with Page Tools (Recommended)
+
+Instead of reading and writing `ui/pages.json` directly with file tools, use the **page editing tools** for structured, validated edits:
+
+```
+# 1. Get a structural overview of all pages
+page_outline(app_name: "my-app")
+
+# 2. Inspect a specific node by ID
+page_get(app_name: "my-app", node_id: "btn-save-a7x3k")
+
+# 3. Insert a new component into a container node
+page_insert(app_name: "my-app", parent_id: "row-main-9kp2r", node: {
+  type: "text",
+  text: "Hello world"
+})
+
+# 4. Update properties of an existing node (cannot change id or type)
+page_update(app_name: "my-app", node_id: "txt-greeting-p1q8s", props: { text: "Welcome back" })
+
+# 5. Move a node to a new parent
+page_move(app_name: "my-app", node_id: "btn-save-a7x3k", new_parent_id: "card-footer-xz21b")
+
+# 6. Delete a node and its entire subtree
+page_delete(app_name: "my-app", node_id: "row-old-m4k9j")
+```
+
+After page edits, sync the working copy back to cozybase:
+
+```
+update_app_file(app_name: "my-app", path: "ui/pages.json")
+```
+
+#### Why use page tools instead of raw file editing?
+
+- **IDs are auto-generated** — You don't need to invent unique IDs; the system generates stable `{type}-{nanoid5}` IDs automatically
+- **Validated before write** — Every edit is validated against the full schema before writing; invalid edits are rejected without corrupting the file
+- **Targeted changes** — Use `page_get` to inspect a specific node, then `page_update` with only the props you want to change
+- **No accidental deletions** — Semantic checks prevent creating dangling references (e.g. a `reload.target` pointing to a deleted node)
+
+#### Page tool workflow
+
+```
+fetch_app(app_name: "my-app")         # populate working copy
+        │
+page_outline(app_name: "my-app")      # explore the page structure
+        │
+page_get / page_insert                 # inspect and edit nodes
+page_update / page_move / page_delete
+        │
+update_app_file(path: "ui/pages.json") # sync working copy to cozybase
+        │
+reconcile_app(app_name: "my-app")     # rebuild Draft with new UI
+        │
+inspect_ui(app_name: "my-app")        # verify UI renders correctly
+```
+
+#### Container types (can have children)
+
+Only these types accept children via `page_insert` or `page_move`:
+`page`, `row`, `col`, `card`, `dialog`
+
+Attempting to insert into a non-container type will return an error.
+
 ## 3. Upload Changes
 
 After editing, upload files back to cozybase:

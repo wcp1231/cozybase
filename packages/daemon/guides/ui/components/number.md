@@ -11,7 +11,7 @@ Number input field with optional min/max/step constraints.
 | `min` | `number` | No | Minimum value |
 | `max` | `number` | No | Maximum value |
 | `step` | `number` | No | Step increment |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

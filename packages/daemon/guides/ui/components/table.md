@@ -57,8 +57,8 @@ export function GET(ctx) {
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `api` | `ApiConfig` | Yes | Data source configuration |
-| `columns` | `ColumnSchema[]` | Yes | Column definitions |
-| `rowActions` | `RowAction[]` | No | Row action buttons |
+| `columns` | `Column[][]` | Yes | Column definitions |
+| `rowActions` | `RowAction[][]` | No | Row action buttons |
 | `pagination` | `boolean` | No | Enable pagination |
 | `pageSize` | `number` | No | Rows per page |
 <!-- AUTO-GENERATED-PROPS:END -->

@@ -7,7 +7,7 @@ Tab switcher for data filtering or content grouping.
 <!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `items` | `TabItem[]` | Yes | Tab items |
+| `items` | `TabItem[][]` | Yes | Tab items |
 | `defaultValue` | `string` | No | Default selected value |
 <!-- AUTO-GENERATED-PROPS:END -->
 

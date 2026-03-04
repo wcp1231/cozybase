@@ -8,8 +8,8 @@ Dialog component for displaying content or collecting user input in a modal wind
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `title` | `string` | Yes | Dialog title |
-| `children` | `Component[]` | Yes | Child components rendered inside the dialog |
-| `width` | `number \| string` | No | Dialog width |
+| `children` | `Component \| Component[]` | Yes | Child components rendered inside the dialog |
+| `width` | `union` | No | Dialog width |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Opening via Action

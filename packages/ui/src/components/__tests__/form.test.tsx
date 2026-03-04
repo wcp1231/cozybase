@@ -81,7 +81,7 @@ describe('FormRenderer', () => {
                 defaultValue: 'Hello World',
               },
             ],
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -107,7 +107,7 @@ describe('FormRenderer', () => {
                 defaultValue: '${row.title}',
               },
             ],
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -136,7 +136,7 @@ describe('FormRenderer', () => {
               name: 'Alice',
               notes: 'Some notes',
             },
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -163,7 +163,7 @@ describe('FormRenderer', () => {
               baby_name: '${params.baby_name}',
               notes: '${params.note_text}',
             },
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -191,7 +191,7 @@ describe('FormRenderer', () => {
             initialValues: {
               status: '${row.status}',
             },
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -216,7 +216,7 @@ describe('FormRenderer', () => {
             initialValues: {
               name: 'initial-name',
             },
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -253,7 +253,7 @@ describe('FormRenderer', () => {
               method: 'POST',
               url: '/fn/todos',
             },
-          } as FormComponent,
+          } as unknown as FormComponent,
         ],
       };
 
@@ -301,7 +301,7 @@ describe('params expression resolution', () => {
             type: 'text',
             text: '${row.name}',
           },
-        } as ListComponent,
+        } as unknown as ListComponent,
       ],
     };
 
@@ -338,7 +338,7 @@ describe('params expression resolution', () => {
             type: 'text',
             text: '${row.name}',
           },
-        } as ListComponent,
+        } as unknown as ListComponent,
       ],
     };
 
@@ -375,7 +375,7 @@ describe('params expression resolution', () => {
             { name: 'name', label: 'Name' },
           ],
           pagination: false,
-        } as TableComponent,
+        } as unknown as TableComponent,
       ],
     };
 
@@ -402,7 +402,7 @@ describe('params expression resolution', () => {
               defaultValue: '${params.baby_id}',
             },
           ],
-        } as FormComponent,
+        } as unknown as FormComponent,
       ],
     };
 
@@ -442,7 +442,7 @@ describe('params expression resolution', () => {
               allergen_id: '${params.allergen_id}',
             },
           },
-        } as FormComponent,
+        } as unknown as FormComponent,
       ],
     };
 

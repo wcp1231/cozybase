@@ -175,6 +175,53 @@ export interface CallApiOutput {
   body: unknown;
 }
 
+// -- page_outline --
+
+export interface PageOutlineInput {
+  app_name: string;
+  page_id?: string;
+}
+
+// -- page_get --
+
+export interface PageGetInput {
+  app_name: string;
+  node_id: string;
+}
+
+// -- page_insert --
+
+export interface PageInsertInput {
+  app_name: string;
+  parent_id: string;
+  node: Record<string, unknown>;
+  index?: number;
+}
+
+// -- page_update --
+
+export interface PageUpdateInput {
+  app_name: string;
+  node_id: string;
+  props: Record<string, unknown>;
+}
+
+// -- page_move --
+
+export interface PageMoveInput {
+  app_name: string;
+  node_id: string;
+  new_parent_id: string;
+  index?: number;
+}
+
+// -- page_delete --
+
+export interface PageDeleteInput {
+  app_name: string;
+  node_id: string;
+}
+
 // --- Tool Descriptions (for MCP Server registration) ---
 
 export const TOOL_DESCRIPTIONS = {
@@ -284,6 +331,44 @@ export const TOOL_DESCRIPTIONS = {
     '- Run `reconcile_app` after file changes before inspecting\n\n' +
     'Use this after updating UI files and reconciling to verify the UI renders correctly.\n' +
     'If no browser is connected, an error message will explain what to do.',
+
+  page_outline:
+    'Get a structural outline of `ui/pages.json` from the Agent working copy.\n\n' +
+    'Returns a tree with page IDs, component IDs, types, and short summaries.\n' +
+    'Use this to understand the page structure before making targeted edits.\n\n' +
+    '**Workflow:**\n' +
+    '1. Call `fetch_app` to populate the working copy\n' +
+    '2. Call `page_outline` to see the page structure\n' +
+    '3. Use the node IDs returned here to call `page_get`, `page_insert`, etc.\n\n' +
+    'Changes made by page tools only affect the working copy.\n' +
+    'Call `update_app_file` with path `ui/pages.json` to sync back to cozybase.',
+
+  page_get:
+    'Get the full schema details of a specific component node by its stable ID.\n\n' +
+    'Use node IDs returned by `page_outline` or previous page tool calls.',
+
+  page_insert:
+    'Insert a new component node into a parent container in `ui/pages.json`.\n\n' +
+    'The system auto-generates a stable ID for the new node.\n' +
+    'Returns the inserted node including its generated ID.\n\n' +
+    '**Note:** Only container types (`page`, `row`, `col`, `card`, `dialog`) can receive children.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  page_update:
+    'Update properties of an existing component node in `ui/pages.json`.\n\n' +
+    '**Restrictions:**\n' +
+    '- Cannot modify `id` (stable, system-managed)\n' +
+    '- Cannot modify `type` (use page_delete + page_insert to replace a node)\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  page_move:
+    'Move a component node (and its subtree) to a new parent container.\n\n' +
+    'Node IDs are preserved after the move.\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  page_delete:
+    'Delete a component node and its entire subtree from `ui/pages.json`.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 } as const;
 
 // --- Input Schemas (for MCP Server tool registration) ---

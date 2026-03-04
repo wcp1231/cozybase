@@ -7,11 +7,10 @@ These fields are shared by all built-in components, and also by custom component
 <!-- AUTO-GENERATED-PROPS:START -->
 | Field | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | `string` | Yes | Component type. Use a built-in type like `card`, `table`, `input`, etc., or the name of a custom component declared under top-level `components`. |
-| `id` | `string` | No | Stable component ID for cross-component references. Needed when another expression reads `${componentId.value}` / `${componentId.data}`, or when an action targets this component via `reload`. |
+| `id` | `string` | Yes | Stable component ID for cross-component references. Needed when another expression reads `${componentId.value}` / `${componentId.data}`, or when an action targets this component via `reload`. |
 | `visible` | `string \| boolean` | No | Whether the component should render. Accepts a boolean or an expression like `"${form.role === 'admin'}"`. |
 | `className` | `string` | No | Extra CSS class names appended to the component's root element. |
-| `style` | `Record<string, string \| number>` | No | Inline style object applied to the component's root element. Values may be plain strings/numbers or expressions. |
+| `style` | `object` | No | Inline style object applied to the component's root element. Values may be plain strings/numbers or expressions. |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 Custom component instances support one additional field:

@@ -8,7 +8,7 @@ Toggle switch for boolean values.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `value` | `boolean` | No | Current value |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

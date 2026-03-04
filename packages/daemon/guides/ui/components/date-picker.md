@@ -9,7 +9,7 @@ Date selection input with calendar popup.
 |----------|------|----------|-------------|
 | `value` | `string` | No | Current value (date string) |
 | `format` | `string` | No | Date format |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

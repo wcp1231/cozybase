@@ -8,8 +8,8 @@ Radio button group for single-value selection.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `value` | `string` | No | Current selected value |
-| `options` | `OptionItem[]` | Yes | `{ label, value }` array |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `options` | `Option[][]` | Yes | `{ label, value }` array |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

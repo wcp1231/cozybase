@@ -12,7 +12,7 @@ Same as the Table component — the API must return `{ "data": [...] }`. If the 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `api` | `ApiConfig` | Yes | Data source configuration |
-| `itemRender` | `Component` | Yes | Render template for each item (use `${row.xxx}` to access item data) |
+| `itemRender` | `Component \| Component[]` | Yes | Render template for each item (use `${row.xxx}` to access item data) |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

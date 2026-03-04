@@ -58,14 +58,14 @@ const CATEGORY_ORDER = [
 ];
 
 const daemonRoot = resolve(import.meta.dir, '..');
-const schemaPath = resolve(daemonRoot, '../ui/src/schema/types.ts');
+const schemaPath = resolve(daemonRoot, '../ui/src/schema/zod.ts');
 const componentGuidesDir = resolve(daemonRoot, 'guides/ui/components');
 const commonPropertiesGuidePath = resolve(
   daemonRoot,
   'guides/ui/common-properties.md',
 );
 const repoRoot = resolve(daemonRoot, '../..');
-const sourceFileLabel = 'packages/ui/src/schema/types.ts';
+const sourceFileLabel = 'packages/ui/src/schema/zod.ts';
 const START_MARKER = '<!-- AUTO-GENERATED-PROPS:START -->';
 const END_MARKER = '<!-- AUTO-GENERATED-PROPS:END -->';
 const COMMON_FIELDS_FALLBACK_DESCRIPTIONS = new Map([
@@ -94,26 +94,192 @@ const COMMON_CUSTOM_FALLBACK_DESCRIPTIONS = new Map([
   ],
 ]);
 
+/**
+ * Parse component metadata directly from zod.ts.
+ *
+ * Looks for patterns like:
+ *   export const tableComponentSchema = z.object({
+ *     type: z.literal('table'),
+ *     id: z.string(),
+ *     api: apiConfigSchema,
+ *     ...
+ *   });
+ *
+ * Also extracts componentBaseSchema for common props.
+ */
+function collectZodComponents(source: string): {
+  components: ComponentMeta[];
+  commonProps: PropertyMeta[];
+  customOnlyProps: PropertyMeta[];
+} {
+  // Extract all const schema definitions: export const xxxSchema = z.object({ ... })
+  const zodObjectPattern = /export const (\w+)\s*=\s*(?:componentBaseSchema\.extend\(|z\.object\()\{/g;
+  const schemas = new Map<string, string>(); // name -> body
+
+  let match: RegExpExecArray | null;
+  while ((match = zodObjectPattern.exec(source)) !== null) {
+    const name = match[1];
+    const bodyStart = match.index + match[0].length;
+    const bodyEnd = findMatchingBrace(source, bodyStart - 1);
+    const body = source.slice(bodyStart, bodyEnd).trim();
+    schemas.set(name, body);
+  }
+
+  // Extract componentBase common props
+  const baseBody = schemas.get('componentBaseSchema') ?? '';
+  const commonProps = extractZodProperties(baseBody).filter((p) => p.name !== 'type');
+
+  // Extract custom component instance props (just `props`)
+  const customBody = schemas.get('customComponentInstanceSchema') ?? '';
+  const customOnlyProps = extractZodProperties(customBody)
+    .filter((p) => p.name === 'props');
+
+  // Collect built-in component schemas
+  const components: ComponentMeta[] = [];
+  for (const [name, body] of schemas.entries()) {
+    // Must end with 'ComponentSchema' (e.g. tableComponentSchema)
+    if (!name.endsWith('ComponentSchema')) continue;
+    // Skip the union/meta schemas
+    if (name === 'builtinComponentSchema' || name === 'customComponentSchema' || name === 'customComponentInstanceSchema') continue;
+
+    // Find type: z.literal('xxx')
+    const literalMatch = body.match(/type\s*:\s*z\.literal\(['"]([^'"]+)['"]\)/);
+    if (!literalMatch) continue;
+    const componentType = literalMatch[1];
+
+    const props = extractZodProperties(body)
+      .filter((p) => p.name !== 'type' && p.name !== 'id' &&
+        p.name !== 'visible' && p.name !== 'className' && p.name !== 'style');
+
+    components.push({
+      type: componentType,
+      category: CATEGORY_BY_TYPE[componentType] ?? 'Uncategorized',
+      props,
+    });
+  }
+
+  return {
+    components: components.sort((a, b) => compareComponents(a, b)),
+    commonProps,
+    customOnlyProps,
+  };
+}
+
+/**
+ * Extract property metadata from a Zod object body string.
+ * Handles patterns like:
+ *   fieldName: z.string(),
+ *   fieldName: z.string().optional(),
+ *   fieldName: z.number().optional(),
+ *   fieldName: z.union([...]).optional(),
+ *   fieldName: z.array(...).optional(),
+ *   fieldName: someSchema.optional(),
+ *   fieldName: z.lazy(() => ...),
+ */
+function extractZodProperties(body: string): PropertyMeta[] {
+  const props: PropertyMeta[] = [];
+  const members = splitZodObjectMembers(body);
+
+  for (const member of members) {
+    const prop = parseZodProperty(member);
+    if (prop) props.push(prop);
+  }
+
+  return props;
+}
+
+function splitZodObjectMembers(body: string): string[] {
+  const members: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString: string | null = null;
+
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    const prev = body[i - 1];
+    current += char;
+
+    if (inString) {
+      if (char === inString && prev !== '\\') inString = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') { inString = char; continue; }
+    if (char === '(' || char === '{' || char === '[') depth++;
+    if (char === ')' || char === '}' || char === ']') depth--;
+    if (char === ',' && depth === 0) {
+      const trimmed = current.slice(0, -1).trim();
+      if (trimmed) members.push(trimmed);
+      current = '';
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) members.push(trailing);
+  return members;
+}
+
+function parseZodProperty(member: string): PropertyMeta | null {
+  const colonIdx = member.indexOf(':');
+  if (colonIdx === -1) return null;
+
+  const name = member.slice(0, colonIdx).trim();
+  if (!name.match(/^[a-zA-Z_][a-zA-Z0-9_-]*$/)) return null;
+
+  const zodExpr = member.slice(colonIdx + 1).trim();
+  const required = !zodExpr.includes('.optional()');
+  const typeStr = describeZodType(zodExpr);
+
+  return { name, type: typeStr, required };
+}
+
+function describeZodType(expr: string): string {
+  const clean = expr.replace(/\.optional\(\)$/, '').trim();
+
+  if (clean.startsWith('z.string()')) return 'string';
+  if (clean.startsWith('z.number()')) return 'number';
+  if (clean.startsWith('z.boolean()')) return 'boolean';
+  if (clean.startsWith('z.unknown()')) return 'unknown';
+  if (clean.startsWith('z.record(')) return 'object';
+  if (clean.startsWith('z.array(')) {
+    const inner = clean.slice('z.array('.length, -1);
+    return `${describeZodType(inner)}[]`;
+  }
+  if (clean.startsWith('z.union([')) return 'union';
+  if (clean.startsWith('z.enum(')) {
+    const m = clean.match(/z\.enum\(\[([^\]]+)\]\)/);
+    if (m) return m[1].replace(/['"]/g, '').replace(/,\s*/g, ' | ');
+    return 'enum';
+  }
+  if (clean.startsWith('z.literal(')) {
+    const m = clean.match(/z\.literal\(['"]([^'"]+)['"]\)/);
+    return m ? `'${m[1]}'` : 'literal';
+  }
+  if (clean.startsWith('z.lazy(')) return 'Component | Component[]';
+  if (clean === 'actionOrArray') return 'Action | Action[]';
+  if (clean === 'expressionOrBool') return 'string | boolean';
+  if (clean === 'expressionOrNumber') return 'string | number';
+  if (clean.endsWith('Schema') || clean.endsWith('Schema.optional()')) {
+    // named schema reference
+    const name = clean.replace(/\.optional\(\)$/, '');
+    if (name === 'apiConfigSchema') return 'ApiConfig';
+    if (name === 'actionOrArray') return 'Action | Action[]';
+    if (name.includes('action')) return 'Action | Action[]';
+    if (name.includes('column')) return 'Column[]';
+    if (name.includes('field')) return 'Field[]';
+    if (name.includes('option')) return 'Option[]';
+    if (name.includes('rowAction')) return 'RowAction[]';
+    if (name.includes('tabItem')) return 'TabItem[]';
+    return name.replace('Schema', '');
+  }
+
+  return clean.length > 40 ? clean.slice(0, 40) + '…' : clean;
+}
+
 function main() {
   const checkOnly = process.argv.includes('--check');
   const schemaSource = readFileSync(schemaPath, 'utf8');
-  const interfaces = collectInterfaces(schemaSource);
 
-  const componentBase = interfaces.get('ComponentBase');
-  if (!componentBase) {
-    throw new Error('Interface "ComponentBase" not found.');
-  }
-
-  const customComponentInstance = interfaces.get('CustomComponentInstance');
-  if (!customComponentInstance) {
-    throw new Error('Interface "CustomComponentInstance" not found.');
-  }
-
-  const commonProps = extractProperties(componentBase);
-  const customOnlyProps = extractProperties(customComponentInstance)
-    .filter((prop) => prop.name === 'props');
-
-  const components = collectBuiltInComponents(interfaces);
+  // Parse Zod schemas from zod.ts
+  const { components, commonProps, customOnlyProps } = collectZodComponents(schemaSource);
   validateCategories(components);
 
   const warnings: string[] = [];

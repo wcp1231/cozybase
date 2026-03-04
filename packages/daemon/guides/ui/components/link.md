@@ -8,7 +8,7 @@ Text link that triggers an action on click.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `text` | `string` | Yes | Link text |
-| `action` | `Action/Action[]` | Yes | Action(s) triggered on click |
+| `action` | `Action \| Action[]` | Yes | Action(s) triggered on click |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples

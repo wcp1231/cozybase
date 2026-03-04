@@ -10,7 +10,7 @@ Multi-line text input.
 | `value` | `string` | No | Current value |
 | `placeholder` | `string` | No | Placeholder text |
 | `rows` | `number` | No | Number of visible rows (default 3) |
-| `onChange` | `Action/Action[]` | No | Action(s) triggered on value change |
+| `onChange` | `Action \| Action[]` | No | Action(s) triggered on value change |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Example

@@ -7,8 +7,8 @@ Vertical layout container.
 <!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `children` | `Component[]` | Yes | Child components |
-| `align` | `'start' \| 'center' \| 'end' \| 'stretch'` | No | Alignment: `start`, `center`, `end`, `stretch` |
+| `children` | `Component \| Component[]` | Yes | Child components |
+| `align` | `start \| center \| end \| stretch` | No | Alignment: `start`, `center`, `end`, `stretch` |
 | `gap` | `number` | No | Spacing between children (px) |
 <!-- AUTO-GENERATED-PROPS:END -->
 

@@ -24,6 +24,12 @@ import {
   handleExecuteSql,
   handleCallApi,
   handleInspectUi,
+  handlePageOutline,
+  handlePageGet,
+  handlePageInsert,
+  handlePageUpdate,
+  handlePageMove,
+  handlePageDelete,
 } from '../mcp/handlers';
 import { handleGetGuide } from '../mcp/guide-handler';
 
@@ -166,6 +172,63 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
           const content = handleGetGuide(args.topic);
           return { content: [{ type: 'text' as const, text: content }] };
         },
+      ),
+
+      // --- Page Editing ---
+      tool(
+        'page_outline',
+        TOOL_DESCRIPTIONS.page_outline,
+        { app_name: z.string(), page_id: z.string().optional() },
+        async (args) => jsonResult(handlePageOutline(ctx, args)),
+      ),
+
+      tool(
+        'page_get',
+        TOOL_DESCRIPTIONS.page_get,
+        { app_name: z.string(), node_id: z.string() },
+        async (args) => jsonResult(handlePageGet(ctx, args)),
+      ),
+
+      tool(
+        'page_insert',
+        TOOL_DESCRIPTIONS.page_insert,
+        {
+          app_name: z.string(),
+          parent_id: z.string(),
+          node: z.record(z.unknown()),
+          index: z.number().int().nonnegative().optional(),
+        },
+        async (args) => jsonResult(handlePageInsert(ctx, args)),
+      ),
+
+      tool(
+        'page_update',
+        TOOL_DESCRIPTIONS.page_update,
+        {
+          app_name: z.string(),
+          node_id: z.string(),
+          props: z.record(z.unknown()),
+        },
+        async (args) => jsonResult(handlePageUpdate(ctx, args)),
+      ),
+
+      tool(
+        'page_move',
+        TOOL_DESCRIPTIONS.page_move,
+        {
+          app_name: z.string(),
+          node_id: z.string(),
+          new_parent_id: z.string(),
+          index: z.number().int().nonnegative().optional(),
+        },
+        async (args) => jsonResult(handlePageMove(ctx, args)),
+      ),
+
+      tool(
+        'page_delete',
+        TOOL_DESCRIPTIONS.page_delete,
+        { app_name: z.string(), node_id: z.string() },
+        async (args) => jsonResult(handlePageDelete(ctx, args)),
       ),
     ],
   });

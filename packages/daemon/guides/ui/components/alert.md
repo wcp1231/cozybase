@@ -8,7 +8,7 @@ Displays a message banner with a severity level.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `message` | `string` | Yes | Alert text |
-| `alertType` | `'info' \| 'success' \| 'warning' \| 'error'` | No | Severity: `info`, `success`, `warning`, `error` |
+| `alertType` | `info \| success \| warning \| error` | No | Severity: `info`, `success`, `warning`, `error` |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## Examples

@@ -24,6 +24,12 @@ import {
   handleExecuteSql,
   handleCallApi,
   handleInspectUi,
+  handlePageOutline,
+  handlePageGet,
+  handlePageInsert,
+  handlePageUpdate,
+  handlePageMove,
+  handlePageDelete,
 } from './handlers';
 import { handleGetGuide } from './guide-handler';
 
@@ -208,6 +214,82 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     },
     async (args) => {
       const result = await handleInspectUi(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  // --- Page Editing ---
+
+  server.tool(
+    'page_outline',
+    TOOL_DESCRIPTIONS.page_outline,
+    { app_name: z.string(), page_id: z.string().optional() },
+    (args) => {
+      const result = handlePageOutline(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'page_get',
+    TOOL_DESCRIPTIONS.page_get,
+    { app_name: z.string(), node_id: z.string() },
+    (args) => {
+      const result = handlePageGet(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'page_insert',
+    TOOL_DESCRIPTIONS.page_insert,
+    {
+      app_name: z.string(),
+      parent_id: z.string(),
+      node: z.record(z.unknown()),
+      index: z.number().int().nonnegative().optional(),
+    },
+    (args) => {
+      const result = handlePageInsert(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'page_update',
+    TOOL_DESCRIPTIONS.page_update,
+    {
+      app_name: z.string(),
+      node_id: z.string(),
+      props: z.record(z.unknown()),
+    },
+    (args) => {
+      const result = handlePageUpdate(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'page_move',
+    TOOL_DESCRIPTIONS.page_move,
+    {
+      app_name: z.string(),
+      node_id: z.string(),
+      new_parent_id: z.string(),
+      index: z.number().int().nonnegative().optional(),
+    },
+    (args) => {
+      const result = handlePageMove(ctx, args);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'page_delete',
+    TOOL_DESCRIPTIONS.page_delete,
+    { app_name: z.string(), node_id: z.string() },
+    (args) => {
+      const result = handlePageDelete(ctx, args);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },
   );
