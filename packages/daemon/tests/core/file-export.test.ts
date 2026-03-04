@@ -28,8 +28,8 @@ describe('exportUiFromDb', () => {
     const targetDir = join(handle.root, 'draft', 'apps', 'myapp');
     mkdirSync(targetDir, { recursive: true });
 
-    const platformDb = handle.workspace.getPlatformDb();
-    const result = exportUiFromDb(platformDb, 'myapp', targetDir);
+    const platformRepo = handle.workspace.getPlatformRepo();
+    const result = exportUiFromDb(platformRepo, 'myapp', targetDir);
 
     expect(result).toBe(true);
 
@@ -50,8 +50,8 @@ describe('exportUiFromDb', () => {
     const targetDir = join(handle.root, 'draft', 'apps', 'myapp');
     mkdirSync(targetDir, { recursive: true });
 
-    const platformDb = handle.workspace.getPlatformDb();
-    const result = exportUiFromDb(platformDb, 'myapp', targetDir);
+    const platformRepo = handle.workspace.getPlatformRepo();
+    const result = exportUiFromDb(platformRepo, 'myapp', targetDir);
 
     expect(result).toBe(false);
 
@@ -73,8 +73,8 @@ describe('exportUiFromDb', () => {
     const uiPath = join(targetDir, 'ui', 'pages.json');
     writeFileSync(uiPath, '{"old": true}', 'utf-8');
 
-    const platformDb = handle.workspace.getPlatformDb();
-    const result = exportUiFromDb(platformDb, 'myapp', targetDir);
+    const platformRepo = handle.workspace.getPlatformRepo();
+    const result = exportUiFromDb(platformRepo, 'myapp', targetDir);
 
     expect(result).toBe(true);
 
@@ -92,10 +92,10 @@ describe('exportUiFromDb', () => {
     const targetDir = join(handle.root, 'draft', 'apps', 'myapp');
     mkdirSync(targetDir, { recursive: true });
 
-    const platformDb = handle.workspace.getPlatformDb();
+    const platformRepo = handle.workspace.getPlatformRepo();
 
     // First export — file created
-    exportUiFromDb(platformDb, 'myapp', targetDir);
+    exportUiFromDb(platformRepo, 'myapp', targetDir);
     const uiPath = join(targetDir, 'ui', 'pages.json');
     expect(existsSync(uiPath)).toBe(true);
 
@@ -103,7 +103,7 @@ describe('exportUiFromDb', () => {
     deleteAppFile(handle, 'myapp', 'ui/pages.json');
 
     // Second export — stale file should be cleaned up
-    const result = exportUiFromDb(platformDb, 'myapp', targetDir);
+    const result = exportUiFromDb(platformRepo, 'myapp', targetDir);
     expect(result).toBe(false);
     expect(existsSync(uiPath)).toBe(false);
   });

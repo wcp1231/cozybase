@@ -51,10 +51,8 @@ export class Verifier {
     }
 
     // 2. Query all migrations from app_files and determine pending ones
-    const platformDb = this.workspace.getPlatformDb();
-    const migrationRecords = platformDb.query(
-      "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
-    ).all(appName) as { path: string; content: string }[];
+    const repo = this.workspace.getPlatformRepo();
+    const migrationRecords = repo.appFiles.findByAppAndPattern(appName, 'migrations/%');
 
     const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
 
@@ -125,7 +123,7 @@ export class Verifier {
 
   /** Check that already-executed migrations have not been modified (DB-based immutability) */
   private checkMigrationImmutability(appName: string): string | null {
-    const platformDb = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
     const appContext = this.workspace.getOrCreateApp(appName);
     if (!appContext) return null;
 
@@ -136,9 +134,8 @@ export class Verifier {
     // For each executed version, check that the corresponding app_files record exists and is immutable
     for (const version of executedVersions) {
       const versionPrefix = String(version).padStart(3, '0');
-      const record = platformDb.query(
-        "SELECT path, immutable FROM app_files WHERE app_slug = ? AND path LIKE ? LIMIT 1",
-      ).get(appName, `migrations/${versionPrefix}_%`) as { path: string; immutable: number } | null;
+      const records = repo.appFiles.findByAppAndPattern(appName, `migrations/${versionPrefix}_%`);
+      const record = records.length > 0 ? records[0] : null;
 
       if (!record) {
         return `Migration version ${versionPrefix} was previously executed but its file is missing from app_files. This is a data integrity issue.`;
