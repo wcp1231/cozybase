@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Bot, Loader2, SendHorizontal, Square, X } from 'lucide-react';
+import { Bot, ChevronRight, Loader2, SendHorizontal, Square, X } from 'lucide-react';
 import type { AppMode } from '../../pages/content-slot';
-import { useChatStore, type ChatMessage } from '../../stores/chat-store';
+import { useChatStore, type ChatMessage, type ChatToolMessage } from '../../stores/chat-store';
 
 export function ChatPanel({
   mode,
@@ -216,15 +216,52 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   }
 
   if (message.role === 'tool') {
+    return <ToolBubble message={message} />;
+  }
+
+  return <AssistantBubble text={message.content} />;
+}
+
+function ToolBubble({ message }: { message: ChatToolMessage }) {
+  const [expanded, setExpanded] = useState(message.status === 'error');
+
+  if (message.status === 'running') {
     return (
-      <div className="rounded-xl bg-white px-3 py-2 text-xs text-[#64748B] shadow-sm">
-        <div className="font-semibold text-[#334155]">{message.toolName}</div>
-        {message.summary && <div className="mt-1 text-[#94A3B8]">{message.summary}</div>}
+      <div className="flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-xs text-[#64748B]">
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[#94A3B8]" />
+        <span className="font-medium text-[#334155]">{message.toolName}</span>
       </div>
     );
   }
 
-  return <AssistantBubble text={message.content} />;
+  if (message.status === 'error') {
+    return (
+      <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs">
+        <div className="font-medium text-[#DC2626]">{message.toolName}</div>
+        {message.summary && <div className="mt-1 text-[#B91C1C]">{message.summary}</div>}
+      </div>
+    );
+  }
+
+  // done status — collapsible
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((prev) => !prev)}
+      className="w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-left text-xs text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+    >
+      <div className="flex items-center gap-1.5">
+        <ChevronRight className={`h-3 w-3 shrink-0 text-[#94A3B8] transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <span className="font-medium text-[#334155]">{message.toolName}</span>
+        {!expanded && message.summary && (
+          <span className="min-w-0 flex-1 truncate text-[#94A3B8]">{message.summary}</span>
+        )}
+      </div>
+      {expanded && message.summary && (
+        <div className="mt-1.5 pl-[18px] text-[#64748B] whitespace-pre-wrap">{message.summary}</div>
+      )}
+    </button>
+  );
 }
 
 function AssistantBubble({ text }: { text: string }) {

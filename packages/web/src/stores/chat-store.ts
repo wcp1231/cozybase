@@ -32,16 +32,23 @@ export interface ChatState {
   setActiveApp: (appName: string | null) => void;
   send: (text: string) => void;
   cancel: () => void;
+  setOnReconciled: (callback: (() => void) | null) => void;
 }
 
 // --- Stream buffer (plain variable, not reactive) ---
 let streamBuffer = '';
+
+// --- Tracks whether we are currently accumulating a streaming assistant message ---
+let isAccumulating = false;
 
 // --- WebSocket client (managed outside React) ---
 let client: ChatClient | null = null;
 
 // --- Generation counter to guard against stale callbacks ---
 let generation = 0;
+
+// --- Reconcile callback (plain variable, not reactive) ---
+let onReconciledCallback: (() => void) | null = null;
 
 function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, gen: number, msg: any) {
   if (!msg || typeof msg !== 'object') return;
@@ -78,6 +85,7 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
       set(() => ({ streaming: msg.streaming ?? false }));
       if (!msg.streaming) {
         streamBuffer = '';
+        isAccumulating = false;
       }
       break;
 
@@ -93,15 +101,21 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
       if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
         streamBuffer += event.delta.text;
         const text = streamBuffer;
+        const shouldReplace = isAccumulating;
+        if (!isAccumulating) {
+          isAccumulating = true;
+        }
         set((s) => {
-          const last = s.messages[s.messages.length - 1];
-          if (last?.role === 'assistant' && !('toolName' in last)) {
-            return {
-              messages: [
-                ...s.messages.slice(0, -1),
-                { role: 'assistant', content: text },
-              ],
-            };
+          if (shouldReplace) {
+            const last = s.messages[s.messages.length - 1];
+            if (last?.role === 'assistant' && !('toolName' in last)) {
+              return {
+                messages: [
+                  ...s.messages.slice(0, -1),
+                  { role: 'assistant', content: text },
+                ],
+              };
+            }
           }
           return {
             messages: [...s.messages, { role: 'assistant', content: text }],
@@ -113,16 +127,34 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
 
     // SDK message: complete assistant message (replaces streaming)
     case 'assistant': {
+      const wasAccumulating = isAccumulating;
       streamBuffer = '';
+      isAccumulating = false;
       const content = extractTextContent(msg.message?.content);
       if (content) {
         set((s) => {
-          const last = s.messages[s.messages.length - 1];
-          if (last?.role === 'assistant' && !('toolName' in last)) {
-            return { messages: [...s.messages.slice(0, -1), { role: 'assistant', content }] };
+          if (wasAccumulating) {
+            const last = s.messages[s.messages.length - 1];
+            if (last?.role === 'assistant' && !('toolName' in last)) {
+              return { messages: [...s.messages.slice(0, -1), { role: 'assistant', content }] };
+            }
           }
           return { messages: [...s.messages, { role: 'assistant', content }] };
         });
+      }
+      // Extract tool_use blocks from the assistant message and add as running tool messages
+      const toolUses = extractToolUseBlocks(msg.message?.content);
+      if (toolUses.length > 0) {
+        set((s) => ({
+          messages: [
+            ...s.messages,
+            ...toolUses.map((t) => ({
+              role: 'tool' as const,
+              toolName: t.name,
+              status: 'running' as const,
+            })),
+          ],
+        }));
       }
       break;
     }
@@ -142,18 +174,22 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
 
     // SDK message: tool execution summary
     case 'tool_use_summary': {
-      const toolName = msg.tool_name ?? msg.name ?? 'tool';
       const summary = msg.summary ?? '';
       set((s) => {
-        const idx = s.messages.findLastIndex(
-          (m) => m.role === 'tool' && m.toolName === toolName && m.status === 'running',
-        );
-        if (idx >= 0) {
-          const updated = [...s.messages];
-          updated[idx] = { role: 'tool', toolName, status: 'done', summary };
+        // Mark all currently running tool messages as done with this summary
+        let foundRunning = false;
+        const updated = s.messages.map((m) => {
+          if (m.role === 'tool' && m.status === 'running') {
+            foundRunning = true;
+            return { ...m, status: 'done' as const, summary };
+          }
+          return m;
+        });
+        if (foundRunning) {
           return { messages: updated };
         }
-        return { messages: [...s.messages, { role: 'tool', toolName, status: 'done', summary }] };
+        // Fallback: no running tool found, add a standalone entry
+        return { messages: [...s.messages, { role: 'tool', toolName: 'tool', status: 'done', summary }] };
       });
       break;
     }
@@ -161,10 +197,16 @@ function handleMessage(set: (fn: (s: ChatState) => Partial<ChatState>) => void, 
     // SDK message: result (turn complete)
     case 'result':
       streamBuffer = '';
+      isAccumulating = false;
       break;
 
     // Task messages (subagent activity)
     case 'system':
+      break;
+
+    // App reconciled — notify listeners to refresh UI
+    case 'app:reconciled':
+      onReconciledCallback?.();
       break;
 
     default:
@@ -188,6 +230,7 @@ export const useChatStore = create<ChatState>((set) => ({
       client = null;
     }
     streamBuffer = '';
+    isAccumulating = false;
 
     if (!appName) {
       set({ activeApp: null, messages: [], streaming: false, connected: false });
@@ -213,11 +256,16 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: [...s.messages, { role: 'user', content: text }],
     }));
     streamBuffer = '';
+    isAccumulating = false;
     client?.send({ type: 'chat:send', message: text });
   },
 
   cancel() {
     client?.send({ type: 'chat:cancel' });
+  },
+
+  setOnReconciled(callback: (() => void) | null) {
+    onReconciledCallback = callback;
   },
 }));
 
@@ -230,4 +278,12 @@ function extractTextContent(content: unknown): string {
     .filter((block: any) => block.type === 'text')
     .map((block: any) => block.text)
     .join('');
+}
+
+/** Extract tool_use blocks from Anthropic message content. */
+function extractToolUseBlocks(content: unknown): Array<{ id: string; name: string }> {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block: any) => block.type === 'tool_use' && block.name)
+    .map((block: any) => ({ id: block.id, name: block.name }));
 }

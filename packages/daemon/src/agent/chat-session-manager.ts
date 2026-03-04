@@ -7,15 +7,18 @@
 
 import { ChatSession, type ChatSessionConfig } from './chat-session';
 import type { SessionStore } from './session-store';
+import type { EventBus } from '../core/event-bus';
 
 export class ChatSessionManager {
   private sessions = new Map<string, ChatSession>();
   private config: ChatSessionConfig;
   private store: SessionStore;
+  private eventBus?: EventBus;
 
-  constructor(config: ChatSessionConfig, store: SessionStore) {
+  constructor(config: ChatSessionConfig, store: SessionStore, eventBus?: EventBus) {
     this.config = config;
     this.store = store;
+    this.eventBus = eventBus;
   }
 
   /**
@@ -26,7 +29,7 @@ export class ChatSessionManager {
     let session = this.sessions.get(appSlug);
     if (!session) {
       const sdkSessionId = this.store.getSessionId(appSlug);
-      session = new ChatSession(appSlug, this.config, this.store, sdkSessionId);
+      session = new ChatSession(appSlug, this.config, this.store, sdkSessionId, this.eventBus);
       this.sessions.set(appSlug, session);
     }
     return session;

@@ -22,6 +22,7 @@ import { ChatSessionManager } from './agent/chat-session-manager';
 import { SessionStore } from './agent/session-store';
 import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
 import { initWorkspace } from './workspace-init';
+import { eventBus } from './core/event-bus';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -237,6 +238,7 @@ export function createServer(config: Config) {
     registry,
     uiBridge,
     honoApp: app,
+    eventBus,
   });
 
   const sdkMcpServer = createCozybaseSdkMcpServer({
@@ -252,6 +254,7 @@ export function createServer(config: Config) {
       agentDir,
     },
     sessionStore,
+    eventBus,
   );
 
   // Wire session cleanup so app delete/rename cleans up in-memory chat sessions

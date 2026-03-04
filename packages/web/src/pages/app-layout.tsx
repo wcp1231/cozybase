@@ -153,6 +153,17 @@ export function AppLayout() {
     };
   }, [selectedMode, appName]);
 
+  // Auto-refresh UI when the agent finishes reconcile_app
+  useEffect(() => {
+    if (selectedMode !== 'draft' || !appName) return;
+    useChatStore.getState().setOnReconciled(() => {
+      void refreshApp();
+    });
+    return () => {
+      useChatStore.getState().setOnReconciled(null);
+    };
+  }, [selectedMode, appName]);
+
   if (!selectedMode) {
     return <Navigate to="/stable" replace />;
   }

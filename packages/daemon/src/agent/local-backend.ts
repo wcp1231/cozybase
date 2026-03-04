@@ -13,6 +13,7 @@ import type { DraftReconciler } from '../core/draft-reconciler';
 import type { Verifier } from '../core/verifier';
 import type { Publisher } from '../core/publisher';
 import type { UiBridge } from '../core/ui-bridge';
+import type { EventBus } from '../core/event-bus';
 import { type AppRegistry, validateSql, type SqlMode } from '@cozybase/runtime';
 import type { AppManager } from '../modules/apps/manager';
 import type {
@@ -37,6 +38,7 @@ export interface LocalBackendDeps {
   registry: AppRegistry;
   uiBridge: UiBridge;
   honoApp: Hono;
+  eventBus?: EventBus;
 }
 
 export class LocalBackend implements CozybaseBackend {
@@ -48,6 +50,7 @@ export class LocalBackend implements CozybaseBackend {
   private registry: AppRegistry;
   private uiBridge: UiBridge;
   private honoApp: Hono;
+  private eventBus?: EventBus;
 
   constructor(deps: LocalBackendDeps) {
     this.workspace = deps.workspace;
@@ -58,6 +61,7 @@ export class LocalBackend implements CozybaseBackend {
     this.registry = deps.registry;
     this.uiBridge = deps.uiBridge;
     this.honoApp = deps.honoApp;
+    this.eventBus = deps.eventBus;
   }
 
   // --- App Lifecycle ---
@@ -196,6 +200,11 @@ export class LocalBackend implements CozybaseBackend {
         functionsDir: join(appContext.draftDataDir, 'functions'),
         uiDir: join(appContext.draftDataDir, 'ui'),
       });
+    }
+
+    // Notify listeners (e.g., ChatSession → browser) that reconcile completed
+    if (result.success) {
+      this.eventBus?.emit('app:reconciled', { appSlug: slug });
     }
 
     return result;

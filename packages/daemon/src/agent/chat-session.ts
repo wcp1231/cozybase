@@ -17,6 +17,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from './session-store';
 import { buildSystemPrompt } from './system-prompt';
+import type { EventBus } from '../core/event-bus';
 
 export interface ChatSessionConfig {
   /** In-process MCP server config from createSdkMcpServer() */
@@ -45,17 +46,29 @@ export class ChatSession {
   private sdkSessionId: string | null;
   private ws: WebSocketLike | null = null;
   private streaming = false;
+  private unsubscribeReconcile: (() => void) | null = null;
+  private toolUseMap = new Map<string, string>();
 
   constructor(
     appSlug: string,
     config: ChatSessionConfig,
     store: SessionStore,
     sdkSessionId: string | null = null,
+    eventBus?: EventBus,
   ) {
     this.appSlug = appSlug;
     this.config = config;
     this.store = store;
     this.sdkSessionId = sdkSessionId;
+
+    // Subscribe to reconcile events for this app
+    if (eventBus) {
+      this.unsubscribeReconcile = eventBus.on('app:reconciled', (data: { appSlug: string }) => {
+        if (data.appSlug === this.appSlug) {
+          this.sendToWs({ type: 'app:reconciled', appSlug: data.appSlug });
+        }
+      });
+    }
   }
 
   /**
@@ -132,6 +145,10 @@ export class ChatSession {
    * Shutdown the session and clean up resources.
    */
   shutdown(): void {
+    if (this.unsubscribeReconcile) {
+      this.unsubscribeReconcile();
+      this.unsubscribeReconcile = null;
+    }
     if (this.activeQuery) {
       this.activeQuery.close();
       this.activeQuery = null;
@@ -169,10 +186,8 @@ export class ChatSession {
     this.store.addMessage(this.appSlug, { role: 'user', content: text });
 
     this.streaming = true;
+    this.toolUseMap.clear();
     this.sendToWs({ type: 'chat:streaming', streaming: true });
-
-    // Accumulate assistant text for persistence
-    let assistantText = '';
 
     try {
       const options: Options = {
@@ -199,17 +214,34 @@ export class ChatSession {
       for await (const msg of this.activeQuery) {
         this.forwardSdkMessage(msg);
 
-        // Capture assistant text from result
+        // Persist assistant messages and track tool_use blocks
         if (msg.type === 'assistant' && msg.message?.content) {
-          assistantText = this.extractTextContent(msg.message.content);
+          const content = msg.message.content;
+
+          // Track tool_use_id → tool_name for later tool_use_summary lookup
+          if (Array.isArray(content)) {
+            for (const block of content as any[]) {
+              if (block.type === 'tool_use' && block.id && block.name) {
+                this.toolUseMap.set(block.id, block.name);
+              }
+            }
+          }
+
+          const text = this.extractTextContent(content);
+          if (text) {
+            this.store.addMessage(this.appSlug, { role: 'assistant', content: text });
+          }
         }
 
-        // Persist tool summaries
+        // Persist tool summaries with resolved tool name
         if (msg.type === 'tool_use_summary') {
+          const ids: string[] = (msg as any).preceding_tool_use_ids ?? [];
+          const toolNames = ids.map((id: string) => this.toolUseMap.get(id)).filter(Boolean);
+          const toolName = toolNames.length > 0 ? toolNames.join(', ') : 'tool';
           this.store.addMessage(this.appSlug, {
             role: 'tool',
             content: '',
-            toolName: (msg as any).tool_name ?? (msg as any).name ?? 'tool',
+            toolName,
             toolStatus: 'done',
             toolSummary: (msg as any).summary ?? '',
           });
@@ -220,11 +252,6 @@ export class ChatSession {
           this.sdkSessionId = msg.session_id;
           this.store.saveSessionId(this.appSlug, msg.session_id);
         }
-      }
-
-      // Persist final assistant message
-      if (assistantText) {
-        this.store.addMessage(this.appSlug, { role: 'assistant', content: assistantText });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -238,6 +265,7 @@ export class ChatSession {
     } finally {
       this.activeQuery = null;
       this.streaming = false;
+      this.toolUseMap.clear();
       this.sendToWs({ type: 'chat:streaming', streaming: false });
     }
   }
