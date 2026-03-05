@@ -1,4 +1,4 @@
-import type { Database } from 'bun:sqlite';
+import type { PlatformRepository } from './platform-repository';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 
@@ -8,13 +8,11 @@ import { join, resolve, dirname } from 'path';
  * Returns true if exported, false if no UI file found.
  */
 export function exportUiFromDb(
-  platformDb: Database,
+  platformRepo: PlatformRepository,
   appName: string,
   targetDir: string,
 ): boolean {
-  const record = platformDb.query(
-    "SELECT content FROM app_files WHERE app_slug = ? AND path = 'ui/pages.json'",
-  ).get(appName) as { content: string } | null;
+  const record = platformRepo.appFiles.findByAppAndPath(appName, 'ui/pages.json');
 
   const uiFilePath = join(targetDir, 'ui', 'pages.json');
 
@@ -36,7 +34,7 @@ export function exportUiFromDb(
  * Used by both DraftReconciler (→ draft dir) and Publisher (→ stable dir).
  */
 export function exportFunctionsFromDb(
-  platformDb: Database,
+  platformRepo: PlatformRepository,
   appName: string,
   targetDir: string,
 ): string[] {
@@ -46,9 +44,7 @@ export function exportFunctionsFromDb(
   }
 
   // Query function files
-  const records = platformDb.query(
-    "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'functions/%'",
-  ).all(appName) as { path: string; content: string }[];
+  const records = platformRepo.appFiles.findByAppAndPattern(appName, 'functions/%');
 
   if (records.length === 0) return [];
 

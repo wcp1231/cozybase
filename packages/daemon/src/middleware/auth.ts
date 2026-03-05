@@ -16,7 +16,7 @@ export function authMiddleware(config: Config, workspace: Workspace) {
     // Try API key first
     const apiKey = c.req.header('X-API-Key') ?? c.req.header('apikey');
     if (apiKey) {
-      const result = verifyApiKey(apiKey, workspace.getPlatformDb());
+      const result = verifyApiKey(apiKey, workspace.getPlatformRepo());
       if (!result) {
         throw new UnauthorizedError('Invalid API key');
       }
@@ -46,7 +46,7 @@ export function optionalAuth(config: Config, workspace: Workspace) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const apiKey = c.req.header('X-API-Key') ?? c.req.header('apikey');
     if (apiKey) {
-      const result = verifyApiKey(apiKey, workspace.getPlatformDb());
+      const result = verifyApiKey(apiKey, workspace.getPlatformRepo());
       if (result) {
         c.set('auth', { ...result, type: 'apikey' as const });
       }

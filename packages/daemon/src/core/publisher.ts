@@ -50,13 +50,11 @@ export class Publisher {
       copyFileSync(appContext.stableDbPath, backupPath);
     }
 
-    const platformDb = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
     try {
       // 2. Query migrations from app_files
-      const migrationRecords = platformDb.query(
-        "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
-      ).all(appName) as { path: string; content: string }[];
+      const migrationRecords = repo.appFiles.findByAppAndPattern(appName, 'migrations/%');
 
       const allMigrations = MigrationRunner.fromDbRecords(migrationRecords);
 
@@ -144,20 +142,16 @@ export class Publisher {
     executedVersions: number[],
     previousStableStatus: 'running' | 'stopped' | null,
   ): void {
-    const platformDb = this.workspace.getPlatformDb();
+    const repo = this.workspace.getPlatformRepo();
 
     // Mark all executed migration files as immutable
     for (const version of executedVersions) {
       const versionPrefix = String(version).padStart(3, '0');
-      platformDb.query(
-        "UPDATE app_files SET immutable = 1 WHERE app_slug = ? AND path LIKE ?",
-      ).run(appName, `migrations/${versionPrefix}_%`);
+      repo.appFiles.markImmutable(appName, `migrations/${versionPrefix}_%`);
     }
 
     // Update published_version = current_version
-    platformDb.query(
-      "UPDATE apps SET published_version = current_version, stable_status = ?, updated_at = datetime('now') WHERE slug = ?",
-    ).run(previousStableStatus ?? 'running', appName);
+    repo.apps.publish(appName, previousStableStatus ?? 'running');
   }
 
   /** Export function files from DB to stable data dir */
@@ -166,8 +160,8 @@ export class Publisher {
     if (!appContext) return;
 
     const destDir = join(appContext.stableDataDir, 'functions');
-    const platformDb = this.workspace.getPlatformDb();
-    exportFunctionsFromDb(platformDb, appName, destDir);
+    const repo = this.workspace.getPlatformRepo();
+    exportFunctionsFromDb(repo, appName, destDir);
   }
 
   /** Export UI definition from DB to stable data dir (non-blocking) */
@@ -176,8 +170,8 @@ export class Publisher {
     if (!appContext) return undefined;
 
     try {
-      const platformDb = this.workspace.getPlatformDb();
-      const exported = exportUiFromDb(platformDb, appName, appContext.stableDataDir);
+      const repo = this.workspace.getPlatformRepo();
+      const exported = exportUiFromDb(repo, appName, appContext.stableDataDir);
       if (exported) {
         return { exported: true };
       }
@@ -234,10 +228,8 @@ export class Publisher {
     appName: string,
     appDir: string,
   ): Promise<PublishResult['npm']> {
-    const platformDb = this.workspace.getPlatformDb();
-    const record = platformDb
-      .query("SELECT content FROM app_files WHERE app_slug = ? AND path = 'package.json'")
-      .get(appName) as { content: string } | null;
+    const repo = this.workspace.getPlatformRepo();
+    const record = repo.appFiles.findByAppAndPath(appName, 'package.json');
 
     if (!record) return undefined;
 

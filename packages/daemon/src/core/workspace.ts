@@ -4,6 +4,8 @@ import { join } from 'path';
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 import { z } from 'zod';
 import { AppContext } from './app-context';
+import { runPlatformMigrations } from './platform-migrations';
+import { PlatformRepository } from './platform-repository';
 
 // --- YAML Schema Definitions ---
 
@@ -60,6 +62,7 @@ export class Workspace {
 
   private _config: WorkspaceConfig | null = null;
   private _platformDb: Database | null = null;
+  private _platformRepo: PlatformRepository | null = null;
   private _apps = new Map<string, AppContext>();
   private _appStates = new Map<string, AppStateInfo>();
 
@@ -168,88 +171,18 @@ export class Workspace {
       this._platformDb = new Database(dbPath);
       this._platformDb.exec('PRAGMA journal_mode = WAL');
       this._platformDb.exec('PRAGMA foreign_keys = ON');
-      this.initPlatformSchema();
+      runPlatformMigrations(this._platformDb);
+      this._platformRepo = new PlatformRepository(this._platformDb);
     }
     return this._platformDb;
   }
 
-  private initPlatformSchema(): void {
-    const db = this._platformDb!;
-
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS apps (
-        slug TEXT PRIMARY KEY,
-        display_name TEXT NOT NULL DEFAULT '',
-        description TEXT DEFAULT '',
-        stable_status TEXT DEFAULT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS platform_users (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        role TEXT DEFAULT 'admin',
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS api_keys (
-        id TEXT PRIMARY KEY,
-        app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
-        key_hash TEXT NOT NULL,
-        name TEXT DEFAULT '',
-        role TEXT DEFAULT 'service',
-        expires_at TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS app_files (
-        app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
-        path TEXT NOT NULL,
-        content TEXT NOT NULL,
-        immutable INTEGER DEFAULT 0,
-        updated_at TEXT DEFAULT (datetime('now')),
-        PRIMARY KEY (app_slug, path)
-      );
-    `);
-
-    // Extend apps table with version fields (conditional ALTER)
-    const columns = db.query("PRAGMA table_info(apps)").all() as { name: string }[];
-    const columnNames = new Set(columns.map(c => c.name));
-
-    if (!columnNames.has('current_version')) {
-      db.exec("ALTER TABLE apps ADD COLUMN current_version INTEGER DEFAULT 0");
+  /** Get the platform repository (must call getPlatformDb first or during load/init) */
+  getPlatformRepo(): PlatformRepository {
+    if (!this._platformRepo) {
+      this.getPlatformDb();
     }
-    if (!columnNames.has('published_version')) {
-      db.exec("ALTER TABLE apps ADD COLUMN published_version INTEGER DEFAULT 0");
-    }
-    if (!columnNames.has('stable_status')) {
-      db.exec("ALTER TABLE apps ADD COLUMN stable_status TEXT DEFAULT NULL");
-    }
-
-    // Agent session tables
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS agent_sessions (
-        app_slug TEXT PRIMARY KEY REFERENCES apps(slug) ON DELETE CASCADE,
-        sdk_session_id TEXT,
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS agent_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL DEFAULT '',
-        tool_name TEXT,
-        tool_status TEXT,
-        tool_summary TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_agent_messages_app
-        ON agent_messages(app_slug, id);
-    `);
+    return this._platformRepo!;
   }
 
   // --- App State ---
@@ -261,14 +194,8 @@ export class Workspace {
 
   /** Refresh the state cache for a specific app (DB-based) */
   refreshAppState(slug: string): AppStateInfo | undefined {
-    const db = this.getPlatformDb();
-    const row = db.query(
-      'SELECT stable_status, current_version, published_version FROM apps WHERE slug = ?',
-    ).get(slug) as {
-      stable_status: StableStatus | null;
-      current_version: number;
-      published_version: number;
-    } | null;
+    const repo = this.getPlatformRepo();
+    const row = repo.apps.getVersionInfo(slug);
 
     if (!row) {
       this._appStates.delete(slug);
@@ -290,10 +217,10 @@ export class Workspace {
   refreshAllAppStates(): void {
     this._appStates.clear();
 
-    const db = this.getPlatformDb();
-    const rows = db.query('SELECT slug FROM apps').all() as { slug: string }[];
-    for (const row of rows) {
-      this.refreshAppState(row.slug);
+    const repo = this.getPlatformRepo();
+    const apps = repo.apps.findAll();
+    for (const app of apps) {
+      this.refreshAppState(app.slug);
     }
   }
 
@@ -301,10 +228,15 @@ export class Workspace {
 
   /** Query all apps from the platform DB */
   scanApps(): AppDefinition[] {
-    const db = this.getPlatformDb();
-    return db.query(
-      'SELECT slug, display_name, description, stable_status, current_version, published_version FROM apps ORDER BY slug',
-    ).all() as AppDefinition[];
+    const repo = this.getPlatformRepo();
+    return repo.apps.findAll().map((app) => ({
+      slug: app.slug,
+      display_name: app.display_name,
+      description: app.description,
+      stable_status: app.stable_status,
+      current_version: app.current_version,
+      published_version: app.published_version,
+    }));
   }
 
   /** Get a cached AppContext by slug (returns undefined if not cached) */
@@ -328,9 +260,8 @@ export class Workspace {
     if (cached) return cached;
 
     // Check if app exists in DB
-    const db = this.getPlatformDb();
-    const row = db.query('SELECT slug FROM apps WHERE slug = ?').get(slug);
-    if (!row) return null;
+    const repo = this.getPlatformRepo();
+    if (!repo.apps.exists(slug)) return null;
 
     const ctx = new AppContext(slug, this.stableDir, this.draftDir);
     this._apps.set(slug, ctx);
@@ -361,7 +292,7 @@ export class Workspace {
 
   /** Import an app from a filesystem directory into the platform DB */
   importAppFromDir(appSlug: string, dir: string): void {
-    const db = this.getPlatformDb();
+    const repo = this.getPlatformRepo();
 
     // Parse description from app.yaml if it exists
     let description = '';
@@ -379,21 +310,23 @@ export class Workspace {
     }
 
     // Check if app already exists
-    const existing = db.query('SELECT slug FROM apps WHERE slug = ?').get(appSlug);
-    if (existing) return;
+    if (repo.apps.exists(appSlug)) return;
 
-    // Create app record
-    db.query(
-      'INSERT INTO apps (slug, description, current_version, published_version) VALUES (?, ?, 1, 0)',
-    ).run(appSlug, description);
+    // Create app record and files in a transaction
+    repo.transaction(() => {
+      repo.apps.create({
+        slug: appSlug,
+        description,
+        currentVersion: 1,
+        publishedVersion: 0,
+      });
 
-    // Recursively collect files and write to app_files
-    const files = this.collectFiles(dir, '');
-    for (const file of files) {
-      db.query(
-        'INSERT INTO app_files (app_slug, path, content) VALUES (?, ?, ?)',
-      ).run(appSlug, file.path, file.content);
-    }
+      // Recursively collect files and write to app_files
+      const files = this.collectFiles(dir, '');
+      for (const file of files) {
+        repo.appFiles.create(appSlug, file.path, file.content);
+      }
+    });
   }
 
   /** Recursively collect all files from a directory */

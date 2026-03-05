@@ -61,10 +61,8 @@ export class DraftReconciler {
     }
 
     // 1. Query migrations from app_files
-    const platformDb = this.workspace.getPlatformDb();
-    const migrationRecords = platformDb.query(
-      "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'migrations/%' ORDER BY path",
-    ).all(appName) as { path: string; content: string }[];
+    const repo = this.workspace.getPlatformRepo();
+    const migrationRecords = repo.appFiles.findByAppAndPattern(appName, 'migrations/%');
 
     const migrations = MigrationRunner.fromDbRecords(migrationRecords);
     const migrationSignature = this.buildMigrationSignature(migrationRecords);
@@ -105,9 +103,7 @@ export class DraftReconciler {
       }
 
       // 4. Load seeds from app_files only when the draft DB is rebuilt
-      const seedRecords = platformDb.query(
-        "SELECT path, content FROM app_files WHERE app_slug = ? AND path LIKE 'seeds/%' ORDER BY path",
-      ).all(appName) as { path: string; content: string }[];
+      const seedRecords = repo.appFiles.findByAppAndPattern(appName, 'seeds/%');
 
       seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
 
@@ -127,7 +123,7 @@ export class DraftReconciler {
 
     // 5. Export functions from DB to draft directory
     const draftFunctionsDir = join(appContext.draftDataDir, 'functions');
-    exportFunctionsFromDb(platformDb, appName, draftFunctionsDir);
+    exportFunctionsFromDb(repo, appName, draftFunctionsDir);
 
     // 6. Validate functions (optional, non-blocking)
     const functionsResult = await this.validateFunctions(appName);
@@ -135,7 +131,7 @@ export class DraftReconciler {
     // 7. Export UI definition (non-blocking)
     let uiResult: DraftReconcileResult['ui'];
     try {
-      const exported = exportUiFromDb(platformDb, appName, appContext.draftDataDir);
+      const exported = exportUiFromDb(repo, appName, appContext.draftDataDir);
       if (exported) {
         uiResult = { exported: true };
       }
@@ -272,10 +268,8 @@ export class DraftReconciler {
     appName: string,
     appDir: string,
   ): Promise<DraftReconcileResult['npm']> {
-    const platformDb = this.workspace.getPlatformDb();
-    const record = platformDb
-      .query("SELECT content FROM app_files WHERE app_slug = ? AND path = 'package.json'")
-      .get(appName) as { content: string } | null;
+    const repo = this.workspace.getPlatformRepo();
+    const record = repo.appFiles.findByAppAndPath(appName, 'package.json');
 
     if (!record) return undefined;
 
