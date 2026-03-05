@@ -1,7 +1,7 @@
 /**
  * Workspace Init — copies template files to the target directory.
  *
- * Used by `cozybase init` to scaffold AGENTS.md, CLAUDE.md link and Skills templates
+ * Used by `cozybase init` to scaffold AGENTS.md, .agents/skills and Claude-compatible links
  * into the Agent Workspace directory.
  */
 
@@ -37,6 +37,7 @@ export function initWorkspace(targetDir: string): InitResult {
 
   copyDir(TEMPLATES_DIR, targetDir, '', result);
   ensureClaudeDocSymlink(targetDir, result);
+  ensureClaudeSkillsSymlink(targetDir, result);
   return result;
 }
 
@@ -77,6 +78,22 @@ function ensureClaudeDocSymlink(targetDir: string, result: InitResult): void {
 
   symlinkSync('AGENTS.md', claudeDocPath);
   result.created.push('CLAUDE.md');
+}
+
+function ensureClaudeSkillsSymlink(targetDir: string, result: InitResult): void {
+  const agentsSkillsRoot = join(targetDir, '.agents');
+  const claudeSkillsRoot = join(targetDir, '.claude');
+
+  if (!pathExists(agentsSkillsRoot)) {
+    return;
+  }
+  if (pathExists(claudeSkillsRoot)) {
+    result.skipped.push('.claude');
+    return;
+  }
+
+  symlinkSync('.agents', claudeSkillsRoot);
+  result.created.push('.claude');
 }
 
 function pathExists(path: string): boolean {

@@ -241,6 +241,11 @@ export function createServer(config: Config) {
   if (!pathExists(claudeDocPath)) {
     symlinkSync('AGENTS.md', claudeDocPath);
   }
+  const agentsSkillsRoot = join(agentDir, '.agents');
+  const claudeSkillsRoot = join(agentDir, '.claude');
+  if (pathExists(agentsSkillsRoot) && !pathExists(claudeSkillsRoot)) {
+    symlinkSync('.agents', claudeSkillsRoot);
+  }
 
   const localBackend = new LocalBackend({
     workspace,
