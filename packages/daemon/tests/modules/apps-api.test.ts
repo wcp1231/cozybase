@@ -10,6 +10,7 @@ import {
   addMigration,
   MIGRATION_CREATE_TODOS,
   MIGRATION_ADD_PRIORITY,
+  TEST_UI_PAGES_JSON,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
@@ -139,6 +140,88 @@ describe('Management API (/api/v1/apps)', () => {
       const uiRes = await app.request('/draft/apps/newapp/ui');
       expect(uiRes.status).toBe(200);
       expect((await jsonBody(uiRes)).data).toEqual({ pages: [] });
+    });
+  });
+
+  describe('POST /draft/apps/:appSlug/prepare', () => {
+    test('prepares draft environment for a stable-only app and serves draft UI', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        ui: TEST_UI_PAGES_JSON,
+      });
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      handle.workspace.refreshAppState('myapp');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: 'running',
+        hasDraft: false,
+      });
+
+      const { app, startup } = createServer(createTestConfig(handle.root));
+      await startup;
+
+      const beforeUiRes = await app.request('/draft/apps/myapp/ui');
+      expect(beforeUiRes.status).toBe(404);
+
+      const prepareRes = await app.request('/draft/apps/myapp/prepare', { method: 'POST' });
+      expect(prepareRes.status).toBe(200);
+      const prepareBody = await jsonBody(prepareRes);
+      expect(prepareBody.data.success).toBe(true);
+      expect(prepareBody.data.migrations).toContain('001_init.sql');
+
+      const appRes = await app.request('/api/v1/apps/myapp');
+      const appData = (await jsonBody(appRes)).data;
+      expect(appData.current_version).toBe(1);
+      expect(appData.published_version).toBe(1);
+
+      const uiRes = await app.request('/draft/apps/myapp/ui');
+      expect(uiRes.status).toBe(200);
+      expect((await jsonBody(uiRes)).data).toEqual(JSON.parse(TEST_UI_PAGES_JSON));
+    });
+
+    test('rejects prepare for unpublished app', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      handle.workspace.refreshAppState('myapp');
+      expect(handle.workspace.getAppState('myapp')).toEqual({
+        stableStatus: null,
+        hasDraft: true,
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      const res = await app.request('/draft/apps/myapp/prepare', { method: 'POST' });
+      expect(res.status).toBe(400);
+
+      const body = await jsonBody(res);
+      expect(body.error.code).toBe('BAD_REQUEST');
+      expect(body.error.message).toContain('no stable version');
+    });
+
+    test('prepare is idempotent and keeps version numbers unchanged', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+      handle.workspace.refreshAppState('myapp');
+
+      const { app, startup } = createServer(createTestConfig(handle.root));
+      await startup;
+
+      const firstRes = await app.request('/draft/apps/myapp/prepare', { method: 'POST' });
+      expect(firstRes.status).toBe(200);
+      expect((await jsonBody(firstRes)).data.success).toBe(true);
+
+      const secondRes = await app.request('/draft/apps/myapp/prepare', { method: 'POST' });
+      expect(secondRes.status).toBe(200);
+      expect((await jsonBody(secondRes)).data.success).toBe(true);
+
+      const appRes = await app.request('/api/v1/apps/myapp');
+      const appData = (await jsonBody(appRes)).data;
+      expect(appData.current_version).toBe(1);
+      expect(appData.published_version).toBe(1);
     });
   });
 

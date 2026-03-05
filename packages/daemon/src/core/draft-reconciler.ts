@@ -35,6 +35,10 @@ export interface DraftReconcileResult {
   error?: string;
 }
 
+export interface DraftReconcileOptions {
+  force?: boolean;
+}
+
 // --- DraftReconciler ---
 
 export class DraftReconciler {
@@ -44,13 +48,16 @@ export class DraftReconciler {
   constructor(private workspace: Workspace) {}
 
   /** Reconcile a draft app: rebuild draft DB only when migrations changed */
-  async reconcile(appName: string): Promise<DraftReconcileResult> {
+  async reconcile(
+    appName: string,
+    options?: DraftReconcileOptions,
+  ): Promise<DraftReconcileResult> {
     // Validate app state
     const state = this.workspace.getAppState(appName);
     if (!state) {
       throw new BadRequestError(`App '${appName}' not found`);
     }
-    if (!state.hasDraft) {
+    if (!state.hasDraft && !options?.force) {
       throw new BadRequestError(`App '${appName}' has no draft changes`);
     }
 

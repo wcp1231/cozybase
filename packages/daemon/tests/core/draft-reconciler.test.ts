@@ -184,6 +184,24 @@ describe('DraftReconciler', () => {
     expect(reconciler.reconcile('myapp')).rejects.toThrow(/no draft changes/);
   });
 
+  test('allows stable app without draft changes when force option is enabled', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    handle.workspace.refreshAppState('myapp');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: false,
+    });
+
+    const reconciler = new DraftReconciler(handle.workspace);
+    const result = await reconciler.reconcile('myapp', { force: true });
+    expect(result.success).toBe(true);
+    expect(result.migrations).toContain('001_init.sql');
+  });
+
   test('returns error when migration SQL fails', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {

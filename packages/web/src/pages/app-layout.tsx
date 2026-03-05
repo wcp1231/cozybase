@@ -33,6 +33,20 @@ const CHAT_PANEL_MIN_WIDTH = 320;
 const CHAT_PANEL_MAX_WIDTH = 680;
 const CHAT_PANEL_WIDTH_STORAGE_KEY = 'cozybase.chat-panel.width';
 
+type AppFetchResult = {
+  data: {
+    slug: string;
+    displayName?: string;
+    description?: string;
+    stableStatus: AppInfo['stableStatus'];
+    hasDraft: boolean;
+    current_version: number;
+    published_version: number;
+  };
+};
+
+type UiFetchResult = { data?: PagesJson };
+
 function clampChatPanelWidth(width: number): number {
   return Math.min(CHAT_PANEL_MAX_WIDTH, Math.max(CHAT_PANEL_MIN_WIDTH, width));
 }
@@ -41,6 +55,72 @@ export function useAppContext(): AppContextValue {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useAppContext must be used within AppLayout');
   return ctx;
+}
+
+async function fetchUiSchema(
+  appName: string,
+  mode: AppMode,
+  fetchImpl: typeof fetch,
+): Promise<PagesJson | null> {
+  const uiResponse = await fetchImpl(`/${mode}/apps/${appName}/ui`);
+  if (uiResponse.status === 404) {
+    return null;
+  }
+  if (!uiResponse.ok) {
+    throw new Error(`Failed to load UI: HTTP ${uiResponse.status}`);
+  }
+
+  const uiJson = await uiResponse.json() as UiFetchResult;
+  return uiJson ? (uiJson.data as PagesJson) : null;
+}
+
+async function prepareDraftEnvironment(
+  appName: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const prepareResponse = await fetchImpl(`/draft/apps/${appName}/prepare`, { method: 'POST' });
+  if (!prepareResponse.ok) {
+    throw new Error(`Failed to prepare draft: HTTP ${prepareResponse.status}`);
+  }
+}
+
+export async function loadAppLayoutData(
+  appName: string,
+  mode: AppMode,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ app: AppInfo; pagesJson: PagesJson | null }> {
+  const appResponse = await fetchImpl(`/api/v1/apps/${appName}`);
+  if (!appResponse.ok) {
+    throw new Error(`Failed to load app: HTTP ${appResponse.status}`);
+  }
+
+  const appJson = await appResponse.json() as AppFetchResult;
+  const appData = appJson.data;
+  const appInfo: AppInfo = {
+    slug: appData.slug,
+    displayName: appData.displayName ?? '',
+    description: appData.description ?? '',
+    stableStatus: appData.stableStatus,
+    hasDraft: appData.hasDraft,
+    current_version: appData.current_version,
+    published_version: appData.published_version,
+  };
+
+  const isPublishedDraftMode = mode === 'draft' && appInfo.stableStatus !== null;
+  let attemptedPrepare = false;
+  if (isPublishedDraftMode && !appInfo.hasDraft) {
+    await prepareDraftEnvironment(appName, fetchImpl);
+    attemptedPrepare = true;
+  }
+
+  let pagesJson = await fetchUiSchema(appName, mode, fetchImpl);
+  if (isPublishedDraftMode && !attemptedPrepare && pagesJson === null) {
+    // Fallback for stale/inconsistent runtime registration: prepare then retry once.
+    await prepareDraftEnvironment(appName, fetchImpl);
+    pagesJson = await fetchUiSchema(appName, mode, fetchImpl);
+  }
+
+  return { app: appInfo, pagesJson };
 }
 
 export function AppLayout() {
@@ -147,36 +227,9 @@ export function AppLayout() {
     setAppError(null);
 
     try {
-      const [appResponse, uiResponse] = await Promise.all([
-        fetch(`/api/v1/apps/${appName}`),
-        fetch(`/${selectedMode}/apps/${appName}/ui`),
-      ]);
-
-      if (!appResponse.ok) {
-        throw new Error(`Failed to load app: HTTP ${appResponse.status}`);
-      }
-
-      const appJson = await appResponse.json();
-      const appData = appJson.data;
-
-      setApp({
-        slug: appData.slug,
-        displayName: appData.displayName ?? '',
-        description: appData.description,
-        stableStatus: appData.stableStatus,
-        hasDraft: appData.hasDraft,
-        current_version: appData.current_version,
-        published_version: appData.published_version,
-      });
-
-      if (uiResponse.status === 404) {
-        setPagesJson(null);
-      } else if (!uiResponse.ok) {
-        throw new Error(`Failed to load UI: HTTP ${uiResponse.status}`);
-      } else {
-        const uiJson = await uiResponse.json();
-        setPagesJson(uiJson ? (uiJson.data as PagesJson) : null);
-      }
+      const data = await loadAppLayoutData(appName, selectedMode);
+      setApp(data.app);
+      setPagesJson(data.pagesJson);
     } catch (err) {
       setAppError(err instanceof Error ? err.message : String(err));
       setApp(null);

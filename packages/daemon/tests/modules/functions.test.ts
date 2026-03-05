@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -10,6 +10,7 @@ import {
   createTestWorkspace,
   createTestApp,
   addFunction,
+  createStableDb,
   MIGRATION_CREATE_TODOS,
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
@@ -472,5 +473,74 @@ describe('createServer() first-init auto-publish', () => {
 
     reg2.shutdownAll();
     ws2.close();
+  });
+});
+
+describe('createServer() draft runtime startup for materialized draft state', () => {
+  let handle: TestWorkspaceHandle;
+
+  afterEach(() => {
+    if (handle) handle.cleanup();
+  });
+
+  test('does not auto-restore prepared draft runtime when hasDraft is false', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      ui: JSON.stringify({ pages: [] }),
+    });
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    handle.workspace.refreshAppState('myapp');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: false,
+    });
+
+    const appContext = handle.workspace.getOrCreateApp('myapp')!;
+    appContext.draftDb.exec('CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, executed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
+    appContext.close();
+
+    mkdirSync(join(handle.root, 'draft', 'myapp', 'ui'), { recursive: true });
+    writeFileSync(
+      join(handle.root, 'draft', 'myapp', 'ui', 'pages.json'),
+      JSON.stringify({ pages: [] }),
+      'utf-8',
+    );
+    writeFileSync(
+      join(handle.root, 'draft', 'myapp', '.reconcile-state.json'),
+      JSON.stringify({ migrationSignature: 'test-signature' }),
+      'utf-8',
+    );
+
+    const { app, registry, startup } = createServer(createTestConfig(handle.root));
+    await startup;
+
+    expect(registry.get('myapp', 'draft')).toBeUndefined();
+    const uiRes = await app.request('/draft/apps/myapp/ui');
+    expect(uiRes.status).toBe(404);
+
+    registry.shutdownAll();
+  });
+
+  test('does not start draft runtime when reconcile-state is missing for hasDraft false app', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+    handle.workspace.refreshAppState('myapp');
+    expect(handle.workspace.getAppState('myapp')).toEqual({
+      stableStatus: 'running',
+      hasDraft: false,
+    });
+
+    const { app, registry, startup } = createServer(createTestConfig(handle.root));
+    await startup;
+
+    expect(registry.get('myapp', 'draft')).toBeUndefined();
+    const uiRes = await app.request('/draft/apps/myapp/ui');
+    expect(uiRes.status).toBe(404);
+
+    registry.shutdownAll();
   });
 });
