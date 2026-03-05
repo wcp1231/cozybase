@@ -3,9 +3,7 @@
 ## Purpose
 
 定义 Agent 面向 `ui/pages.json` 的结构化读取与局部编辑能力，降低整文件读写的上下文成本，并让页面节点可以被稳定定位和修改。
-
 ## Requirements
-
 ### Requirement: 系统提供页面结构大纲读取能力
 
 系统 SHALL 提供 `ui_outline` 工具，从 Agent working copy 中读取 `ui/pages.json`，并以树形结构返回页面层级、组件层级和关键摘要信息。大纲结果 MUST 包含可用于后续工具调用的稳定节点 ID、组件类型和层级关系，且 MUST NOT 返回整份页面节点的完整属性内容。
@@ -47,7 +45,7 @@
 
 ### Requirement: 系统提供结构化页面写操作
 
-系统 SHALL 提供 `ui_insert`、`ui_update`、`ui_move` 和 `ui_delete` 工具，对 `ui/pages.json` 执行局部结构化修改。所有写操作 SHALL 以节点 ID 作为定位依据，并在成功后将变更写回 Agent working copy 中的 `ui/pages.json`。
+系统 SHALL 提供 `ui_insert`、`ui_update`、`ui_move` 和 `ui_delete` 工具，对 `ui/pages.json` 执行局部结构化修改。所有写操作 SHALL 以节点 ID 作为定位依据，并在成功后将变更写回 Agent working copy 中的 `ui/pages.json`。这些单操作工具 MUST 维持既有对外语义，并与 `ui_batch` 中对应操作在节点定位、字段约束和错误语义上保持一致。
 
 #### Scenario: 插入新节点到父容器
 
@@ -73,6 +71,12 @@
 - **WHEN** Agent 调用 `ui_delete`，传入现有节点 ID
 - **THEN** 系统 SHALL 删除该节点及其整个子树
 - **AND** Agent working copy 中的 `ui/pages.json` SHALL 不再包含该节点
+
+#### Scenario: 单操作工具与批量同类操作语义一致
+
+- **WHEN** Agent 使用相同输入分别调用 `ui_update` 与包含单个 `update` 操作的 `ui_batch`
+- **THEN** 两次调用 SHALL 产生一致的字段更新结果
+- **AND** 当输入非法时两次调用 SHALL 返回一致的约束错误语义
 
 ### Requirement: 页面写工具限制对结构关键字段的直接修改
 
@@ -106,3 +110,4 @@
 - **AND** 随后再次调用 `ui_outline` 或 `ui_get`
 - **THEN** 页面读取工具 SHALL 返回 working copy 中最新的页面结构
 - **AND** 返回结果 MUST NOT 回退到 backend 中的旧版本
+

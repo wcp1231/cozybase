@@ -46,6 +46,8 @@ import type {
   UiUpdateInput,
   UiMoveInput,
   UiDeleteInput,
+  UiBatchInput,
+  UiBatchOutput,
   PagesListInput,
   PagesAddInput,
   PagesRemoveInput,
@@ -60,6 +62,7 @@ import {
   updateNode,
   moveNode,
   deleteNode,
+  batchOperations,
   listPages,
   addPage,
   removePage,
@@ -313,6 +316,16 @@ export function handleUiDelete(
 ): { deleted: string } {
   deleteNode(makePageEditorCtx(ctx, input.app_name), input.node_id);
   return { deleted: input.node_id };
+}
+
+export function handleUiBatch(
+  ctx: HandlerContext,
+  input: UiBatchInput,
+): UiBatchOutput {
+  return batchOperations(
+    makePageEditorCtx(ctx, input.app_name),
+    input.operations,
+  );
 }
 
 // --- Page-level Editing (pages_*) ---

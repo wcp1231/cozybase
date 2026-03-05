@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -21,6 +21,7 @@ import {
   handleUiUpdate,
   handleUiMove,
   handleUiDelete,
+  handleUiBatch,
   handlePagesList,
   handlePagesAdd,
   handlePagesRemove,
@@ -540,6 +541,174 @@ describe('handleUiDelete', () => {
       expect((e as PageEditorError).code).toBe('INVALID_PARENT');
       expect((e as PageEditorError).message).toMatch(/required singleton slot/);
     }
+  });
+});
+
+// ============================================================
+// handleUiBatch
+// ============================================================
+
+describe('handleUiBatch', () => {
+  test('supports basic multi-insert in one batch', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'insert', parent_id: 'row-actions', node: { type: 'text', text: 'A' } },
+        { op: 'insert', parent_id: 'row-actions', node: { type: 'text', text: 'B' } },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results).toHaveLength(2);
+    expect(result.results.every((r) => r.status === 'ok')).toBe(true);
+
+    const outline = handleUiOutline(makeCtx(), { app_name: APP_NAME });
+    const rowNode = outline.pages[0].body.find((n) => n.id === 'row-actions');
+    expect(rowNode?.children?.length).toBe(2);
+  });
+
+  test('supports $ref for nested insert', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'insert', ref: '$row', parent_id: 'row-actions', node: { type: 'row', children: [] } },
+        { op: 'insert', parent_id: '$row', node: { type: 'text', text: 'Nested' } },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results[0].status).toBe('ok');
+    expect(result.results[1].status).toBe('ok');
+
+    const rowId = result.results[0].node_id!;
+    const outline = handleUiOutline(makeCtx(), { app_name: APP_NAME });
+    const parent = outline.pages[0].body.find((n) => n.id === 'row-actions');
+    const nestedRow = parent?.children?.find((n) => n.id === rowId);
+    expect(nestedRow).toBeDefined();
+    expect(nestedRow?.children?.length).toBe(1);
+  });
+
+  test('supports mixed insert + update + delete in one batch', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'insert', ref: '$n', parent_id: 'row-actions', node: { type: 'text', text: 'Temp' } },
+        { op: 'update', node_id: '$n', props: { text: 'Updated Temp' } },
+        { op: 'delete', node_id: '$n' },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok', 'ok']);
+
+    const deletedId = result.results[2].node_id!;
+    expect(() =>
+      handleUiGet(makeCtx(), { app_name: APP_NAME, node_id: deletedId }),
+    ).toThrow(PageEditorError);
+  });
+
+  test('continues unrelated operations when one operation fails', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'insert', parent_id: 'row-actions', node: { type: 'text', text: 'OK 1' } },
+        { op: 'insert', parent_id: 'non-existent-parent', node: { type: 'text', text: 'FAIL' } },
+        { op: 'update', node_id: 'txt-title', props: { text: 'Still runs' } },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'error', 'ok']);
+
+    const title = handleUiGet(makeCtx(), { app_name: APP_NAME, node_id: 'txt-title' });
+    expect((title as Record<string, unknown>).text).toBe('Still runs');
+  });
+
+  test('marks dependent operations as skipped when referenced ref failed', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'insert', ref: '$container', parent_id: 'missing-parent', node: { type: 'row', children: [] } },
+        { op: 'insert', parent_id: '$container', node: { type: 'text', text: 'Skipped' } },
+        { op: 'update', node_id: 'txt-title', props: { text: 'Independent' } },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[1].status).toBe('skipped');
+    expect(result.results[2].status).toBe('ok');
+    expect(result.results[1].skipped_reason).toContain('$container');
+  });
+
+  test('supports page_add + insert in the same batch', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'page_add', ref: '$settings', id: 'settings', title: 'Settings' },
+        { op: 'insert', parent_id: '$settings', node: { type: 'text', text: 'Settings Page' } },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok']);
+
+    const pages = handlePagesList(makeCtx(), { app_name: APP_NAME });
+    expect(pages.pages.some((p) => p.id === 'settings')).toBe(true);
+
+    const outline = handleUiOutline(makeCtx(), { app_name: APP_NAME, page_id: 'settings' });
+    expect(outline.pages).toHaveLength(1);
+    expect(outline.pages[0].body).toHaveLength(1);
+  });
+
+  test('does not write pages.json for pure get batches', () => {
+    const filePath = join(appsDir, APP_NAME, 'ui', 'pages.json');
+    const before = readFileSync(filePath, 'utf-8');
+
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'get', node_id: 'txt-title' },
+        { op: 'get', node_id: 'row-actions' },
+      ],
+    });
+
+    const after = readFileSync(filePath, 'utf-8');
+    expect(result.committed).toBe(false);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok']);
+    expect(after).toBe(before);
+  });
+
+  test('returns committed=false with empty operations', () => {
+    const filePath = join(appsDir, APP_NAME, 'ui', 'pages.json');
+    const before = readFileSync(filePath, 'utf-8');
+
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [],
+    });
+
+    const after = readFileSync(filePath, 'utf-8');
+    expect(result.committed).toBe(false);
+    expect(result.results).toHaveLength(0);
+    expect(after).toBe(before);
+  });
+
+  test('rejects update id/type modifications with FORBIDDEN_UPDATE', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        { op: 'update', node_id: 'txt-title', props: { id: 'new-id' } },
+        { op: 'update', node_id: 'txt-title', props: { type: 'heading' } },
+      ],
+    });
+
+    expect(result.committed).toBe(false);
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[1].status).toBe('error');
+    expect(result.results[0].error?.code).toBe('FORBIDDEN_UPDATE');
+    expect(result.results[1].error?.code).toBe('FORBIDDEN_UPDATE');
   });
 });
 

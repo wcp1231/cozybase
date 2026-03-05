@@ -49,52 +49,32 @@ Use your file tools (read/write) to edit files in the working directory:
 ### Editing UI Pages
 
 **Always use MCP tools to edit UI. Never manually read or write `ui/pages.json` with file tools.**
+**Prefer `ui_batch` for related UI changes** (for example: create page + insert components, or insert + update + move in one edit pass).
 
-Use `pages_*` tools to manage pages, and `ui_*` tools to manage components within a page:
+Use `ui_batch` as the default UI editing tool:
 
 ```
-# --- Page-level operations ---
-
-# List all pages
-pages_list(app_name: "my-app")
-
-# Add a new page (id is the URL route segment)
-pages_add(app_name: "my-app", id: "user-list", title: "User List")
-
-# Rename a page
-pages_update(app_name: "my-app", page_id: "user-list", title: "Users")
-
-# Reorder pages (index is 0-based)
-pages_reorder(app_name: "my-app", page_id: "user-list", index: 0)
-
-# Remove a page and all its components
-pages_remove(app_name: "my-app", page_id: "user-list")
-
-# --- Component-level operations ---
-
-# Get a structural overview of all components in a page
-ui_outline(app_name: "my-app")
-
-# Inspect a specific component by ID
-ui_get(app_name: "my-app", node_id: "btn-save-a7x3k")
-
-# Insert a new component into a container (page id or container component id)
-ui_insert(app_name: "my-app", parent_id: "user-list", node: {
-  type: "text",
-  text: "Hello world"
-})
-
-# Update component properties (cannot change id or type)
-ui_update(app_name: "my-app", node_id: "txt-greeting-p1q8s", props: { text: "Welcome back" })
-
-# Move a component to a new parent
-ui_move(app_name: "my-app", node_id: "btn-save-a7x3k", new_parent_id: "card-footer-xz21b")
-
-# Delete a component and its entire subtree
-ui_delete(app_name: "my-app", node_id: "row-old-m4k9j")
+# Batch page + component edits in one call
+ui_batch(app_name: "my-app", operations: [
+  { op: "page_add", ref: "$usersPage", id: "user-list", title: "User List" },
+  { op: "insert", ref: "$title", parent_id: "$usersPage", node: { type: "heading", text: "Users" } },
+  { op: "insert", parent_id: "$usersPage", node: { type: "table", id: "tbl-users", api: { url: "/fn/_db/tables/users" }, columns: [
+    { name: "id", label: "ID" },
+    { name: "name", label: "Name" }
+  ] } },
+  { op: "update", node_id: "$title", props: { text: "User Management" } }
+])
 ```
 
-After UI edits, sync the working copy back to cozybase:
+For one-off edits or inspection, use single-operation tools:
+
+```
+pages_list / pages_add / pages_update / pages_reorder / pages_remove
+ui_outline / ui_get
+ui_insert / ui_update / ui_move / ui_delete
+```
+
+After UI edits (`ui_batch` or single-operation tools), sync the working copy back to cozybase:
 
 ```
 update_app_file(app_name: "my-app", path: "ui/pages.json")
@@ -104,6 +84,7 @@ update_app_file(app_name: "my-app", path: "ui/pages.json")
 
 - **IDs are auto-generated** — You don't need to invent unique IDs; the system generates stable `{type}-{nanoid5}` IDs automatically
 - **Validated before write** — Every edit is validated against the full schema before writing; invalid edits are rejected without corrupting the file
+- **Fewer round trips** — `ui_batch` can complete multiple related edits in one call, reducing repeated read/validate/write cycles
 - **Targeted changes** — Use `ui_get` to inspect a specific node, then `ui_update` with only the props you want to change
 - **No accidental deletions** — Semantic checks prevent creating dangling references (e.g. a `reload.target` pointing to a deleted node)
 
@@ -119,8 +100,10 @@ pages_update / pages_reorder
         │
 ui_outline(app_name: "my-app")         # explore component structure
         │
-ui_get / ui_insert                     # inspect and edit components
-ui_update / ui_move / ui_delete
+ui_batch(app_name: "my-app", ...)      # preferred for multi-step edits
+        │
+ui_get / ui_insert / ui_update         # fallback for one-off edits
+ui_move / ui_delete
         │
 update_app_file(path: "ui/pages.json") # sync working copy to cozybase
         │
@@ -131,7 +114,7 @@ inspect_ui(app_name: "my-app")         # verify UI renders correctly
 
 #### Container types (can have children)
 
-Only these types accept children via `ui_insert` or `ui_move`:
+Only these types accept children via insert/move operations (`ui_insert`, `ui_move`, or `ui_batch` with `insert` / `move`):
 `page`, `row`, `col`, `card`, `dialog`
 
 Attempting to insert into a non-container type will return an error.

@@ -42,9 +42,11 @@ For detailed workflow documentation, call `get_guide("workflow")`.
 ## UI Editing Rules
 
 **Always use MCP tools to edit UI. Never manually edit `ui/pages.json`.**
+**Prefer `ui_batch` for multi-step or related UI edits.** Use single-operation `ui_*` / `pages_*` tools only for one-off edits or debugging.
 
 | Operation | Tool |
 |-----------|------|
+| Batch edit pages/components (preferred) | `ui_batch` |
 | List pages | `pages_list` |
 | Add a page | `pages_add` |
 | Remove a page | `pages_remove` |

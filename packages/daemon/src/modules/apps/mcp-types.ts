@@ -9,6 +9,7 @@
  */
 
 import type { StableStatus } from '../../core/workspace';
+import type { BatchOperation, BatchResult } from './page-editor';
 
 // --- Tool Input / Output Types ---
 
@@ -222,6 +223,15 @@ export interface UiDeleteInput {
   node_id: string;
 }
 
+// -- ui_batch --
+
+export interface UiBatchInput {
+  app_name: string;
+  operations: BatchOperation[];
+}
+
+export type UiBatchOutput = BatchResult;
+
 // -- pages_list --
 
 export interface PagesListInput {
@@ -389,11 +399,13 @@ export const TOOL_DESCRIPTIONS = {
     'Insert a new component node into a parent container in `ui/pages.json`.\n\n' +
     'The system auto-generates a stable ID for the new node.\n' +
     'Returns the inserted node including its generated ID.\n\n' +
+    '**Prefer `ui_batch` for related multi-step edits** to reduce round trips and keep dependent operations in one call.\n\n' +
     '**Note:** Only container types (`page`, `row`, `col`, `card`, `dialog`) can receive children.\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
   ui_update:
     'Update properties of an existing component node in `ui/pages.json`.\n\n' +
+    '**Prefer `ui_batch` when this update is part of a larger edit sequence.**\n\n' +
     '**Restrictions:**\n' +
     '- Cannot modify `id` (stable, system-managed)\n' +
     '- Cannot modify `type` (use ui_delete + ui_insert to replace a node)\n\n' +
@@ -401,12 +413,23 @@ export const TOOL_DESCRIPTIONS = {
 
   ui_move:
     'Move a component node (and its subtree) to a new parent container.\n\n' +
+    '**Prefer `ui_batch` when combining move with other edits.**\n\n' +
     'Node IDs are preserved after the move.\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
   ui_delete:
     'Delete a component node and its entire subtree from `ui/pages.json`.\n\n' +
+    '**Prefer `ui_batch` when delete is part of a larger change set.**\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  ui_batch:
+    'Preferred UI editing tool for multi-step changes in `ui/pages.json`.\n\n' +
+    'Execute multiple page/component operations in one `ui/pages.json` round trip.\n\n' +
+    'Supports mixed operations: `get`, `insert`, `update`, `delete`, `move`, `page_add`, `page_remove`, `page_update`.\n' +
+    'Operations run in order and return per-operation statuses (`ok`, `error`, `skipped`).\n\n' +
+    'Use `ref` (must start with `$`) to bind IDs from earlier operations, then reference them via `$ref` in later operations.\n' +
+    'When an operation fails, unrelated operations continue; dependent `$ref` operations are marked `skipped`.\n' +
+    'A batch writes `ui/pages.json` once only if at least one write operation succeeds.',
 
   pages_list:
     'List all pages in `ui/pages.json` with their id and title.\n\n' +

@@ -2,6 +2,14 @@
 
 Cozybase uses declarative JSON to define APP UI pages, stored in the `ui/pages.json` file.
 
+## Agent Editing Best Practice
+
+When an Agent edits UI:
+
+- Always use MCP UI tools (never manually edit `ui/pages.json`)
+- Prefer `ui_batch` for related or multi-step edits
+- Use `ui_outline` / `ui_get` for discovery, and single-operation `ui_*` tools only for one-off edits
+
 ## File Structure
 
 ```json

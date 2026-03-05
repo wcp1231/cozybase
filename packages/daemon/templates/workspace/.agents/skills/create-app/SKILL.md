@@ -41,11 +41,23 @@ Note: If the built-in CRUD API (`/fn/_db/tables/{table}`) is sufficient, you may
 
 ### Step 6: Write UI Pages
 
-Edit `ui/pages.json` to define the UI.
+Use MCP UI tools to define the UI (do not manually edit `ui/pages.json`).
+Prefer `ui_batch` for multi-step UI composition.
 
 For the component reference, call `get_guide("ui/components")`.
 For actions (API calls, dialogs, navigation), call `get_guide("ui/actions")`.
 For expression syntax (`${...}`), call `get_guide("ui/expressions")`.
+
+Typical flow:
+
+```
+pages_add(app_name: "<app-name>", id: "dashboard", title: "Dashboard")
+
+ui_batch(app_name: "<app-name>", operations: [
+  { op: "insert", ref: "$stats", parent_id: "dashboard", node: { type: "row", children: [] } },
+  { op: "insert", parent_id: "$stats", node: { type: "stat", label: "Total", value: "${rows.length}" } }
+])
+```
 
 ### Step 7: Follow the Standard Workflow
 

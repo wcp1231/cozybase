@@ -30,6 +30,7 @@ import {
   handleUiUpdate,
   handleUiMove,
   handleUiDelete,
+  handleUiBatch,
   handlePagesList,
   handlePagesAdd,
   handlePagesRemove,
@@ -37,6 +38,7 @@ import {
   handlePagesReorder,
 } from '../mcp/handlers';
 import { handleGetGuide } from '../mcp/guide-handler';
+import { batchOperationSchema } from '../mcp/ui-batch-schema';
 
 import { TOOL_DESCRIPTIONS } from '../modules/apps/mcp-types';
 
@@ -234,6 +236,16 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
         TOOL_DESCRIPTIONS.ui_delete,
         { app_name: z.string(), node_id: z.string() },
         async (args) => jsonResult(handleUiDelete(ctx, args)),
+      ),
+
+      tool(
+        'ui_batch',
+        TOOL_DESCRIPTIONS.ui_batch,
+        {
+          app_name: z.string(),
+          operations: z.array(batchOperationSchema),
+        },
+        async (args) => jsonResult(handleUiBatch(ctx, args)),
       ),
 
       // --- Page-level Editing (pages_*) ---

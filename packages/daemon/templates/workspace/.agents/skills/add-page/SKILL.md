@@ -35,17 +35,20 @@ get_guide("ui/actions")            # API calls, dialogs, navigation
 get_guide("ui/expressions")        # ${...} syntax
 ```
 
-Add the page using the `pages_add` MCP tool:
+Prefer `ui_batch` to create and initialize the page in one call:
 
 ```
-pages_add(app_name, id="page-id", title="Page Title")
+ui_batch(app_name, operations=[
+  { op: "page_add", ref: "$newPage", id: "page-id", title: "Page Title" },
+  { op: "insert", parent_id: "$newPage", node: { type: "heading", text: "Page Title" } }
+])
 ```
 
-The `id` serves as the route path segment (lowercase alphanumeric and hyphens, e.g., `user-list`, `dashboard`).
+The page `id` serves as the route path segment (lowercase alphanumeric and hyphens, e.g., `user-list`, `dashboard`).
 
-Then use `ui_insert` to add components to the page body, targeting the page `id` as the parent.
+If the change is truly one-off, you can use `pages_add` + `ui_insert` / `ui_update` / `ui_move` / `ui_delete`.
 
-**Never manually edit `ui/pages.json`** — always use the `pages_*` and `ui_*` MCP tools.
+**Never manually edit `ui/pages.json`** — always use the `ui_batch` or `pages_*` / `ui_*` MCP tools.
 
 ### Step 4: Follow the Standard Workflow
 

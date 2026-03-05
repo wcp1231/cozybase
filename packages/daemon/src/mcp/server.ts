@@ -30,6 +30,7 @@ import {
   handleUiUpdate,
   handleUiMove,
   handleUiDelete,
+  handleUiBatch,
   handlePagesList,
   handlePagesAdd,
   handlePagesRemove,
@@ -37,6 +38,7 @@ import {
   handlePagesReorder,
 } from './handlers';
 import { handleGetGuide } from './guide-handler';
+import { batchOperationSchema } from './ui-batch-schema';
 
 import { TOOL_DESCRIPTIONS } from '../modules/apps/mcp-types';
 
@@ -325,6 +327,20 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     },
     (args) => {
       return jsonText(handleUiDelete(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'ui_batch',
+    {
+      description: TOOL_DESCRIPTIONS.ui_batch,
+      inputSchema: {
+        app_name: z.string(),
+        operations: z.array(batchOperationSchema),
+      },
+    },
+    (args) => {
+      return jsonText(handleUiBatch(ctx, args));
     },
   );
 
