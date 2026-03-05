@@ -55,6 +55,7 @@ function ActiveChat({
   const { messages, streaming, connected, send, cancel } = useChatStore();
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const resizeInput = (element: HTMLTextAreaElement) => {
     element.style.height = 'auto';
@@ -63,10 +64,20 @@ function ActiveChat({
     element.style.overflowY = element.scrollHeight > CHAT_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
   };
 
+  const scrollChatToBottom = () => {
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  };
+
   useEffect(() => {
-    const container = document.getElementById('cz-chat-scroll');
-    if (!container) return;
-    container.scrollTop = container.scrollHeight;
+    scrollChatToBottom();
+    const raf = window.requestAnimationFrame(() => {
+      scrollChatToBottom();
+      window.requestAnimationFrame(scrollChatToBottom);
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
   }, [messages, streaming]);
 
   useEffect(() => {
@@ -105,7 +116,7 @@ function ActiveChat({
         )}
       </div>
 
-      <div id="cz-chat-scroll" className="flex flex-1 flex-col gap-4 overflow-y-auto bg-[#F8FAFC] px-5 py-4">
+      <div ref={chatScrollRef} className="flex flex-1 flex-col gap-4 overflow-y-auto bg-[#F8FAFC] px-5 py-4">
         {messages.length === 0 && <AssistantBubble text={introMessage} />}
         {messages.map((message, index) => (
           <ChatBubble key={index} message={message} />
