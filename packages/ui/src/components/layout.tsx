@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { registerBuiltinComponent, type SchemaComponentProps } from '../engine/registry';
 import { usePageContext } from '../engine/context';
 import { dispatchAction } from '../engine/action';
+import { resolveExpression } from '../engine/expression';
 import { toArray } from '../renderer';
 import { CzTabs, CzTabsList, CzTabsTrigger, CzTabsContent } from '../primitives';
 import type {
@@ -96,6 +97,16 @@ function CardComp({ schema, renderChild, exprContext }: SchemaComponentProps) {
   const padding = s.padding ?? 16;
   const ctx = usePageContext();
   const hasAction = !!s.action;
+  const resolvedTitle =
+    s.title === undefined
+      ? undefined
+      : resolveExpression(s.title, exprContext);
+  const titleText =
+    resolvedTitle === undefined ||
+    resolvedTitle === null ||
+    resolvedTitle === ''
+      ? undefined
+      : String(resolvedTitle);
 
   const handleClick = hasAction
     ? () => {
@@ -121,12 +132,12 @@ function CardComp({ schema, renderChild, exprContext }: SchemaComponentProps) {
       style={s.style}
       onClick={handleClick}
     >
-      {s.title && (
+      {titleText && (
         <div
           className="font-semibold text-base text-text"
           style={{ padding: `${padding}px ${padding}px 0` }}
         >
-          {s.title}
+          {titleText}
         </div>
       )}
       <div style={{ padding }}>

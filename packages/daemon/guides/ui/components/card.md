@@ -7,7 +7,7 @@ Card container with optional title.
 <!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `title` | `string` | No | Card title |
+| `title` | `string` | No | Card title (supports expressions) |
 | `children` | `Component \| Component[]` | Yes | Child components |
 | `padding` | `number` | No | Inner padding (px) |
 | `action` | `Action \| Action[]` | No | Optional click action. When provided, the whole card becomes clickable. |
@@ -38,6 +38,18 @@ Clickable card:
   },
   "children": [
     { "type": "text", "text": "Click anywhere in this card" }
+  ]
+}
+```
+
+Dynamic title:
+
+```json
+{
+  "type": "card",
+  "title": "Order #${row.id}",
+  "children": [
+    { "type": "text", "text": "${row.customer_name}" }
   ]
 }
 ```

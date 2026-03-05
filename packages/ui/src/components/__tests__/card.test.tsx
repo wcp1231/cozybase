@@ -259,6 +259,46 @@ describe('CardRenderer', () => {
     expect(calledUrl).toBe('http://localhost:3000/fn/link-action');
   });
 
+  test('card title resolves row-scoped expressions inside list items', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ id: 1, name: 'Peanut' }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      id: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'list',
+          api: {
+            url: '/fn/allergies',
+          },
+          itemRender: {
+            type: 'card',
+            title: 'Allergy: ${row.name}',
+            children: [{ type: 'text', text: 'row content' }],
+          } as unknown as CardComponent,
+        } as unknown as ListComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const cardTitle = container.querySelector(
+      '[data-schema-type="card"] .font-semibold',
+    ) as HTMLDivElement | null;
+    expect(cardTitle).not.toBeNull();
+    expect(cardTitle?.textContent).toBe('Allergy: Peanut');
+  });
+
   test('card style resolves row-scoped expressions inside list items', async () => {
     const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(
