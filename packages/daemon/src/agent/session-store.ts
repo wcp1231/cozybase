@@ -7,6 +7,11 @@
 
 import type { Database } from 'bun:sqlite';
 
+export interface StoredSession {
+  sdkSessionId: string | null;
+  providerKind: string | null;
+}
+
 export interface StoredMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
@@ -21,29 +26,70 @@ export class SessionStore {
 
   // --- Session CRUD ---
 
-  getSessionId(appSlug: string): string | null {
-    const row = this.db.query(
-      'SELECT sdk_session_id FROM agent_sessions WHERE app_slug = ?',
-    ).get(appSlug) as { sdk_session_id: string | null } | null;
-    return row?.sdk_session_id ?? null;
+  getSession(appSlug: string): StoredSession | null {
+    try {
+      const row = this.db.query(
+        'SELECT sdk_session_id, provider_kind FROM agent_sessions WHERE app_slug = ?',
+      ).get(appSlug) as { sdk_session_id: string | null; provider_kind: string | null } | null;
+      if (!row) return null;
+      return {
+        sdkSessionId: row.sdk_session_id ?? null,
+        providerKind: row.provider_kind ?? null,
+      };
+    } catch {
+      // Backward compatibility for pre-migration schema.
+      const fallback = this.db.query(
+        'SELECT sdk_session_id FROM agent_sessions WHERE app_slug = ?',
+      ).get(appSlug) as { sdk_session_id: string | null } | null;
+      if (!fallback) return null;
+      return {
+        sdkSessionId: fallback.sdk_session_id ?? null,
+        providerKind: null,
+      };
+    }
   }
 
-  saveSessionId(appSlug: string, sdkSessionId: string): void {
-    this.db.query(`
-      INSERT INTO agent_sessions (app_slug, sdk_session_id, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(app_slug) DO UPDATE SET
-        sdk_session_id = excluded.sdk_session_id,
-        updated_at = datetime('now')
-    `).run(appSlug, sdkSessionId);
+  getSessionId(appSlug: string): string | null {
+    return this.getSession(appSlug)?.sdkSessionId ?? null;
+  }
+
+  saveSessionId(appSlug: string, sdkSessionId: string, providerKind = 'claude'): void {
+    try {
+      this.db.query(`
+        INSERT INTO agent_sessions (app_slug, sdk_session_id, provider_kind, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(app_slug) DO UPDATE SET
+          sdk_session_id = excluded.sdk_session_id,
+          provider_kind = excluded.provider_kind,
+          updated_at = datetime('now')
+      `).run(appSlug, sdkSessionId, providerKind);
+    } catch {
+      // Backward compatibility for pre-migration schema.
+      this.db.query(`
+        INSERT INTO agent_sessions (app_slug, sdk_session_id, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(app_slug) DO UPDATE SET
+          sdk_session_id = excluded.sdk_session_id,
+          updated_at = datetime('now')
+      `).run(appSlug, sdkSessionId);
+    }
   }
 
   /** Clear only the SDK session ID (keeps message history intact). */
   clearSessionId(appSlug: string): void {
-    this.db.query(`
-      UPDATE agent_sessions SET sdk_session_id = NULL, updated_at = datetime('now')
-      WHERE app_slug = ?
-    `).run(appSlug);
+    try {
+      this.db.query(`
+        UPDATE agent_sessions
+        SET sdk_session_id = NULL, provider_kind = NULL, updated_at = datetime('now')
+        WHERE app_slug = ?
+      `).run(appSlug);
+    } catch {
+      // Backward compatibility for pre-migration schema.
+      this.db.query(`
+        UPDATE agent_sessions SET sdk_session_id = NULL, updated_at = datetime('now')
+        WHERE app_slug = ?
+      `).run(appSlug);
+    }
   }
 
   /** Delete the session row and all associated messages. */

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { existsSync, readFileSync, mkdirSync, symlinkSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, symlinkSync, lstatSync } from 'fs';
 import { resolve, join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
@@ -23,7 +23,18 @@ import { SessionStore } from './agent/session-store';
 import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
 import { initWorkspace } from './workspace-init';
 import { eventBus } from './core/event-bus';
-import { ClaudeCodeProvider } from '@cozybase/agent';
+import type { AgentProvider } from '@cozybase/agent';
+import { ClaudeCodeProvider, CodexProvider } from '@cozybase/agent';
+import { startInProcessMcpHttpBridge, type InProcessMcpHttpBridge } from './mcp/http-bridge';
+
+type AgentProviderKind = 'claude' | 'codex';
+type CodexMcpMode = 'http' | 'stdio';
+
+type ProviderOptionsFactory = (ctx: {
+  appSlug: string;
+  agentDir: string;
+  mode: 'chat' | 'extract';
+}) => unknown;
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -73,7 +84,7 @@ export function createServer(config: Config) {
   const { app: runtimeApp, registry } = createRuntime({ platformHandler });
 
   // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
-  const startup = initializeRuntime(workspace, registry, publisher, justInitialized);
+  const runtimeStartup = initializeRuntime(workspace, registry, publisher, justInitialized);
 
   // --- Shared AppManager (used by REST routes and agent infrastructure) ---
   const appManager = new AppManager(workspace, registry, draftReconciler);
@@ -223,11 +234,12 @@ export function createServer(config: Config) {
   const agentDir = join(config.workspaceDir, 'agent');
   mkdirSync(join(agentDir, 'apps'), { recursive: true });
 
-  if (!existsSync(join(agentDir, 'AGENT.md'))) {
+  if (!existsSync(join(agentDir, 'AGENTS.md'))) {
     initWorkspace(agentDir);
-    // CLAUDE.md → AGENT.md symlink so the SDK picks up the agent docs
-    // (SDK reads CLAUDE.md, not AGENT.md, when settingSources includes 'project')
-    symlinkSync('AGENT.md', join(agentDir, 'CLAUDE.md'));
+  }
+  const claudeDocPath = join(agentDir, 'CLAUDE.md');
+  if (!pathExists(claudeDocPath)) {
+    symlinkSync('AGENTS.md', claudeDocPath);
   }
 
   const localBackend = new LocalBackend({
@@ -247,19 +259,103 @@ export function createServer(config: Config) {
     appsDir: join(agentDir, 'apps'),
   });
 
-  const agentProvider = new ClaudeCodeProvider();
+  const providerKind = resolveAgentProviderKind(process.env.COZYBASE_AGENT_PROVIDER);
+  const agentModel = process.env.COZYBASE_AGENT_MODEL || undefined;
+  const codexMcpMode = resolveCodexMcpMode(process.env.COZYBASE_CODEX_MCP_MODE);
+  const codexApprovalPolicy = process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never';
+  const codexSandboxMode = process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write';
+  const agentProvider: AgentProvider =
+    providerKind === 'codex' ? new CodexProvider() : new ClaudeCodeProvider();
+
+  let codexHttpBridge: InProcessMcpHttpBridge | null = null;
+  // Default to "failed" while bridge startup is in-flight to avoid race conditions:
+  // requests before startup settles should use stdio fallback deterministically.
+  let codexHttpBridgeFailed = providerKind === 'codex' && codexMcpMode === 'http';
+
+  const codexBridgeStartup =
+    providerKind === 'codex' && codexMcpMode === 'http'
+      ? startInProcessMcpHttpBridge({
+          backend: localBackend,
+          appsDir: join(agentDir, 'apps'),
+        })
+          .then((bridge) => {
+            codexHttpBridge = bridge;
+            codexHttpBridgeFailed = false;
+            console.log(`Codex MCP bridge ready at ${bridge.url}`);
+          })
+          .catch((err) => {
+            codexHttpBridgeFailed = true;
+            console.error(
+              'Failed to start in-process MCP HTTP bridge. Falling back to stdio MCP for Codex:',
+              err,
+            );
+          })
+      : Promise.resolve();
+
+  const providerOptionsFactory: ProviderOptionsFactory = ({ mode }) => {
+    if (providerKind === 'claude') {
+      if (mode === 'extract') {
+        return {
+          tools: [],
+          allowedTools: [],
+          permissionMode: 'acceptEdits',
+          settingSources: ['project'],
+        };
+      }
+      return {
+        tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
+        allowedTools: [
+          'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
+          'mcp__cozybase__*',
+        ],
+        mcpServers: { cozybase: sdkMcpServer },
+        permissionMode: 'acceptEdits',
+        settingSources: ['project'],
+      };
+    }
+
+    const baseCodexConfig: Record<string, unknown> = {
+      approval_policy: codexApprovalPolicy,
+      sandbox_mode: mode === 'extract' ? 'read-only' : codexSandboxMode,
+    };
+
+    if (mode === 'extract') {
+      return { codexConfig: { ...baseCodexConfig, mcp_servers: {} } };
+    }
+
+    const mcpServerConfig = buildCodexMcpServerConfig({
+      codexMcpMode,
+      bridge: codexHttpBridge,
+      bridgeFailed: codexHttpBridgeFailed,
+      workspaceDir: config.workspaceDir,
+      agentDir,
+    });
+
+    return {
+      codexConfig: {
+        ...baseCodexConfig,
+        mcp_servers: {
+          cozybase: mcpServerConfig,
+        },
+      },
+    };
+  };
 
   const sessionStore = new SessionStore(workspace.getPlatformDb());
 
   const chatSessionManager = new ChatSessionManager(
     {
       agentProvider,
+      providerKind,
       agentDir,
-      mcpServers: { cozybase: sdkMcpServer },
+      model: agentModel,
+      providerOptionsFactory,
     },
     sessionStore,
     eventBus,
   );
+
+  const startup = Promise.all([runtimeStartup, codexBridgeStartup]).then(() => undefined);
 
   // Wire session cleanup so app delete/rename cleans up in-memory chat sessions
   appManager.setSessionCleanup(chatSessionManager);
@@ -278,7 +374,16 @@ export function createServer(config: Config) {
     }
 
     // 1. Extract structured app info from free-text via LLM
-    const info = await extractAppInfo(body.idea.trim());
+    const info = await extractAppInfo(body.idea.trim(), {
+      provider: agentProvider,
+      cwd: agentDir,
+      model: agentModel,
+      providerOptions: providerOptionsFactory({
+        appSlug: '__extract__',
+        agentDir,
+        mode: 'extract',
+      }),
+    });
 
     // 2. Deduplicate slug against existing apps
     const slug = deduplicateSlug(info.slug, (s) => appManager.exists(s));
@@ -325,7 +430,38 @@ export function createServer(config: Config) {
     });
   }
 
-  return { app, workspace, registry, uiBridge, chatSessionManager, appManager, draftReconciler, verifier, publisher, startup };
+  return {
+    app,
+    workspace,
+    registry,
+    uiBridge,
+    chatSessionManager,
+    appManager,
+    draftReconciler,
+    verifier,
+    publisher,
+    startup,
+    shutdownAgentInfra: async () => {
+      if (codexHttpBridge) {
+        await codexHttpBridge.close().catch((err) => {
+          console.error('Failed to close Codex MCP bridge:', err);
+        });
+      }
+      agentProvider.dispose();
+    },
+  };
+}
+
+function pathExists(path: string): boolean {
+  if (existsSync(path)) {
+    return true;
+  }
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -398,4 +534,50 @@ async function initializeRuntime(
       }
     }
   }
+}
+
+function resolveAgentProviderKind(value: string | undefined): AgentProviderKind {
+  return value?.toLowerCase() === 'codex' ? 'codex' : 'claude';
+}
+
+function resolveCodexMcpMode(value: string | undefined): CodexMcpMode {
+  return value?.toLowerCase() === 'stdio' ? 'stdio' : 'http';
+}
+
+function buildCodexMcpServerConfig(params: {
+  codexMcpMode: CodexMcpMode;
+  bridge: InProcessMcpHttpBridge | null;
+  bridgeFailed: boolean;
+  workspaceDir: string;
+  agentDir: string;
+}) {
+  const cliPath = resolve(import.meta.dir, 'cli.ts');
+  const stdioConfig = {
+    type: 'stdio',
+    command: 'bun',
+    args: [
+      cliPath,
+      'mcp',
+      '--workspace',
+      params.workspaceDir,
+      '--apps-dir',
+      join(params.agentDir, 'apps'),
+    ],
+  };
+
+  if (params.codexMcpMode === 'stdio') {
+    return stdioConfig;
+  }
+
+  if (params.bridge && !params.bridgeFailed) {
+    return {
+      type: 'streamable_http',
+      url: params.bridge.url,
+      http_headers: {
+        Authorization: `Bearer ${params.bridge.bearerToken}`,
+      },
+    };
+  }
+
+  return stdioConfig;
 }

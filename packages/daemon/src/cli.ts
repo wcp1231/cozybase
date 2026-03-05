@@ -24,7 +24,7 @@ function printHelp() {
       restart           Restart the daemon
       status            Show daemon status
     mcp                 Start the MCP server (stdio)
-    init                Initialize Agent Workspace (AGENT.md, Skills)
+    init                Initialize Agent Workspace (AGENTS.md, Skills)
 
   Options:
     --help, -h          Show this help message

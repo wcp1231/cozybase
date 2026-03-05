@@ -1,12 +1,11 @@
 /**
- * Extract structured app info from free-text user input using LLM.
+ * Extract structured app info from free-text user input via AgentProvider.
  *
- * Uses claude-agent-sdk query() with a lightweight model for fast,
- * cheap extraction of { slug, displayName, description } from the
- * user's idea text. No MCP tools are registered — pure text extraction.
+ * This is provider-agnostic and works with Claude/Codex by consuming
+ * normalized AgentEvent streams.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentProvider } from '@cozybase/agent';
 
 export interface ExtractedAppInfo {
   slug: string;
@@ -23,37 +22,36 @@ const SYSTEM_PROMPT = `You are a JSON extraction assistant. Given a user's app i
 Respond ONLY with a single JSON object. No markdown fences, no explanation:
 {"slug":"...","displayName":"...","description":"..."}`;
 
-/**
- * Call LLM to extract structured app info from a free-text idea.
- */
-export async function extractAppInfo(idea: string): Promise<ExtractedAppInfo> {
-  let assistantText = '';
+export interface ExtractAppInfoOptions {
+  provider: AgentProvider;
+  cwd: string;
+  model?: string;
+  providerOptions?: unknown;
+}
 
-  const q = query({
+/**
+ * Call provider to extract structured app info from a free-text idea.
+ */
+export async function extractAppInfo(
+  idea: string,
+  options: ExtractAppInfoOptions,
+): Promise<ExtractedAppInfo> {
+  const query = options.provider.createQuery({
     prompt: idea,
-    options: {
-      model: 'claude-haiku-4-5',
-      systemPrompt: SYSTEM_PROMPT,
-      tools: [],
-      allowedTools: [],
-      permissionMode: 'acceptEdits' as any,
-    },
+    systemPrompt: SYSTEM_PROMPT,
+    cwd: options.cwd,
+    model: options.model,
+    providerOptions: options.providerOptions,
   });
 
-  for await (const msg of q) {
-    // Capture assistant text
-    if (msg.type === 'assistant' && (msg as any).message?.content) {
-      assistantText = extractTextContent((msg as any).message.content);
-    }
+  let assistantText = '';
 
-    // Also check result for text
-    if (msg.type === 'result') {
-      if ((msg as any).is_error) {
-        throw new Error(`LLM extraction failed: ${(msg as any).result ?? 'unknown error'}`);
-      }
-      if ('result_text' in msg && typeof (msg as any).result_text === 'string') {
-        assistantText = (msg as any).result_text || assistantText;
-      }
+  for await (const event of query) {
+    if (event.type === 'conversation.message.completed' && event.role === 'assistant') {
+      assistantText = event.content || assistantText;
+    }
+    if (event.type === 'conversation.error') {
+      throw new Error(`LLM extraction failed: ${event.message}`);
     }
   }
 
@@ -143,13 +141,3 @@ export function deduplicateSlug(
   return `${slug}-${Date.now()}`;
 }
 
-// ---------------------------------------------------------------------------
-
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .filter((block: any) => block.type === 'text')
-    .map((block: any) => block.text)
-    .join('');
-}

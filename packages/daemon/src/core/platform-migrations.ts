@@ -81,6 +81,18 @@ export const PLATFORM_MIGRATIONS: PlatformMigration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'agent_session_provider_kind',
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE agent_sessions ADD COLUMN provider_kind TEXT;
+        UPDATE agent_sessions
+        SET provider_kind = 'claude'
+        WHERE provider_kind IS NULL AND sdk_session_id IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 /**

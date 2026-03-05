@@ -1,7 +1,7 @@
 /**
  * System Prompt for the Cozybase AI Agent.
  *
- * Kept minimal — platform details, workflow, and conventions are in CLAUDE.md
+ * Kept minimal — platform details, workflow, and conventions are in AGENTS.md
  * which the SDK loads automatically via settingSources: ['project'].
  *
  * buildSystemPrompt(appSlug) appends the current app context so the agent

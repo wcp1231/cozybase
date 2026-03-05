@@ -7,20 +7,27 @@
  */
 
 import type { AgentProvider, AgentQuery, AgentEvent } from '@cozybase/agent';
-import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from './session-store';
 import { buildSystemPrompt } from './system-prompt';
 import type { EventBus } from '../core/event-bus';
 
+type ProviderOptionsFactory = (ctx: {
+  appSlug: string;
+  agentDir: string;
+  mode: 'chat' | 'extract';
+}) => unknown;
+
 export interface ChatSessionConfig {
   /** AgentProvider instance injected from daemon initialization */
   agentProvider: AgentProvider;
-  /** Agent working directory (CWD for Claude built-in tools) */
+  /** Active provider kind used by this daemon process */
+  providerKind: 'claude' | 'codex';
+  /** Agent working directory (CWD for provider tool execution) */
   agentDir: string;
   /** Model to use */
   model?: string;
-  /** MCP servers to register with the agent (passed through to providerOptions) */
-  mcpServers?: Record<string, McpSdkServerConfigWithInstance>;
+  /** Provider-specific options factory (Claude/Codex/etc.) */
+  providerOptionsFactory?: ProviderOptionsFactory;
 }
 
 /** Message from browser → daemon */
@@ -205,14 +212,11 @@ export class ChatSession {
         cwd: this.config.agentDir,
         model: this.config.model,
         resumeSessionId: this.sdkSessionId,
-        providerOptions: {
-          tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
-          allowedTools: [
-            'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
-            'mcp__cozybase__*',
-          ],
-          mcpServers: this.config.mcpServers,
-        },
+        providerOptions: this.config.providerOptionsFactory?.({
+          appSlug: this.appSlug,
+          agentDir: this.config.agentDir,
+          mode: 'chat',
+        }),
       });
 
       this.activeQuery = agentQuery;
@@ -260,7 +264,7 @@ export class ChatSession {
             // sessionId is empty when the run was interrupted — don't overwrite
             if (event.sessionId) {
               this.sdkSessionId = event.sessionId;
-              this.store.saveSessionId(this.appSlug, event.sessionId);
+              this.store.saveSessionId(this.appSlug, event.sessionId, this.config.providerKind);
             }
             break;
 

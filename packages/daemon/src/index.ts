@@ -3,7 +3,7 @@ import { createServer } from './server';
 import { writePidFile, cleanupPidFile } from './daemon-ctl';
 
 const config = loadConfig();
-const { app, workspace, registry, uiBridge, chatSessionManager, startup } = createServer(config);
+const { app, workspace, registry, uiBridge, chatSessionManager, startup, shutdownAgentInfra } = createServer(config);
 
 // Wait for all apps to start before accepting requests
 await startup;
@@ -110,6 +110,9 @@ async function shutdown() {
 
   // Shutdown all chat sessions
   chatSessionManager.shutdown();
+
+  // Shutdown provider-owned resources (e.g. Codex MCP bridge)
+  await shutdownAgentInfra?.();
 
   // Shutdown all apps in Runtime
   registry.shutdownAll();

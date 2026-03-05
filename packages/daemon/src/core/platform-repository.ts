@@ -40,6 +40,7 @@ export interface ApiKeyRecord {
 export interface AgentSessionRecord {
   app_slug: string;
   sdk_session_id: string | null;
+  provider_kind: string | null;
   updated_at: string;
 }
 
@@ -285,13 +286,16 @@ export class AgentSessionsRepository {
       .get(appSlug) as AgentSessionRecord | null;
   }
 
-  upsert(appSlug: string, sdkSessionId: string | null): void {
+  upsert(appSlug: string, sdkSessionId: string | null, providerKind: string | null = null): void {
     this.db
       .query(
-        `INSERT INTO agent_sessions (app_slug, sdk_session_id) VALUES (?, ?)
-         ON CONFLICT(app_slug) DO UPDATE SET sdk_session_id = excluded.sdk_session_id, updated_at = datetime('now')`,
+        `INSERT INTO agent_sessions (app_slug, sdk_session_id, provider_kind) VALUES (?, ?, ?)
+         ON CONFLICT(app_slug) DO UPDATE SET
+           sdk_session_id = excluded.sdk_session_id,
+           provider_kind = excluded.provider_kind,
+           updated_at = datetime('now')`,
       )
-      .run(appSlug, sdkSessionId);
+      .run(appSlug, sdkSessionId, providerKind);
   }
 
   delete(appSlug: string): void {

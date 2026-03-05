@@ -1,12 +1,21 @@
 /**
  * Workspace Init — copies template files to the target directory.
  *
- * Used by `cozybase init` to scaffold AGENT.md and Skills templates
+ * Used by `cozybase init` to scaffold AGENTS.md, CLAUDE.md link and Skills templates
  * into the Agent Workspace directory.
  */
 
-import { resolve, join, relative } from 'path';
-import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
+import { resolve, join } from 'path';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  readFileSync,
+  writeFileSync,
+  symlinkSync,
+  lstatSync,
+} from 'fs';
 
 const TEMPLATES_DIR = resolve(import.meta.dir, '../templates/workspace');
 
@@ -27,6 +36,7 @@ export function initWorkspace(targetDir: string): InitResult {
   }
 
   copyDir(TEMPLATES_DIR, targetDir, '', result);
+  ensureClaudeDocSymlink(targetDir, result);
   return result;
 }
 
@@ -50,5 +60,33 @@ function copyDir(srcDir: string, destDir: string, prefix: string, result: InitRe
         result.created.push(relPath);
       }
     }
+  }
+}
+
+function ensureClaudeDocSymlink(targetDir: string, result: InitResult): void {
+  const agentsDocPath = join(targetDir, 'AGENTS.md');
+  const claudeDocPath = join(targetDir, 'CLAUDE.md');
+
+  if (!pathExists(agentsDocPath)) {
+    return;
+  }
+  if (pathExists(claudeDocPath)) {
+    result.skipped.push('CLAUDE.md');
+    return;
+  }
+
+  symlinkSync('AGENTS.md', claudeDocPath);
+  result.created.push('CLAUDE.md');
+}
+
+function pathExists(path: string): boolean {
+  if (existsSync(path)) {
+    return true;
+  }
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
   }
 }
