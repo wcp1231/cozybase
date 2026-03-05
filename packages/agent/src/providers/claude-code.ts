@@ -86,6 +86,7 @@ class ClaudeCodeQuery implements AgentQuery {
   private messageCounter = 0;
   private currentMessageId: string | null = null;
   private toolUseMap = new Map<string, string>();
+  private completedToolUseIds = new Set<string>();
 
   constructor(sdkQuery: Query) {
     this.sdkQuery = sdkQuery;
@@ -133,8 +134,16 @@ class ClaudeCodeQuery implements AgentQuery {
   }
 
   private *convertMessage(msg: SDKMessage): Iterable<AgentEvent> {
-    // ---- user: session resume replay — silently skip ----
+    // ---- user: session resume replay and tool results ----
     if (msg.type === 'user') {
+      const m = msg as any;
+      const completions = this.extractToolCompletionsFromUserMessage(m);
+      for (const completion of completions) {
+        const event = this.buildToolCompletedEvent(completion.toolUseId, completion.summary);
+        if (event) {
+          yield event;
+        }
+      }
       return;
     }
 
@@ -259,20 +268,20 @@ class ClaudeCodeQuery implements AgentQuery {
 
       // The SDK may use preceding_tool_use_ids (array) or tool_use_id (singular).
       // Fall back to draining all pending toolUseMap entries if neither is present.
-      const ids: string[] =
-        Array.isArray(m.preceding_tool_use_ids) ? m.preceding_tool_use_ids :
-        m.tool_use_id ? [m.tool_use_id] :
-        [...this.toolUseMap.keys()];
+      const precedingIds = Array.isArray(m.preceding_tool_use_ids)
+        ? m.preceding_tool_use_ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+      const ids: string[] = precedingIds.length > 0
+        ? precedingIds
+        : (typeof m.tool_use_id === 'string' && m.tool_use_id.length > 0)
+            ? [m.tool_use_id]
+            : [...this.toolUseMap.keys()];
 
       for (const toolUseId of ids) {
-        const toolName = this.toolUseMap.get(toolUseId) ?? 'tool';
-        this.toolUseMap.delete(toolUseId);
-        yield {
-          type: 'conversation.tool.completed',
-          toolUseId,
-          toolName,
-          summary,
-        };
+        const event = this.buildToolCompletedEvent(toolUseId, summary);
+        if (event) {
+          yield event;
+        }
       }
       return;
     }
@@ -284,6 +293,8 @@ class ClaudeCodeQuery implements AgentQuery {
       // Drain any tool calls that never received a tool_use_summary.
       // This guards against SDK versions that don't emit tool_use_summary.
       for (const [toolUseId, toolName] of this.toolUseMap) {
+        if (this.completedToolUseIds.has(toolUseId)) continue;
+        this.completedToolUseIds.add(toolUseId);
         yield {
           type: 'conversation.tool.completed',
           toolUseId,
@@ -307,5 +318,103 @@ class ClaudeCodeQuery implements AgentQuery {
       }
       return;
     }
+  }
+
+  private buildToolCompletedEvent(toolUseId: string, summary: string): AgentEvent | null {
+    if (!toolUseId || this.completedToolUseIds.has(toolUseId)) {
+      return null;
+    }
+    const toolName = this.toolUseMap.get(toolUseId) ?? 'tool';
+    this.toolUseMap.delete(toolUseId);
+    this.completedToolUseIds.add(toolUseId);
+    return {
+      type: 'conversation.tool.completed',
+      toolUseId,
+      toolName,
+      summary,
+    };
+  }
+
+  private extractToolCompletionsFromUserMessage(
+    msg: any,
+  ): Array<{ toolUseId: string; summary: string }> {
+    const ids = new Set<string>();
+    const addId = (value: unknown) => {
+      if (typeof value === 'string' && value.length > 0) {
+        ids.add(value);
+      }
+    };
+
+    const toolUseResult = msg?.tool_use_result;
+    addId(toolUseResult?.tool_use_id);
+    addId(toolUseResult?.toolUseId);
+    if (Array.isArray(toolUseResult?.preceding_tool_use_ids)) {
+      for (const id of toolUseResult.preceding_tool_use_ids) {
+        addId(id);
+      }
+    }
+
+    const contentBlocks = Array.isArray(msg?.message?.content) ? msg.message.content : [];
+    for (const block of contentBlocks) {
+      if (block?.type === 'tool_result') {
+        addId(block.tool_use_id);
+        addId(block.toolUseId);
+      }
+    }
+
+    if (ids.size === 0) {
+      return [];
+    }
+
+    const summary =
+      this.extractToolSummary(toolUseResult) ||
+      this.extractToolSummaryFromContentBlocks(contentBlocks);
+
+    return [...ids].map((toolUseId) => ({ toolUseId, summary }));
+  }
+
+  private extractToolSummary(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (!value || typeof value !== 'object') {
+      return '';
+    }
+    const v = value as any;
+    if (typeof v.summary === 'string') {
+      return v.summary;
+    }
+    if (typeof v.result === 'string') {
+      return v.result;
+    }
+    if (typeof v.text === 'string') {
+      return v.text;
+    }
+    if (Array.isArray(v.content)) {
+      return this.extractToolSummaryFromContentBlocks(v.content);
+    }
+    return '';
+  }
+
+  private extractToolSummaryFromContentBlocks(blocks: any[]): string {
+    const parts: string[] = [];
+    for (const block of blocks) {
+      if (typeof block === 'string') {
+        parts.push(block);
+        continue;
+      }
+      if (!block || typeof block !== 'object') {
+        continue;
+      }
+      if (typeof block.text === 'string') {
+        parts.push(block.text);
+        continue;
+      }
+      if (typeof block.content === 'string') {
+        parts.push(block.content);
+        continue;
+      }
+    }
+    return parts.join('\n').trim();
   }
 }

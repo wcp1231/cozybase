@@ -44,6 +44,10 @@ export class ChatSession {
   private unsubscribeReconcile: (() => void) | null = null;
   /** Buffers AgentEvents emitted during the active run so a reconnecting client can catch up. */
   private runEventBuffer: AgentEvent[] = [];
+  /** toolUseId -> started timestamp (SQLite-compatible text), used to preserve history order. */
+  private toolStartedAt = new Map<string, string>();
+  private lastPersistMs = 0;
+  private sameMsSequence = 0;
 
   constructor(
     appSlug: string,
@@ -186,7 +190,11 @@ export class ChatSession {
     }
 
     // Persist user message
-    this.store.addMessage(this.appSlug, { role: 'user', content: text });
+    this.store.addMessage(this.appSlug, {
+      role: 'user',
+      content: text,
+      createdAt: this.nextCreatedAt(),
+    });
 
     this.streaming = true;
 
@@ -216,11 +224,16 @@ export class ChatSession {
 
         // Handle persistence and state based on event type
         switch (event.type) {
+          case 'conversation.tool.started':
+            this.toolStartedAt.set(event.toolUseId, this.nextCreatedAt());
+            break;
+
           case 'conversation.message.completed':
             if (event.role === 'assistant' && event.content) {
               this.store.addMessage(this.appSlug, {
                 role: 'assistant',
                 content: event.content,
+                createdAt: this.nextCreatedAt(),
               });
             }
             // Remove this message's events from buffer: they're now in session.history
@@ -229,13 +242,16 @@ export class ChatSession {
             break;
 
           case 'conversation.tool.completed':
+            const toolStartedAt = this.toolStartedAt.get(event.toolUseId) ?? this.nextCreatedAt();
             this.store.addMessage(this.appSlug, {
               role: 'tool',
               content: '',
               toolName: event.toolName,
               toolStatus: 'done',
               toolSummary: event.summary,
+              createdAt: toolStartedAt,
             });
+            this.toolStartedAt.delete(event.toolUseId);
             // Same dedup: trim tool events now that they're in session.history
             this.trimToolFromBuffer(event.toolUseId);
             break;
@@ -252,6 +268,7 @@ export class ChatSession {
             this.store.addMessage(this.appSlug, {
               role: 'assistant',
               content: `Error: ${event.message}`,
+              createdAt: this.nextCreatedAt(),
             });
             // If resume failed, clear stale SDK session ID but keep message history
             if (this.sdkSessionId && event.message.includes('session')) {
@@ -267,6 +284,7 @@ export class ChatSession {
       this.store.addMessage(this.appSlug, {
         role: 'assistant',
         content: `Error: ${message}`,
+        createdAt: this.nextCreatedAt(),
       });
       // If resume failed, clear stale SDK session ID
       if (this.sdkSessionId && message.includes('session')) {
@@ -277,6 +295,7 @@ export class ChatSession {
       this.activeQuery = null;
       this.streaming = false;
       this.runEventBuffer = [];
+      this.toolStartedAt = new Map();
     }
   }
 
@@ -313,5 +332,25 @@ export class ChatSession {
     this.runEventBuffer = this.runEventBuffer.filter(
       (e) => !('toolUseId' in e && (e as any).toolUseId === toolUseId),
     );
+  }
+
+  private nextCreatedAt(date = new Date()): string {
+    const currentMs = date.getTime();
+    if (currentMs === this.lastPersistMs) {
+      this.sameMsSequence += 1;
+    } else {
+      this.lastPersistMs = currentMs;
+      this.sameMsSequence = 0;
+    }
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+    const millis = String(date.getUTCMilliseconds()).padStart(3, '0');
+    const seq = String(this.sameMsSequence).padStart(3, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${millis}${seq}`;
   }
 }

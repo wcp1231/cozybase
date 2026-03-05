@@ -85,4 +85,45 @@ describe('ChatSession', () => {
     expect(provider.lastConfig?.resumeSessionId).toBe('sess-existing');
     expect(ws.messages).toContainEqual({ type: 'conversation.run.completed', sessionId: '' });
   });
+
+  test('restores tool history in started-time order even when completion arrives later', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'orders');
+    const store = new SessionStore(handle.workspace.getPlatformDb());
+
+    const provider = new StubAgentProvider(() => new StubAgentQuery([
+      { type: 'conversation.run.started' },
+      { type: 'conversation.tool.started', toolUseId: 'tool-1', toolName: 'Read' },
+      { type: 'conversation.message.started', messageId: 'm-1', role: 'assistant' },
+      { type: 'conversation.message.completed', messageId: 'm-1', role: 'assistant', content: 'done' },
+      { type: 'conversation.tool.completed', toolUseId: 'tool-1', toolName: 'Read', summary: 'read files' },
+      { type: 'conversation.run.completed', sessionId: 'sess-1' },
+    ]));
+
+    const session = new ChatSession(
+      'orders',
+      {
+        agentProvider: provider,
+        agentDir: handle.root,
+      },
+      store,
+    );
+    const ws = new FakeWebSocket();
+    session.connect(ws);
+
+    await session.handleMessage(ws, JSON.stringify({ type: 'chat:send', message: 'hello' }));
+
+    const history = store.getMessages('orders');
+    expect(history).toEqual([
+      expect.objectContaining({ role: 'user', content: 'hello' }),
+      expect.objectContaining({
+        role: 'tool',
+        content: '',
+        toolName: 'Read',
+        toolStatus: 'done',
+        toolSummary: 'read files',
+      }),
+      expect.objectContaining({ role: 'assistant', content: 'done' }),
+    ]);
+  });
 });

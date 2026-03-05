@@ -13,6 +13,7 @@ export interface StoredMessage {
   toolName?: string;
   toolStatus?: string;
   toolSummary?: string;
+  createdAt?: string;
 }
 
 export class SessionStore {
@@ -55,10 +56,10 @@ export class SessionStore {
 
   getMessages(appSlug: string, limit = 100): StoredMessage[] {
     const rows = this.db.query(`
-      SELECT role, content, tool_name, tool_status, tool_summary
+      SELECT role, content, tool_name, tool_status, tool_summary, created_at
       FROM agent_messages
       WHERE app_slug = ?
-      ORDER BY id DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT ?
     `).all(appSlug, limit) as {
       role: string;
@@ -66,6 +67,7 @@ export class SessionStore {
       tool_name: string | null;
       tool_status: string | null;
       tool_summary: string | null;
+      created_at: string;
     }[];
 
     // Reverse to get chronological order (we fetched newest-first for LIMIT)
@@ -79,14 +81,15 @@ export class SessionStore {
       if (row.tool_name) msg.toolName = row.tool_name;
       if (row.tool_status) msg.toolStatus = row.tool_status;
       if (row.tool_summary) msg.toolSummary = row.tool_summary;
+      if (row.created_at) msg.createdAt = row.created_at;
       return msg;
     });
   }
 
   addMessage(appSlug: string, msg: StoredMessage): void {
     this.db.query(`
-      INSERT INTO agent_messages (app_slug, role, content, tool_name, tool_status, tool_summary)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO agent_messages (app_slug, role, content, tool_name, tool_status, tool_summary, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, strftime('%Y-%m-%d %H:%M:%f', 'now')))
     `).run(
       appSlug,
       msg.role,
@@ -94,6 +97,7 @@ export class SessionStore {
       msg.toolName ?? null,
       msg.toolStatus ?? null,
       msg.toolSummary ?? null,
+      msg.createdAt ?? null,
     );
   }
 

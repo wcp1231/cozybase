@@ -108,4 +108,69 @@ describe('ClaudeCodeProvider', () => {
     expect(sdkState.calls[0]?.options.resume).toBeUndefined();
     expect(sdkState.calls[1]?.options.resume).toBe('sess-old');
   });
+
+  test('completes tool call when tool_use_summary has empty preceding_tool_use_ids', async () => {
+    sdkState.queryImpl = () => makeSdkQuery([
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'tool-1', name: 'Read', input: { file: 'a.ts' } }],
+        },
+      },
+      {
+        type: 'tool_use_summary',
+        summary: 'read done',
+        preceding_tool_use_ids: [],
+      },
+      { type: 'result', is_error: false, session_id: 'sess-1' },
+    ]);
+
+    const provider = new ClaudeCodeProvider();
+    const events = await collectEvents(provider.createQuery({
+      prompt: 'hello',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(events).toEqual([
+      { type: 'conversation.run.started' },
+      { type: 'conversation.tool.started', toolUseId: 'tool-1', toolName: 'Read', input: { file: 'a.ts' } },
+      { type: 'conversation.tool.completed', toolUseId: 'tool-1', toolName: 'Read', summary: 'read done' },
+      { type: 'conversation.run.completed', sessionId: 'sess-1' },
+    ]);
+  });
+
+  test('completes tool call from user tool_use_result when tool_use_summary is missing', async () => {
+    sdkState.queryImpl = () => makeSdkQuery([
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'tool-2', name: 'Bash', input: { command: 'ls' } }],
+        },
+      },
+      {
+        type: 'user',
+        tool_use_result: {
+          tool_use_id: 'tool-2',
+          summary: 'command finished',
+        },
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 'tool-2', content: 'ok' }],
+        },
+      },
+      { type: 'result', is_error: false, session_id: 'sess-2' },
+    ]);
+
+    const provider = new ClaudeCodeProvider();
+    const events = await collectEvents(provider.createQuery({
+      prompt: 'hello',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(events).toEqual([
+      { type: 'conversation.run.started' },
+      { type: 'conversation.tool.started', toolUseId: 'tool-2', toolName: 'Bash', input: { command: 'ls' } },
+      { type: 'conversation.tool.completed', toolUseId: 'tool-2', toolName: 'Bash', summary: 'command finished' },
+      { type: 'conversation.run.completed', sessionId: 'sess-2' },
+    ]);
+  });
 });
