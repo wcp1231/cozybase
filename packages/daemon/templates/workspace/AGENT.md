@@ -39,6 +39,26 @@ For detailed workflow documentation, call `get_guide("workflow")`.
 | add-page | `/add-page` | Add a UI page to an existing APP |
 | modify-schema | `/modify-schema` | Modify database schema with a new migration |
 
+## UI Editing Rules
+
+**Always use MCP tools to edit UI. Never manually edit `ui/pages.json`.**
+
+| Operation | Tool |
+|-----------|------|
+| List pages | `pages_list` |
+| Add a page | `pages_add` |
+| Remove a page | `pages_remove` |
+| Rename a page | `pages_update` |
+| Reorder pages | `pages_reorder` |
+| View component tree | `ui_outline` |
+| Get component details | `ui_get` |
+| Add a component | `ui_insert` |
+| Edit a component | `ui_update` |
+| Move a component | `ui_move` |
+| Delete a component | `ui_delete` |
+
+After any UI edit, call `update_app_file` with path `ui/pages.json` to sync to Cozybase.
+
 ## Key Conventions
 
 - **API URLs** in UI use APP-relative paths: `/fn/_db/tables/todo`, `/fn/my-function`

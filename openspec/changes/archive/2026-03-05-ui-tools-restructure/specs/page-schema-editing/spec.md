@@ -4,7 +4,7 @@
 
 定义 Agent 面向 `ui/pages.json` 的结构化读取与局部编辑能力，降低整文件读写的上下文成本，并让页面节点可以被稳定定位和修改。
 
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 系统提供页面结构大纲读取能力
 

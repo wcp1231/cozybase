@@ -514,13 +514,13 @@ export function updateNode(
   // Forbid changing id or type
   if ('id' in props) {
     throw new PageEditorError(
-      'Cannot modify "id" via page_update. Node IDs are stable and managed by the system.',
+      'Cannot modify "id" via ui_update. Node IDs are stable and managed by the system.',
       'FORBIDDEN_UPDATE',
     );
   }
   if ('type' in props) {
     throw new PageEditorError(
-      'Cannot modify "type" via page_update. To change a node\'s type, use page_delete then page_insert.',
+      'Cannot modify "type" via ui_update. To change a node\'s type, use ui_delete then ui_insert.',
       'FORBIDDEN_UPDATE',
     );
   }
@@ -655,4 +655,141 @@ export function deleteNode(
     location.siblings.splice(location.index, 1);
   }
   writePagesJson(ctx, data);
+}
+
+// ============================================================
+// Page-level operations
+// ============================================================
+
+/** Page id format: lowercase alphanumeric and hyphens, must start with a letter or digit. */
+const PAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+export interface PageSummary {
+  id: string;
+  title: string;
+}
+
+export interface PagesListResult {
+  pages: PageSummary[];
+}
+
+/** List all pages with their id and title. */
+export function listPages(ctx: PageEditorContext): PagesListResult {
+  const data = readPagesJson(ctx);
+  return {
+    pages: data.pages.map((p) => ({ id: p.id, title: p.title })),
+  };
+}
+
+/** Add a new page. The page id must be unique and match [a-z0-9][a-z0-9-]*. */
+export function addPage(
+  ctx: PageEditorContext,
+  pageData: { id: string; title: string; body?: unknown[] },
+  index?: number,
+): PageSummary {
+  const { id, title, body = [] } = pageData;
+
+  if (!PAGE_ID_PATTERN.test(id)) {
+    throw new PageEditorError(
+      `Invalid page id "${id}". Must match pattern [a-z0-9][a-z0-9-]* (lowercase alphanumeric and hyphens, start with letter or digit).`,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  const data = readPagesJson(ctx);
+
+  if (data.pages.some((p) => p.id === id)) {
+    throw new PageEditorError(
+      `Page with id "${id}" already exists in pages.json.`,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  const newPage = { id, title, body };
+
+  if (index !== undefined && index >= 0 && index <= data.pages.length) {
+    (data.pages as unknown[]).splice(index, 0, newPage);
+  } else {
+    (data.pages as unknown[]).push(newPage);
+  }
+
+  writePagesJson(ctx, data);
+  return { id, title };
+}
+
+/** Remove a page and all its components. */
+export function removePage(ctx: PageEditorContext, pageId: string): void {
+  const data = readPagesJson(ctx);
+  const idx = data.pages.findIndex((p) => p.id === pageId);
+
+  if (idx === -1) {
+    throw new PageEditorError(
+      `Page "${pageId}" not found in pages.json.`,
+      'NODE_NOT_FOUND',
+    );
+  }
+
+  data.pages.splice(idx, 1);
+  writePagesJson(ctx, data);
+}
+
+/** Update page metadata (title only; id is immutable). */
+export function updatePageMeta(
+  ctx: PageEditorContext,
+  pageId: string,
+  props: { title?: string },
+): PageSummary {
+  if ('id' in props) {
+    throw new PageEditorError(
+      'Cannot modify page "id". Page ids are immutable.',
+      'FORBIDDEN_UPDATE',
+    );
+  }
+
+  const data = readPagesJson(ctx);
+  const page = data.pages.find((p) => p.id === pageId);
+
+  if (!page) {
+    throw new PageEditorError(
+      `Page "${pageId}" not found in pages.json.`,
+      'NODE_NOT_FOUND',
+    );
+  }
+
+  if (props.title !== undefined) {
+    (page as Record<string, unknown>).title = props.title;
+  }
+
+  writePagesJson(ctx, data);
+  return { id: page.id, title: page.title };
+}
+
+/** Move a page to a new index in the pages array. */
+export function reorderPage(
+  ctx: PageEditorContext,
+  pageId: string,
+  index: number,
+): PagesListResult {
+  const data = readPagesJson(ctx);
+  const fromIdx = data.pages.findIndex((p) => p.id === pageId);
+
+  if (fromIdx === -1) {
+    throw new PageEditorError(
+      `Page "${pageId}" not found in pages.json.`,
+      'NODE_NOT_FOUND',
+    );
+  }
+
+  if (index < 0 || index >= data.pages.length) {
+    throw new PageEditorError(
+      `Index ${index} is out of range. pages array has ${data.pages.length} items (valid range: 0–${data.pages.length - 1}).`,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  const [page] = data.pages.splice(fromIdx, 1);
+  data.pages.splice(index, 0, page);
+
+  writePagesJson(ctx, data);
+  return { pages: data.pages.map((p) => ({ id: p.id, title: p.title })) };
 }

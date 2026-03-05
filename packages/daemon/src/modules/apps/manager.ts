@@ -195,6 +195,7 @@ export class AppManager {
         const templateFiles = [
           { path: 'app.yaml', content: `description: ${description}\n` },
           { path: 'functions/hello.ts', content: TEMPLATE_FUNCTION },
+          { path: 'ui/pages.json', content: '{"pages": []}' },
         ];
 
         for (const file of templateFiles) {

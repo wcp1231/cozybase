@@ -8,12 +8,33 @@ import {
   createTestWorkspace,
   type TestWorkspaceHandle,
 } from '../helpers/test-workspace';
+import { validatePagesJson } from '@cozybase/ui';
 
 describe('AppManager', () => {
   let handle: TestWorkspaceHandle;
 
   afterEach(() => {
     handle?.cleanup();
+  });
+
+  test('create includes ui/pages.json template with valid empty pages structure', async () => {
+    handle = createTestWorkspace();
+    const manager = new AppManager(handle.workspace);
+
+    const result = await manager.create('my-new-app', 'Test app');
+
+    // ui/pages.json should be in the returned files list
+    expect(result.app.files.map((f) => f.path)).toContain('ui/pages.json');
+
+    // The content should be valid parseable JSON
+    const uiFile = result.app.files.find((f) => f.path === 'ui/pages.json');
+    expect(uiFile).toBeDefined();
+    const parsed = JSON.parse(uiFile!.content);
+    expect(parsed).toEqual({ pages: [] });
+
+    // It should pass schema validation
+    const validation = validatePagesJson(parsed);
+    expect(validation.ok).toBe(true);
   });
 
   test('delete removes only the target app records and keeps other apps intact', () => {

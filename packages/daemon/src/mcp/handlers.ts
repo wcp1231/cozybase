@@ -40,12 +40,17 @@ import type {
   ExecuteSqlOutput,
   CallApiInput,
   CallApiOutput,
-  PageOutlineInput,
-  PageGetInput,
-  PageInsertInput,
-  PageUpdateInput,
-  PageMoveInput,
-  PageDeleteInput,
+  UiOutlineInput,
+  UiGetInput,
+  UiInsertInput,
+  UiUpdateInput,
+  UiMoveInput,
+  UiDeleteInput,
+  PagesListInput,
+  PagesAddInput,
+  PagesRemoveInput,
+  PagesUpdateInput,
+  PagesReorderInput,
 } from '../modules/apps/mcp-types';
 
 import {
@@ -55,6 +60,11 @@ import {
   updateNode,
   moveNode,
   deleteNode,
+  listPages,
+  addPage,
+  removePage,
+  updatePageMeta,
+  reorderPage,
   PageEditorError,
 } from '../modules/apps/page-editor';
 
@@ -242,29 +252,29 @@ export async function handleCallApi(
   return ctx.backend.callApi(input.app_name, input.method, input.path, input.body, mode);
 }
 
-// --- Page Editing ---
+// --- UI Component Editing (ui_*) ---
 
 function makePageEditorCtx(ctx: HandlerContext, appName: string) {
   return { appsDir: ctx.appsDir, appName };
 }
 
-export function handlePageOutline(
+export function handleUiOutline(
   ctx: HandlerContext,
-  input: PageOutlineInput,
+  input: UiOutlineInput,
 ): ReturnType<typeof getPageOutline> {
   return getPageOutline(makePageEditorCtx(ctx, input.app_name), input.page_id);
 }
 
-export function handlePageGet(
+export function handleUiGet(
   ctx: HandlerContext,
-  input: PageGetInput,
+  input: UiGetInput,
 ): ReturnType<typeof getNode> {
   return getNode(makePageEditorCtx(ctx, input.app_name), input.node_id);
 }
 
-export function handlePageInsert(
+export function handleUiInsert(
   ctx: HandlerContext,
-  input: PageInsertInput,
+  input: UiInsertInput,
 ): ReturnType<typeof insertNode> {
   return insertNode(
     makePageEditorCtx(ctx, input.app_name),
@@ -274,9 +284,9 @@ export function handlePageInsert(
   );
 }
 
-export function handlePageUpdate(
+export function handleUiUpdate(
   ctx: HandlerContext,
-  input: PageUpdateInput,
+  input: UiUpdateInput,
 ): ReturnType<typeof updateNode> {
   return updateNode(
     makePageEditorCtx(ctx, input.app_name),
@@ -285,9 +295,9 @@ export function handlePageUpdate(
   );
 }
 
-export function handlePageMove(
+export function handleUiMove(
   ctx: HandlerContext,
-  input: PageMoveInput,
+  input: UiMoveInput,
 ): ReturnType<typeof moveNode> {
   return moveNode(
     makePageEditorCtx(ctx, input.app_name),
@@ -297,12 +307,62 @@ export function handlePageMove(
   );
 }
 
-export function handlePageDelete(
+export function handleUiDelete(
   ctx: HandlerContext,
-  input: PageDeleteInput,
+  input: UiDeleteInput,
 ): { deleted: string } {
   deleteNode(makePageEditorCtx(ctx, input.app_name), input.node_id);
   return { deleted: input.node_id };
+}
+
+// --- Page-level Editing (pages_*) ---
+
+export function handlePagesList(
+  ctx: HandlerContext,
+  input: PagesListInput,
+): ReturnType<typeof listPages> {
+  return listPages(makePageEditorCtx(ctx, input.app_name));
+}
+
+export function handlePagesAdd(
+  ctx: HandlerContext,
+  input: PagesAddInput,
+): ReturnType<typeof addPage> {
+  return addPage(
+    makePageEditorCtx(ctx, input.app_name),
+    { id: input.id, title: input.title },
+    input.index,
+  );
+}
+
+export function handlePagesRemove(
+  ctx: HandlerContext,
+  input: PagesRemoveInput,
+): { deleted: string } {
+  removePage(makePageEditorCtx(ctx, input.app_name), input.page_id);
+  return { deleted: input.page_id };
+}
+
+export function handlePagesUpdate(
+  ctx: HandlerContext,
+  input: PagesUpdateInput,
+): ReturnType<typeof updatePageMeta> {
+  return updatePageMeta(
+    makePageEditorCtx(ctx, input.app_name),
+    input.page_id,
+    { title: input.title },
+  );
+}
+
+export function handlePagesReorder(
+  ctx: HandlerContext,
+  input: PagesReorderInput,
+): ReturnType<typeof reorderPage> {
+  return reorderPage(
+    makePageEditorCtx(ctx, input.app_name),
+    input.page_id,
+    input.index,
+  );
 }
 
 export { PageEditorError };

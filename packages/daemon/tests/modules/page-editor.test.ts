@@ -23,6 +23,11 @@ import {
   updateNode,
   moveNode,
   deleteNode,
+  listPages,
+  addPage,
+  removePage,
+  updatePageMeta,
+  reorderPage,
   PageEditorError,
 } from '../../src/modules/apps/page-editor';
 
@@ -801,5 +806,166 @@ describe('component slots — singleton delete/move semantics', () => {
     // And the table column should have no render
     const table = outline.pages[0].body.find((n) => n.id === 'table-main')!;
     expect(table.children?.some((n) => n.id === tagId)).toBeFalsy();
+  });
+});
+
+// ============================================================
+// listPages
+// ============================================================
+
+describe('listPages', () => {
+  test('returns id and title for each page', () => {
+    writePagesJson({
+      pages: [
+        { id: 'home', title: 'Home', body: [] },
+        { id: 'settings', title: 'Settings', body: [] },
+      ],
+    });
+    const result = listPages(getCtx());
+    expect(result.pages).toHaveLength(2);
+    expect(result.pages[0]).toEqual({ id: 'home', title: 'Home' });
+    expect(result.pages[1]).toEqual({ id: 'settings', title: 'Settings' });
+  });
+
+  test('returns empty array for empty pages.json', () => {
+    writePagesJson({ pages: [] });
+    const result = listPages(getCtx());
+    expect(result.pages).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// addPage
+// ============================================================
+
+describe('addPage', () => {
+  test('adds a page at end by default', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    addPage(getCtx(), { id: 'settings', title: 'Settings' });
+    const result = listPages(getCtx());
+    expect(result.pages).toHaveLength(2);
+    expect(result.pages[1].id).toBe('settings');
+  });
+
+  test('adds a page at specified index', () => {
+    writePagesJson({
+      pages: [
+        { id: 'home', title: 'Home', body: [] },
+        { id: 'about', title: 'About', body: [] },
+      ],
+    });
+    addPage(getCtx(), { id: 'settings', title: 'Settings' }, 1);
+    const result = listPages(getCtx());
+    expect(result.pages[1].id).toBe('settings');
+    expect(result.pages[2].id).toBe('about');
+  });
+
+  test('returns {id, title} of added page', () => {
+    writePagesJson({ pages: [] });
+    const result = addPage(getCtx(), { id: 'dashboard', title: 'Dashboard' });
+    expect(result).toEqual({ id: 'dashboard', title: 'Dashboard' });
+  });
+
+  test('throws on duplicate page id', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    expect(() => addPage(getCtx(), { id: 'home', title: 'Home 2' })).toThrow(PageEditorError);
+  });
+
+  test('throws on invalid page id format', () => {
+    writePagesJson({ pages: [] });
+    expect(() => addPage(getCtx(), { id: 'My Page', title: 'My Page' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { id: '-start', title: 'Bad' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { id: 'UPPER', title: 'Bad' })).toThrow(PageEditorError);
+  });
+
+  test('does not write if id is duplicate', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    expect(() => addPage(getCtx(), { id: 'home', title: 'X' })).toThrow();
+    const result = listPages(getCtx());
+    expect(result.pages).toHaveLength(1);
+  });
+});
+
+// ============================================================
+// removePage
+// ============================================================
+
+describe('removePage', () => {
+  test('removes the specified page', () => {
+    writePagesJson({
+      pages: [
+        { id: 'home', title: 'Home', body: [] },
+        { id: 'about', title: 'About', body: [] },
+      ],
+    });
+    removePage(getCtx(), 'home');
+    const result = listPages(getCtx());
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0].id).toBe('about');
+  });
+
+  test('throws on non-existent page id', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    expect(() => removePage(getCtx(), 'no-such-page')).toThrow(PageEditorError);
+  });
+});
+
+// ============================================================
+// updatePageMeta
+// ============================================================
+
+describe('updatePageMeta', () => {
+  test('updates page title', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    const result = updatePageMeta(getCtx(), 'home', { title: 'Homepage' });
+    expect(result).toEqual({ id: 'home', title: 'Homepage' });
+    const pages = listPages(getCtx());
+    expect(pages.pages[0].title).toBe('Homepage');
+  });
+
+  test('throws when trying to modify id', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    expect(() => updatePageMeta(getCtx(), 'home', { id: 'new-id' } as { title: string })).toThrow(PageEditorError);
+  });
+
+  test('throws on non-existent page id', () => {
+    writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
+    expect(() => updatePageMeta(getCtx(), 'no-such-page', { title: 'X' })).toThrow(PageEditorError);
+  });
+});
+
+// ============================================================
+// reorderPage
+// ============================================================
+
+describe('reorderPage', () => {
+  beforeEach(() => {
+    writePagesJson({
+      pages: [
+        { id: 'home', title: 'Home', body: [] },
+        { id: 'about', title: 'About', body: [] },
+        { id: 'contact', title: 'Contact', body: [] },
+      ],
+    });
+  });
+
+  test('moves page to new index', () => {
+    reorderPage(getCtx(), 'contact', 0);
+    const result = listPages(getCtx());
+    expect(result.pages.map((p) => p.id)).toEqual(['contact', 'home', 'about']);
+  });
+
+  test('returns updated page list', () => {
+    const result = reorderPage(getCtx(), 'home', 2);
+    expect(result.pages.map((p) => p.id)).toEqual(['about', 'contact', 'home']);
+  });
+
+  test('throws on non-existent page id', () => {
+    expect(() => reorderPage(getCtx(), 'no-such', 0)).toThrow(PageEditorError);
+  });
+
+  test('throws on out-of-range index', () => {
+    expect(() => reorderPage(getCtx(), 'home', 10)).toThrow(PageEditorError);
+    expect(() => reorderPage(getCtx(), 'home', -1)).toThrow(PageEditorError);
   });
 });

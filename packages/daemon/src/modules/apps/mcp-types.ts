@@ -175,51 +175,89 @@ export interface CallApiOutput {
   body: unknown;
 }
 
-// -- page_outline --
+// -- ui_outline --
 
-export interface PageOutlineInput {
+export interface UiOutlineInput {
   app_name: string;
   page_id?: string;
 }
 
-// -- page_get --
+// -- ui_get --
 
-export interface PageGetInput {
+export interface UiGetInput {
   app_name: string;
   node_id: string;
 }
 
-// -- page_insert --
+// -- ui_insert --
 
-export interface PageInsertInput {
+export interface UiInsertInput {
   app_name: string;
   parent_id: string;
   node: Record<string, unknown>;
   index?: number;
 }
 
-// -- page_update --
+// -- ui_update --
 
-export interface PageUpdateInput {
+export interface UiUpdateInput {
   app_name: string;
   node_id: string;
   props: Record<string, unknown>;
 }
 
-// -- page_move --
+// -- ui_move --
 
-export interface PageMoveInput {
+export interface UiMoveInput {
   app_name: string;
   node_id: string;
   new_parent_id: string;
   index?: number;
 }
 
-// -- page_delete --
+// -- ui_delete --
 
-export interface PageDeleteInput {
+export interface UiDeleteInput {
   app_name: string;
   node_id: string;
+}
+
+// -- pages_list --
+
+export interface PagesListInput {
+  app_name: string;
+}
+
+// -- pages_add --
+
+export interface PagesAddInput {
+  app_name: string;
+  id: string;
+  title: string;
+  index?: number;
+}
+
+// -- pages_remove --
+
+export interface PagesRemoveInput {
+  app_name: string;
+  page_id: string;
+}
+
+// -- pages_update --
+
+export interface PagesUpdateInput {
+  app_name: string;
+  page_id: string;
+  title: string;
+}
+
+// -- pages_reorder --
+
+export interface PagesReorderInput {
+  app_name: string;
+  page_id: string;
+  index: number;
 }
 
 // --- Tool Descriptions (for MCP Server registration) ---
@@ -332,42 +370,70 @@ export const TOOL_DESCRIPTIONS = {
     'Use this after updating UI files and reconciling to verify the UI renders correctly.\n' +
     'If no browser is connected, an error message will explain what to do.',
 
-  page_outline:
+  ui_outline:
     'Get a structural outline of `ui/pages.json` from the Agent working copy.\n\n' +
     'Returns a tree with page IDs, component IDs, types, and short summaries.\n' +
     'Use this to understand the page structure before making targeted edits.\n\n' +
     '**Workflow:**\n' +
     '1. Call `fetch_app` to populate the working copy\n' +
-    '2. Call `page_outline` to see the page structure\n' +
-    '3. Use the node IDs returned here to call `page_get`, `page_insert`, etc.\n\n' +
-    'Changes made by page tools only affect the working copy.\n' +
+    '2. Call `ui_outline` to see the page structure\n' +
+    '3. Use the node IDs returned here to call `ui_get`, `ui_insert`, etc.\n\n' +
+    'Changes made by ui tools only affect the working copy.\n' +
     'Call `update_app_file` with path `ui/pages.json` to sync back to cozybase.',
 
-  page_get:
+  ui_get:
     'Get the full schema details of a specific component node by its stable ID.\n\n' +
-    'Use node IDs returned by `page_outline` or previous page tool calls.',
+    'Use node IDs returned by `ui_outline` or previous ui tool calls.',
 
-  page_insert:
+  ui_insert:
     'Insert a new component node into a parent container in `ui/pages.json`.\n\n' +
     'The system auto-generates a stable ID for the new node.\n' +
     'Returns the inserted node including its generated ID.\n\n' +
     '**Note:** Only container types (`page`, `row`, `col`, `card`, `dialog`) can receive children.\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
-  page_update:
+  ui_update:
     'Update properties of an existing component node in `ui/pages.json`.\n\n' +
     '**Restrictions:**\n' +
     '- Cannot modify `id` (stable, system-managed)\n' +
-    '- Cannot modify `type` (use page_delete + page_insert to replace a node)\n\n' +
+    '- Cannot modify `type` (use ui_delete + ui_insert to replace a node)\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
-  page_move:
+  ui_move:
     'Move a component node (and its subtree) to a new parent container.\n\n' +
     'Node IDs are preserved after the move.\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
-  page_delete:
+  ui_delete:
     'Delete a component node and its entire subtree from `ui/pages.json`.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  pages_list:
+    'List all pages in `ui/pages.json` with their id and title.\n\n' +
+    'Use this to see which pages exist before adding, removing, or reordering them.\n\n' +
+    'Call `fetch_app` first to populate the working copy.',
+
+  pages_add:
+    'Add a new page to `ui/pages.json`.\n\n' +
+    'The page `id` serves as the URL route segment (e.g., `user-list` → `/user-list`).\n' +
+    '**id format:** lowercase alphanumeric and hyphens, must start with a letter or digit (e.g., `todo-list`, `dashboard`).\n' +
+    'The page is created with an empty body; use `ui_insert` to add components.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  pages_remove:
+    'Remove a page and all its components from `ui/pages.json`.\n\n' +
+    '**Warning:** This permanently deletes the page and all its components.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  pages_update:
+    'Update the title of an existing page in `ui/pages.json`.\n\n' +
+    '**Note:** Page `id` (the URL route) cannot be changed.\n\n' +
+    'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
+
+  pages_reorder:
+    'Move a page to a new position in the pages list.\n\n' +
+    'The page order determines the navigation menu order.\n' +
+    '`index` is 0-based (0 = first position).\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 } as const;
 

@@ -16,7 +16,7 @@ Use this skill when the user wants to add a new page or modify existing UI in an
 
 ### Step 2: Read Existing UI
 
-Fetch the APP with `fetch_app` if not already in the working directory, then read the current `ui/pages.json` to understand existing pages and avoid conflicts.
+Fetch the APP with `fetch_app` if not already in the working directory, then call `pages_list` to see existing pages and `ui_outline` to understand the current component structure.
 
 ### Step 3: Design and Add the Page
 
@@ -35,17 +35,17 @@ get_guide("ui/actions")            # API calls, dialogs, navigation
 get_guide("ui/expressions")        # ${...} syntax
 ```
 
-Add a new page object to the `pages` array in `ui/pages.json`:
+Add the page using the `pages_add` MCP tool:
 
-```json
-{
-  "id": "page-id",
-  "title": "Page Title",
-  "body": [ ... ]
-}
+```
+pages_add(app_name, id="page-id", title="Page Title")
 ```
 
-The `id` serves as the route path segment.
+The `id` serves as the route path segment (lowercase alphanumeric and hyphens, e.g., `user-list`, `dashboard`).
+
+Then use `ui_insert` to add components to the page body, targeting the page `id` as the parent.
+
+**Never manually edit `ui/pages.json`** — always use the `pages_*` and `ui_*` MCP tools.
 
 ### Step 4: Follow the Standard Workflow
 

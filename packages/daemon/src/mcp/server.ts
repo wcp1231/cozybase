@@ -24,12 +24,17 @@ import {
   handleExecuteSql,
   handleCallApi,
   handleInspectUi,
-  handlePageOutline,
-  handlePageGet,
-  handlePageInsert,
-  handlePageUpdate,
-  handlePageMove,
-  handlePageDelete,
+  handleUiOutline,
+  handleUiGet,
+  handleUiInsert,
+  handleUiUpdate,
+  handleUiMove,
+  handleUiDelete,
+  handlePagesList,
+  handlePagesAdd,
+  handlePagesRemove,
+  handlePagesUpdate,
+  handlePagesReorder,
 } from './handlers';
 import { handleGetGuide } from './guide-handler';
 
@@ -241,34 +246,34 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     },
   );
 
-  // --- Page Editing ---
+  // --- UI Component Editing (ui_*) ---
 
   server.registerTool(
-    'page_outline',
+    'ui_outline',
     {
-      description: TOOL_DESCRIPTIONS.page_outline,
+      description: TOOL_DESCRIPTIONS.ui_outline,
       inputSchema: { app_name: z.string(), page_id: z.string().optional() },
     },
     (args) => {
-      return jsonText(handlePageOutline(ctx, args));
+      return jsonText(handleUiOutline(ctx, args));
     },
   );
 
   server.registerTool(
-    'page_get',
+    'ui_get',
     {
-      description: TOOL_DESCRIPTIONS.page_get,
+      description: TOOL_DESCRIPTIONS.ui_get,
       inputSchema: { app_name: z.string(), node_id: z.string() },
     },
     (args) => {
-      return jsonText(handlePageGet(ctx, args));
+      return jsonText(handleUiGet(ctx, args));
     },
   );
 
   server.registerTool(
-    'page_insert',
+    'ui_insert',
     {
-      description: TOOL_DESCRIPTIONS.page_insert,
+      description: TOOL_DESCRIPTIONS.ui_insert,
       inputSchema: {
         app_name: z.string(),
         parent_id: z.string(),
@@ -277,14 +282,14 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       },
     },
     (args) => {
-      return jsonText(handlePageInsert(ctx, args));
+      return jsonText(handleUiInsert(ctx, args));
     },
   );
 
   server.registerTool(
-    'page_update',
+    'ui_update',
     {
-      description: TOOL_DESCRIPTIONS.page_update,
+      description: TOOL_DESCRIPTIONS.ui_update,
       inputSchema: {
         app_name: z.string(),
         node_id: z.string(),
@@ -292,14 +297,14 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       },
     },
     (args) => {
-      return jsonText(handlePageUpdate(ctx, args));
+      return jsonText(handleUiUpdate(ctx, args));
     },
   );
 
   server.registerTool(
-    'page_move',
+    'ui_move',
     {
-      description: TOOL_DESCRIPTIONS.page_move,
+      description: TOOL_DESCRIPTIONS.ui_move,
       inputSchema: {
         app_name: z.string(),
         node_id: z.string(),
@@ -308,18 +313,88 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       },
     },
     (args) => {
-      return jsonText(handlePageMove(ctx, args));
+      return jsonText(handleUiMove(ctx, args));
     },
   );
 
   server.registerTool(
-    'page_delete',
+    'ui_delete',
     {
-      description: TOOL_DESCRIPTIONS.page_delete,
+      description: TOOL_DESCRIPTIONS.ui_delete,
       inputSchema: { app_name: z.string(), node_id: z.string() },
     },
     (args) => {
-      return jsonText(handlePageDelete(ctx, args));
+      return jsonText(handleUiDelete(ctx, args));
+    },
+  );
+
+  // --- Page-level Editing (pages_*) ---
+
+  server.registerTool(
+    'pages_list',
+    {
+      description: TOOL_DESCRIPTIONS.pages_list,
+      inputSchema: { app_name: z.string() },
+    },
+    (args) => {
+      return jsonText(handlePagesList(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'pages_add',
+    {
+      description: TOOL_DESCRIPTIONS.pages_add,
+      inputSchema: {
+        app_name: z.string(),
+        id: z.string(),
+        title: z.string(),
+        index: z.number().int().nonnegative().optional(),
+      },
+    },
+    (args) => {
+      return jsonText(handlePagesAdd(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'pages_remove',
+    {
+      description: TOOL_DESCRIPTIONS.pages_remove,
+      inputSchema: { app_name: z.string(), page_id: z.string() },
+    },
+    (args) => {
+      return jsonText(handlePagesRemove(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'pages_update',
+    {
+      description: TOOL_DESCRIPTIONS.pages_update,
+      inputSchema: {
+        app_name: z.string(),
+        page_id: z.string(),
+        title: z.string(),
+      },
+    },
+    (args) => {
+      return jsonText(handlePagesUpdate(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'pages_reorder',
+    {
+      description: TOOL_DESCRIPTIONS.pages_reorder,
+      inputSchema: {
+        app_name: z.string(),
+        page_id: z.string(),
+        index: z.number().int().nonnegative(),
+      },
+    },
+    (args) => {
+      return jsonText(handlePagesReorder(ctx, args));
     },
   );
 

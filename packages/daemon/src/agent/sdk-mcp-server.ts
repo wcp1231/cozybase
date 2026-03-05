@@ -24,12 +24,17 @@ import {
   handleExecuteSql,
   handleCallApi,
   handleInspectUi,
-  handlePageOutline,
-  handlePageGet,
-  handlePageInsert,
-  handlePageUpdate,
-  handlePageMove,
-  handlePageDelete,
+  handleUiOutline,
+  handleUiGet,
+  handleUiInsert,
+  handleUiUpdate,
+  handleUiMove,
+  handleUiDelete,
+  handlePagesList,
+  handlePagesAdd,
+  handlePagesRemove,
+  handlePagesUpdate,
+  handlePagesReorder,
 } from '../mcp/handlers';
 import { handleGetGuide } from '../mcp/guide-handler';
 
@@ -174,61 +179,110 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
         },
       ),
 
-      // --- Page Editing ---
+      // --- UI Component Editing (ui_*) ---
       tool(
-        'page_outline',
-        TOOL_DESCRIPTIONS.page_outline,
+        'ui_outline',
+        TOOL_DESCRIPTIONS.ui_outline,
         { app_name: z.string(), page_id: z.string().optional() },
-        async (args) => jsonResult(handlePageOutline(ctx, args)),
+        async (args) => jsonResult(handleUiOutline(ctx, args)),
       ),
 
       tool(
-        'page_get',
-        TOOL_DESCRIPTIONS.page_get,
+        'ui_get',
+        TOOL_DESCRIPTIONS.ui_get,
         { app_name: z.string(), node_id: z.string() },
-        async (args) => jsonResult(handlePageGet(ctx, args)),
+        async (args) => jsonResult(handleUiGet(ctx, args)),
       ),
 
       tool(
-        'page_insert',
-        TOOL_DESCRIPTIONS.page_insert,
+        'ui_insert',
+        TOOL_DESCRIPTIONS.ui_insert,
         {
           app_name: z.string(),
           parent_id: z.string(),
           node: z.record(z.unknown()),
           index: z.number().int().nonnegative().optional(),
         },
-        async (args) => jsonResult(handlePageInsert(ctx, args)),
+        async (args) => jsonResult(handleUiInsert(ctx, args)),
       ),
 
       tool(
-        'page_update',
-        TOOL_DESCRIPTIONS.page_update,
+        'ui_update',
+        TOOL_DESCRIPTIONS.ui_update,
         {
           app_name: z.string(),
           node_id: z.string(),
           props: z.record(z.unknown()),
         },
-        async (args) => jsonResult(handlePageUpdate(ctx, args)),
+        async (args) => jsonResult(handleUiUpdate(ctx, args)),
       ),
 
       tool(
-        'page_move',
-        TOOL_DESCRIPTIONS.page_move,
+        'ui_move',
+        TOOL_DESCRIPTIONS.ui_move,
         {
           app_name: z.string(),
           node_id: z.string(),
           new_parent_id: z.string(),
           index: z.number().int().nonnegative().optional(),
         },
-        async (args) => jsonResult(handlePageMove(ctx, args)),
+        async (args) => jsonResult(handleUiMove(ctx, args)),
       ),
 
       tool(
-        'page_delete',
-        TOOL_DESCRIPTIONS.page_delete,
+        'ui_delete',
+        TOOL_DESCRIPTIONS.ui_delete,
         { app_name: z.string(), node_id: z.string() },
-        async (args) => jsonResult(handlePageDelete(ctx, args)),
+        async (args) => jsonResult(handleUiDelete(ctx, args)),
+      ),
+
+      // --- Page-level Editing (pages_*) ---
+      tool(
+        'pages_list',
+        TOOL_DESCRIPTIONS.pages_list,
+        { app_name: z.string() },
+        async (args) => jsonResult(handlePagesList(ctx, args)),
+      ),
+
+      tool(
+        'pages_add',
+        TOOL_DESCRIPTIONS.pages_add,
+        {
+          app_name: z.string(),
+          id: z.string(),
+          title: z.string(),
+          index: z.number().int().nonnegative().optional(),
+        },
+        async (args) => jsonResult(handlePagesAdd(ctx, args)),
+      ),
+
+      tool(
+        'pages_remove',
+        TOOL_DESCRIPTIONS.pages_remove,
+        { app_name: z.string(), page_id: z.string() },
+        async (args) => jsonResult(handlePagesRemove(ctx, args)),
+      ),
+
+      tool(
+        'pages_update',
+        TOOL_DESCRIPTIONS.pages_update,
+        {
+          app_name: z.string(),
+          page_id: z.string(),
+          title: z.string(),
+        },
+        async (args) => jsonResult(handlePagesUpdate(ctx, args)),
+      ),
+
+      tool(
+        'pages_reorder',
+        TOOL_DESCRIPTIONS.pages_reorder,
+        {
+          app_name: z.string(),
+          page_id: z.string(),
+          index: z.number().int().nonnegative(),
+        },
+        async (args) => jsonResult(handlePagesReorder(ctx, args)),
       ),
     ],
   });
