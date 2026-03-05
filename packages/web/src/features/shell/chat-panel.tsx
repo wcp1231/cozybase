@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronRight, Loader2, SendHorizontal, Square, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AppMode } from '../../pages/content-slot';
 import { useChatStore, type ChatMessage, type ChatToolMessage } from '../../stores/chat-store';
+
+const CHAT_INPUT_MAX_HEIGHT = 132;
 
 export function ChatPanel({
   mode,
@@ -52,12 +54,25 @@ function ActiveChat({
 }) {
   const { messages, streaming, connected, send, cancel } = useChatStore();
   const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const resizeInput = (element: HTMLTextAreaElement) => {
+    element.style.height = 'auto';
+    const nextHeight = Math.min(element.scrollHeight, CHAT_INPUT_MAX_HEIGHT);
+    element.style.height = `${nextHeight}px`;
+    element.style.overflowY = element.scrollHeight > CHAT_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
+  };
 
   useEffect(() => {
     const container = document.getElementById('cz-chat-scroll');
     if (!container) return;
     container.scrollTop = container.scrollHeight;
   }, [messages, streaming]);
+
+  useEffect(() => {
+    if (!inputRef.current) return;
+    resizeInput(inputRef.current);
+  }, [input]);
 
   const suggestions = ['新增页面', '生成表单', '调整布局'];
   const introMessage = `我可以继续帮你修改「${appName}」的界面、组件和交互。`;
@@ -118,11 +133,15 @@ function ActiveChat({
       </div>
 
       <div className="border-t border-[#EEF2F7] px-5 pb-4 pt-3">
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
+        <div className="flex items-end gap-3">
+          <textarea
+            ref={inputRef}
+            rows={1}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={(event) => {
+              setInput(event.target.value);
+              resizeInput(event.currentTarget);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -131,7 +150,7 @@ function ActiveChat({
             }}
             placeholder="告诉 AI 如何修改这个应用..."
             disabled={!connected}
-            className="h-[38px] min-w-0 flex-1 rounded-full border border-[#E2E8F0] bg-white px-4 text-sm text-[#27272A] outline-none placeholder:text-[#A1A1AA] focus:border-[#94A3B8] disabled:opacity-60"
+            className="min-h-[38px] max-h-[132px] min-w-0 flex-1 resize-none rounded-[20px] border border-[#E2E8F0] bg-white px-4 py-[9px] text-sm leading-5 text-[#27272A] outline-none placeholder:text-[#A1A1AA] focus:border-[#94A3B8] disabled:opacity-60"
           />
 
           {streaming ? (
