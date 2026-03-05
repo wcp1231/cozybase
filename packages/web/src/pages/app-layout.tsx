@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, type PointerEvent } from 'react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import type { PagesJson } from '@cozybase/ui';
 import { MessageSquare } from 'lucide-react';
@@ -28,6 +28,15 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+const CHAT_PANEL_DEFAULT_WIDTH = 380;
+const CHAT_PANEL_MIN_WIDTH = 320;
+const CHAT_PANEL_MAX_WIDTH = 680;
+const CHAT_PANEL_WIDTH_STORAGE_KEY = 'cozybase.chat-panel.width';
+
+function clampChatPanelWidth(width: number): number {
+  return Math.min(CHAT_PANEL_MAX_WIDTH, Math.max(CHAT_PANEL_MIN_WIDTH, width));
+}
+
 export function useAppContext(): AppContextValue {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useAppContext must be used within AppLayout');
@@ -51,6 +60,63 @@ export function AppLayout() {
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [chatVisible, setChatVisible] = useState(false);
+  const [chatPanelWidth, setChatPanelWidth] = useState(CHAT_PANEL_DEFAULT_WIDTH);
+  const [chatResizing, setChatResizing] = useState(false);
+
+  useEffect(() => {
+    try {
+      const persistedWidth = window.localStorage.getItem(CHAT_PANEL_WIDTH_STORAGE_KEY);
+      if (!persistedWidth) return;
+      const parsedWidth = Number(persistedWidth);
+      if (!Number.isFinite(parsedWidth)) return;
+      setChatPanelWidth(clampChatPanelWidth(parsedWidth));
+    } catch {
+      // Ignore localStorage access failures and keep the default width.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHAT_PANEL_WIDTH_STORAGE_KEY, String(chatPanelWidth));
+    } catch {
+      // Ignore localStorage access failures; resizing still works in-memory.
+    }
+  }, [chatPanelWidth]);
+
+  const handleDesktopChatResizeStart = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    setChatResizing(true);
+
+    const updateWidth = (clientX: number) => {
+      setChatPanelWidth(clampChatPanelWidth(window.innerWidth - clientX));
+    };
+
+    const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      setChatResizing(false);
+    };
+
+    updateWidth(event.clientX);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
+  };
 
   const refreshApps = async () => {
     setAppsLoading(true);
@@ -211,7 +277,20 @@ export function AppLayout() {
           </section>
 
           {chatVisible && (
-            <aside className="hidden h-full shrink-0 border-l border-[#E7EBF2] bg-white xl:flex xl:w-[380px]">
+            <aside
+              className="relative hidden h-full shrink-0 border-l border-[#E7EBF2] bg-white xl:flex"
+              style={{ width: chatPanelWidth }}
+            >
+              <div
+                role="separator"
+                aria-label="Resize chat panel"
+                aria-orientation="vertical"
+                onPointerDown={handleDesktopChatResizeStart}
+                className={clsx(
+                  'absolute left-0 top-0 z-10 h-full w-1 -translate-x-1/2 cursor-col-resize touch-none transition-colors',
+                  chatResizing ? 'bg-[#CBD5E1]/70' : 'bg-transparent hover:bg-[#CBD5E1]/60',
+                )}
+              />
               <ChatPanel
                 mode={selectedMode}
                 appName={appName}

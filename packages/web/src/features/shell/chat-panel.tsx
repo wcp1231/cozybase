@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bot, ChevronRight, Loader2, SendHorizontal, Square, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { AppMode } from '../../pages/content-slot';
 import { useChatStore, type ChatMessage, type ChatToolMessage } from '../../stores/chat-store';
 
@@ -208,7 +210,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[280px] rounded-[12px] rounded-tr-[2px] bg-[#18181B] px-3.5 py-2.5 text-sm leading-relaxed text-white whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-[12px] rounded-tr-[2px] bg-[#18181B] px-3.5 py-2.5 text-sm leading-relaxed text-white whitespace-pre-wrap">
           {message.content}
         </div>
       </div>
@@ -266,12 +268,29 @@ function ToolBubble({ message }: { message: ChatToolMessage }) {
 
 function AssistantBubble({ text }: { text: string }) {
   return (
-    <div className="flex gap-2.5">
+    <div className="flex min-w-0 gap-2.5">
       <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181B] text-white">
         <Bot className="h-3.5 w-3.5" />
       </span>
-      <div className="max-w-[300px] rounded-[12px] rounded-tl-[2px] bg-[#F4F4F5] px-3.5 py-2.5 text-sm leading-relaxed text-[#27272A] whitespace-pre-wrap">
-        {text}
+      <div
+        className="max-w-[calc(100%-38px)] rounded-[12px] rounded-tl-[2px] bg-[#F4F4F5] px-3.5 py-2.5 text-sm leading-relaxed text-[#27272A]
+          [&_p]:m-0 [&_p+p]:mt-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5
+          [&_li]:my-0.5 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-[#D4D4D8] [&_blockquote]:pl-3 [&_blockquote]:text-[#52525B]
+          [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-[#E4E4E7] [&_pre]:p-2
+          [&_code]:rounded [&_code]:bg-[#E4E4E7] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px]
+          [&_pre>code]:bg-transparent [&_pre>code]:p-0
+          [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-[#D4D4D8] [&_th]:px-2 [&_th]:py-1
+          [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-[#D4D4D8] [&_td]:px-2 [&_td]:py-1
+          [&_a]:text-[#1D4ED8] [&_a]:underline [&_a]:underline-offset-2"
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: (props) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+          }}
+        >
+          {text}
+        </ReactMarkdown>
       </div>
     </div>
   );
