@@ -12,6 +12,7 @@ import { AppError, BadRequestError } from './core/errors';
 import { logger } from './middleware/logger';
 import { createAppRoutes } from './modules/apps/routes';
 import { createThemeRoutes } from './modules/theme/routes';
+import { createSettingsRoutes } from './modules/settings/routes';
 import { createRuntime, type AppRegistry, type PlatformHandler } from '@cozybase/runtime';
 import { generateThemeCSS } from '@cozybase/ui';
 import { UiBridge } from './core/ui-bridge';
@@ -27,8 +28,12 @@ import { ScheduleManager } from './core/schedule-manager';
 import type { AgentProvider } from '@cozybase/agent';
 import { ClaudeCodeProvider, CodexProvider } from '@cozybase/agent';
 import { startInProcessMcpHttpBridge, type InProcessMcpHttpBridge } from './mcp/http-bridge';
+import {
+  resolveAgentProviderKind,
+  resolveEffectiveAgentConfig,
+  type AgentProviderKind,
+} from './modules/settings/agent-config';
 
-type AgentProviderKind = 'claude' | 'codex';
 type CodexMcpMode = 'http' | 'stdio';
 
 type ProviderOptionsFactory = (ctx: {
@@ -152,6 +157,11 @@ export function createServer(config: Config) {
 
   // --- Theme API ---
   app.route('/api/v1', createThemeRoutes(workspace, registry));
+
+  const platformRepo = workspace.getPlatformRepo();
+
+  // --- Settings API ---
+  app.route('/api/v1', createSettingsRoutes(platformRepo));
 
   // --- Generate initial theme CSS and propagate to runtime ---
   const themeCSS = generateThemeCSS(workspace.getThemeConfig());
@@ -333,21 +343,22 @@ export function createServer(config: Config) {
     appsDir: join(agentDir, 'apps'),
   });
 
-  const providerKind = resolveAgentProviderKind(process.env.COZYBASE_AGENT_PROVIDER);
-  const agentModel = process.env.COZYBASE_AGENT_MODEL || undefined;
+  const agentProviders: Record<AgentProviderKind, AgentProvider> = {
+    claude: new ClaudeCodeProvider(),
+    codex: new CodexProvider(),
+  };
   const codexMcpMode = resolveCodexMcpMode(process.env.COZYBASE_CODEX_MCP_MODE);
   const codexApprovalPolicy = process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never';
   const codexSandboxMode = process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write';
-  const agentProvider: AgentProvider =
-    providerKind === 'codex' ? new CodexProvider() : new ClaudeCodeProvider();
+  const initialAgentConfig = resolveAgentConfig();
 
   let codexHttpBridge: InProcessMcpHttpBridge | null = null;
   // Default to "failed" while bridge startup is in-flight to avoid race conditions:
   // requests before startup settles should use stdio fallback deterministically.
-  let codexHttpBridgeFailed = providerKind === 'codex' && codexMcpMode === 'http';
+  let codexHttpBridgeFailed = initialAgentConfig.provider === 'codex' && codexMcpMode === 'http';
 
   const codexBridgeStartup =
-    providerKind === 'codex' && codexMcpMode === 'http'
+    initialAgentConfig.provider === 'codex' && codexMcpMode === 'http'
       ? startInProcessMcpHttpBridge({
           backend: localBackend,
           appsDir: join(agentDir, 'apps'),
@@ -366,7 +377,7 @@ export function createServer(config: Config) {
           })
       : Promise.resolve();
 
-  const providerOptionsFactory: ProviderOptionsFactory = ({ mode }) => {
+  const buildProviderOptionsFactory = (providerKind: AgentProviderKind): ProviderOptionsFactory => ({ mode }) => {
     if (providerKind === 'claude') {
       if (mode === 'extract') {
         return {
@@ -415,15 +426,35 @@ export function createServer(config: Config) {
     };
   };
 
+  function resolveAgentConfig() {
+    return resolveEffectiveAgentConfig({
+      storedProvider: platformRepo.settings.get('agent.provider'),
+      storedModel: platformRepo.settings.get('agent.model'),
+      envProvider: process.env.COZYBASE_AGENT_PROVIDER,
+      envModel: process.env.COZYBASE_AGENT_MODEL,
+    });
+  }
+
+  function resolveAgentRuntime() {
+    const agentConfig = resolveAgentConfig();
+    return {
+      agentProvider: agentProviders[agentConfig.provider],
+      providerKind: agentConfig.provider,
+      model: agentConfig.model,
+      providerOptionsFactory: buildProviderOptionsFactory(agentConfig.provider),
+    };
+  }
+
   const sessionStore = new SessionStore(workspace.getPlatformDb());
 
   const chatSessionManager = new ChatSessionManager(
     {
-      agentProvider,
-      providerKind,
+      agentProvider: agentProviders[initialAgentConfig.provider],
+      providerKind: initialAgentConfig.provider,
       agentDir,
-      model: agentModel,
-      providerOptionsFactory,
+      model: initialAgentConfig.model,
+      providerOptionsFactory: buildProviderOptionsFactory(initialAgentConfig.provider),
+      runtimeResolver: resolveAgentRuntime,
     },
     sessionStore,
     eventBus,
@@ -448,11 +479,12 @@ export function createServer(config: Config) {
     }
 
     // 1. Extract structured app info from free-text via LLM
+    const agentRuntime = resolveAgentRuntime();
     const info = await extractAppInfo(body.idea.trim(), {
-      provider: agentProvider,
+      provider: agentRuntime.agentProvider,
       cwd: agentDir,
-      model: agentModel,
-      providerOptions: providerOptionsFactory({
+      model: agentRuntime.model,
+      providerOptions: agentRuntime.providerOptionsFactory({
         appSlug: '__extract__',
         agentDir,
         mode: 'extract',
@@ -523,7 +555,9 @@ export function createServer(config: Config) {
           console.error('Failed to close Codex MCP bridge:', err);
         });
       }
-      agentProvider.dispose();
+      for (const agentProvider of Object.values(agentProviders)) {
+        agentProvider.dispose();
+      }
     },
   };
 }
@@ -611,10 +645,6 @@ async function initializeRuntime(
       }
     }
   }
-}
-
-function resolveAgentProviderKind(value: string | undefined): AgentProviderKind {
-  return value?.toLowerCase() === 'codex' ? 'codex' : 'claude';
 }
 
 function resolveCodexMcpMode(value: string | undefined): CodexMcpMode {

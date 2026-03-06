@@ -29,12 +29,13 @@ export class ChatSessionManager {
     let session = this.sessions.get(appSlug);
     if (!session) {
       const storedSession = this.store.getSession(appSlug);
+      const runtime = this.resolveRuntimeConfig();
       let sdkSessionId = storedSession?.sdkSessionId ?? null;
 
       if (
         sdkSessionId &&
         storedSession?.providerKind &&
-        storedSession.providerKind !== this.config.providerKind
+        storedSession.providerKind !== runtime.providerKind
       ) {
         // Claude session IDs and Codex thread IDs are not interchangeable.
         // Clear stale resume state to avoid opaque provider-specific errors.
@@ -74,5 +75,9 @@ export class ChatSessionManager {
       session.shutdown();
     }
     this.sessions.clear();
+  }
+
+  private resolveRuntimeConfig() {
+    return this.config.runtimeResolver?.() ?? this.config;
   }
 }

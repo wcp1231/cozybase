@@ -44,7 +44,7 @@ describe('Platform migrations', () => {
     runPlatformMigrations(db);
 
     const rows = db.query('SELECT version FROM _platform_migrations ORDER BY version').all() as { version: number }[];
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4]);
 
     db.close();
   });

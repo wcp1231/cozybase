@@ -475,6 +475,44 @@ export class ScheduleRunsRepository {
 }
 
 /**
+ * Repository for platform_settings table operations
+ */
+export class SettingsRepository {
+  constructor(private db: Database) {}
+
+  get(key: string): string | null {
+    const row = this.db
+      .query('SELECT value FROM platform_settings WHERE key = ?')
+      .get(key) as { value: string } | null;
+    return row?.value ?? null;
+  }
+
+  getAll(): Record<string, string> {
+    const rows = this.db
+      .query('SELECT key, value FROM platform_settings ORDER BY key')
+      .all() as { key: string; value: string }[];
+    const result: Record<string, string> = {};
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  }
+
+  set(key: string, value: string): void {
+    this.db
+      .query(
+        `INSERT INTO platform_settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+      )
+      .run(key, value);
+  }
+
+  delete(key: string): void {
+    this.db.query('DELETE FROM platform_settings WHERE key = ?').run(key);
+  }
+}
+
+/**
  * Facade providing access to all repositories
  */
 export class PlatformRepository {
@@ -484,6 +522,7 @@ export class PlatformRepository {
   public readonly agentSessions: AgentSessionsRepository;
   public readonly agentMessages: AgentMessagesRepository;
   public readonly scheduleRuns: ScheduleRunsRepository;
+  public readonly settings: SettingsRepository;
 
   constructor(private db: Database) {
     this.apps = new AppsRepository(db);
@@ -492,6 +531,7 @@ export class PlatformRepository {
     this.agentSessions = new AgentSessionsRepository(db);
     this.agentMessages = new AgentMessagesRepository(db);
     this.scheduleRuns = new ScheduleRunsRepository(db);
+    this.settings = new SettingsRepository(db);
   }
 
   /**

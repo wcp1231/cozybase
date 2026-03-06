@@ -17,17 +17,22 @@ type ProviderOptionsFactory = (ctx: {
   mode: 'chat' | 'extract';
 }) => unknown;
 
-export interface ChatSessionConfig {
+export interface ChatSessionRuntimeConfig {
   /** AgentProvider instance injected from daemon initialization */
   agentProvider: AgentProvider;
   /** Active provider kind used by this daemon process */
   providerKind: 'claude' | 'codex';
-  /** Agent working directory (CWD for provider tool execution) */
-  agentDir: string;
   /** Model to use */
   model?: string;
   /** Provider-specific options factory (Claude/Codex/etc.) */
   providerOptionsFactory?: ProviderOptionsFactory;
+}
+
+export interface ChatSessionConfig extends ChatSessionRuntimeConfig {
+  /** Agent working directory (CWD for provider tool execution) */
+  agentDir: string;
+  /** Resolve the effective runtime config for the next turn. */
+  runtimeResolver?: () => ChatSessionRuntimeConfig;
 }
 
 /** Message from browser → daemon */
@@ -206,13 +211,16 @@ export class ChatSession {
     this.streaming = true;
 
     try {
-      const agentQuery = this.config.agentProvider.createQuery({
+      const runtime = this.resolveRuntimeConfig();
+      this.clearStaleResumeSession(runtime.providerKind);
+
+      const agentQuery = runtime.agentProvider.createQuery({
         prompt: text,
         systemPrompt: buildSystemPrompt(this.appSlug),
         cwd: this.config.agentDir,
-        model: this.config.model,
+        model: runtime.model,
         resumeSessionId: this.sdkSessionId,
-        providerOptions: this.config.providerOptionsFactory?.({
+        providerOptions: runtime.providerOptionsFactory?.({
           appSlug: this.appSlug,
           agentDir: this.config.agentDir,
           mode: 'chat',
@@ -264,7 +272,7 @@ export class ChatSession {
             // sessionId is empty when the run was interrupted — don't overwrite
             if (event.sessionId) {
               this.sdkSessionId = event.sessionId;
-              this.store.saveSessionId(this.appSlug, event.sessionId, this.config.providerKind);
+              this.store.saveSessionId(this.appSlug, event.sessionId, runtime.providerKind);
             }
             break;
 
@@ -300,6 +308,22 @@ export class ChatSession {
       this.streaming = false;
       this.runEventBuffer = [];
       this.toolStartedAt = new Map();
+    }
+  }
+
+  private resolveRuntimeConfig(): ChatSessionRuntimeConfig {
+    return this.config.runtimeResolver?.() ?? this.config;
+  }
+
+  private clearStaleResumeSession(providerKind: ChatSessionRuntimeConfig['providerKind']): void {
+    if (!this.sdkSessionId) {
+      return;
+    }
+
+    const storedSession = this.store.getSession(this.appSlug);
+    if (storedSession?.providerKind && storedSession.providerKind !== providerKind) {
+      this.store.clearSessionId(this.appSlug);
+      this.sdkSessionId = null;
     }
   }
 

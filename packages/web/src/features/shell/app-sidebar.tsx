@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Grid2x2, Hammer, Home, Settings } from 'lucide-react';
 import { useAppContext } from '../../pages/app-layout';
-import { toAppListPath, toModeHomePath } from '../../pages/content-slot';
+import { toAppListPath, toModeHomePath, toSettingsPath } from '../../pages/content-slot';
 
 export function AppSidebar({ collapsed }: { collapsed: boolean }) {
   const { mode } = useAppContext();
@@ -11,10 +11,12 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
   const stableHomePath = toModeHomePath('stable');
   const stableAppsPath = toAppListPath('stable');
   const draftHomePath = toModeHomePath('draft');
+  const settingsPath = toSettingsPath(mode);
 
   const isStableHome = location.pathname === stableHomePath;
   const isStableApps = location.pathname.startsWith(stableAppsPath);
-  const isDraftApps = location.pathname.startsWith('/draft');
+  const isDraftApps = location.pathname.startsWith('/draft') && !location.pathname.startsWith(settingsPath);
+  const isSettings = location.pathname.startsWith(settingsPath);
 
   return (
     <div
@@ -68,16 +70,13 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
       <div className="min-h-0 flex-1" />
 
       <div className="flex flex-col gap-2 w-full">
-        <div
-          className={clsx(
-            'flex h-[42px] rounded-[10px] text-sm font-semibold text-[#475569]',
-            collapsed ? 'items-center justify-center px-0' : 'items-center gap-3 px-3.5',
-          )}
-          title={collapsed ? '设置' : undefined}
-        >
-          <Settings className="h-[18px] w-[18px]" />
-          {!collapsed && <span>设置</span>}
-        </div>
+        <SidebarNavLink
+          collapsed={collapsed}
+          active={isSettings}
+          to={settingsPath}
+          icon={<Settings className="h-[18px] w-[18px]" />}
+          label="设置"
+        />
         <div className="h-px bg-[#E7EBF2]" />
         <Link
           to={mode === 'stable' ? draftHomePath : stableHomePath}

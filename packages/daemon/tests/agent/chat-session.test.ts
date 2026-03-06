@@ -158,4 +158,58 @@ describe('ChatSession', () => {
 
     expect(provider.lastConfig?.providerOptions).toEqual({ marker: 'orders:chat' });
   });
+
+  test('uses the latest runtime resolver values for provider, model, and resume clearing', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'orders');
+    const store = new SessionStore(handle.workspace.getPlatformDb());
+    store.saveSessionId('orders', 'sess-claude', 'claude');
+
+    const claudeProvider = new StubAgentProvider(() => new StubAgentQuery([
+      { type: 'conversation.run.started' },
+      { type: 'conversation.run.completed', sessionId: 'sess-claude-next' },
+    ]));
+    const codexProvider = new StubAgentProvider(() => new StubAgentQuery([
+      { type: 'conversation.run.started' },
+      { type: 'conversation.run.completed', sessionId: 'thread-codex-1' },
+    ]));
+
+    let providerKind: 'claude' | 'codex' = 'codex';
+
+    const session = new ChatSession(
+      'orders',
+      {
+        agentProvider: claudeProvider,
+        providerKind: 'claude',
+        agentDir: handle.root,
+        runtimeResolver: () => (
+          providerKind === 'claude'
+            ? {
+                agentProvider: claudeProvider,
+                providerKind: 'claude',
+                model: 'claude-opus-4-6',
+              }
+            : {
+                agentProvider: codexProvider,
+                providerKind: 'codex',
+                model: 'gpt-5.4',
+              }
+        ),
+      },
+      store,
+      'sess-claude',
+    );
+    const ws = new FakeWebSocket();
+    session.connect(ws);
+
+    await session.handleMessage(ws, JSON.stringify({ type: 'chat:send', message: 'hello' }));
+
+    expect(claudeProvider.lastConfig).toBeNull();
+    expect(codexProvider.lastConfig?.model).toBe('gpt-5.4');
+    expect(codexProvider.lastConfig?.resumeSessionId).toBeNull();
+    expect(store.getSession('orders')).toEqual({
+      sdkSessionId: 'thread-codex-1',
+      providerKind: 'codex',
+    });
+  });
 });

@@ -31,6 +31,10 @@ export function toAppListPath(mode: AppMode): string {
   return `/${mode}/apps`;
 }
 
+export function toSettingsPath(mode: AppMode): string {
+  return `/${mode}/settings`;
+}
+
 export function toAppPagePath(appName: string, pageId: string | undefined, mode: AppMode): string {
   const path = `${toAppListPath(mode)}/${appName}`;
   return pageId ? `${path}/${pageId}` : path;
