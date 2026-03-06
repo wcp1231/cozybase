@@ -46,6 +46,17 @@ type AppFetchResult = {
 };
 
 type UiFetchResult = { data?: PagesJson };
+type ErrorFetchResult = { error?: { message?: string } };
+
+async function readErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const payload = await response.json() as ErrorFetchResult;
+    const message = payload.error?.message;
+    return typeof message === 'string' && message.trim() ? message : null;
+  } catch {
+    return null;
+  }
+}
 
 function clampChatPanelWidth(width: number): number {
   return Math.min(CHAT_PANEL_MAX_WIDTH, Math.max(CHAT_PANEL_MIN_WIDTH, width));
@@ -67,21 +78,12 @@ async function fetchUiSchema(
     return null;
   }
   if (!uiResponse.ok) {
-    throw new Error(`Failed to load UI: HTTP ${uiResponse.status}`);
+    const message = await readErrorMessage(uiResponse);
+    throw new Error(message ? `Failed to load UI: ${message}` : `Failed to load UI: HTTP ${uiResponse.status}`);
   }
 
   const uiJson = await uiResponse.json() as UiFetchResult;
   return uiJson ? (uiJson.data as PagesJson) : null;
-}
-
-async function prepareDraftEnvironment(
-  appName: string,
-  fetchImpl: typeof fetch,
-): Promise<void> {
-  const prepareResponse = await fetchImpl(`/draft/apps/${appName}/prepare`, { method: 'POST' });
-  if (!prepareResponse.ok) {
-    throw new Error(`Failed to prepare draft: HTTP ${prepareResponse.status}`);
-  }
 }
 
 export async function loadAppLayoutData(
@@ -91,7 +93,8 @@ export async function loadAppLayoutData(
 ): Promise<{ app: AppInfo; pagesJson: PagesJson | null }> {
   const appResponse = await fetchImpl(`/api/v1/apps/${appName}`);
   if (!appResponse.ok) {
-    throw new Error(`Failed to load app: HTTP ${appResponse.status}`);
+    const message = await readErrorMessage(appResponse);
+    throw new Error(message ? `Failed to load app: ${message}` : `Failed to load app: HTTP ${appResponse.status}`);
   }
 
   const appJson = await appResponse.json() as AppFetchResult;
@@ -106,20 +109,7 @@ export async function loadAppLayoutData(
     published_version: appData.published_version,
   };
 
-  const isPublishedDraftMode = mode === 'draft' && appInfo.stableStatus !== null;
-  let attemptedPrepare = false;
-  if (isPublishedDraftMode && !appInfo.hasDraft) {
-    await prepareDraftEnvironment(appName, fetchImpl);
-    attemptedPrepare = true;
-  }
-
-  let pagesJson = await fetchUiSchema(appName, mode, fetchImpl);
-  if (isPublishedDraftMode && !attemptedPrepare && pagesJson === null) {
-    // Fallback for stale/inconsistent runtime registration: prepare then retry once.
-    await prepareDraftEnvironment(appName, fetchImpl);
-    pagesJson = await fetchUiSchema(appName, mode, fetchImpl);
-  }
-
+  const pagesJson = await fetchUiSchema(appName, mode, fetchImpl);
   return { app: appInfo, pagesJson };
 }
 

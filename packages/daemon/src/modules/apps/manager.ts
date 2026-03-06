@@ -4,6 +4,7 @@ import { join } from 'path';
 import type { Workspace, AppStateInfo, StableStatus } from '../../core/workspace';
 import { hashApiKey } from '../../core/auth';
 import {
+  AppError,
   NotFoundError,
   AlreadyExistsError,
   InvalidNameError,
@@ -90,10 +91,20 @@ export interface StableLifecycleHooks {
   onAppDeleted?: (appSlug: string) => void;
 }
 
+export interface PrepareDraftRuntimeResult {
+  status: 'ready' | 'skipped' | 'error';
+  error?: {
+    statusCode: number;
+    code: string;
+    message: string;
+  };
+}
+
 // --- AppManager ---
 
 export class AppManager {
   private sessionCleanup: SessionCleanup | null = null;
+  private prepareLocks = new Map<string, Promise<PrepareDraftRuntimeResult>>();
 
   constructor(
     private workspace: Workspace,
@@ -580,24 +591,137 @@ export class AppManager {
     return this.getAppWithFiles(newSlug);
   }
 
-  private ensureDraftRuntime(slug: string): void {
-    if (!this.registry) return;
+  /** Prepare draft runtime for a stable-only app, coalescing concurrent requests */
+  async prepareDraftRuntime(slug: string): Promise<PrepareDraftRuntimeResult> {
+    // Fast path: already running
+    if (this.registry?.get(slug, 'draft')?.status === 'running') {
+      return { status: 'ready' };
+    }
+
+    // Coalesce concurrent requests
+    const existing = this.prepareLocks.get(slug);
+    if (existing) return existing;
+
+    const promise = this._doPrepareDraftRuntime(slug).finally(() => {
+      this.prepareLocks.delete(slug);
+    });
+    this.prepareLocks.set(slug, promise);
+    return promise;
+  }
+
+  private async _doPrepareDraftRuntime(slug: string): Promise<PrepareDraftRuntimeResult> {
+    const state = this.workspace.getAppState(slug) ?? this.workspace.refreshAppState(slug);
+    if (!state) {
+      return { status: 'skipped' };
+    }
+
+    if (state.hasDraft) {
+      if (this.ensureDraftRuntime(slug)) {
+        return { status: 'ready' };
+      }
+      return this.materializeDraftRuntime(slug);
+    }
+
+    if (state.stableStatus === null) {
+      return { status: 'skipped' };
+    }
+
+    return this.materializeDraftRuntime(slug, { force: true });
+  }
+
+  private async materializeDraftRuntime(
+    slug: string,
+    options?: { force?: boolean },
+  ): Promise<PrepareDraftRuntimeResult> {
+    if (!this.draftReconciler || !this.registry) {
+      return {
+        status: 'error',
+        error: {
+          statusCode: 503,
+          code: 'DRAFT_PREPARE_UNAVAILABLE',
+          message: `Draft preparation is unavailable for '${slug}'`,
+        },
+      };
+    }
+
+    try {
+      const result = await this.draftReconciler.reconcile(slug, options);
+      if (!result.success) {
+        return {
+          status: 'error',
+          error: {
+            statusCode: 500,
+            code: 'DRAFT_PREPARE_FAILED',
+            message: result.error ?? `Failed to prepare draft runtime for '${slug}'`,
+          },
+        };
+      }
+
+      const appContext = this.workspace.getOrCreateApp(slug);
+      if (!appContext?.hasDraftReconcileState()) {
+        return {
+          status: 'error',
+          error: {
+            statusCode: 500,
+            code: 'DRAFT_PREPARE_FAILED',
+            message: `Failed to materialize draft runtime for '${slug}'`,
+          },
+        };
+      }
+
+      this.registry.restart(slug, this.getRuntimeConfig(slug, 'draft'));
+      return this.registry.get(slug, 'draft')?.status === 'running'
+        ? { status: 'ready' }
+        : {
+            status: 'error',
+            error: {
+              statusCode: 500,
+              code: 'DRAFT_PREPARE_FAILED',
+              message: `Draft runtime failed to start for '${slug}'`,
+            },
+          };
+    } catch (err) {
+      if (err instanceof AppError) {
+        return {
+          status: 'error',
+          error: {
+            statusCode: err.statusCode,
+            code: err.code ?? 'DRAFT_PREPARE_FAILED',
+            message: err.message,
+          },
+        };
+      }
+
+      return {
+        status: 'error',
+        error: {
+          statusCode: 500,
+          code: 'DRAFT_PREPARE_FAILED',
+          message: err instanceof Error ? err.message : `Failed to prepare draft runtime for '${slug}'`,
+        },
+      };
+    }
+  }
+
+  private ensureDraftRuntime(slug: string): boolean {
+    if (!this.registry) return false;
 
     const state = this.workspace.getAppState(slug) ?? this.workspace.refreshAppState(slug);
-    if (!state?.hasDraft) return;
+    if (!state?.hasDraft) return false;
 
     const appContext = this.workspace.getOrCreateApp(slug);
-    if (!appContext?.hasDraftReconcileState()) return;
+    if (!appContext?.hasDraftReconcileState()) return false;
 
     const existing = this.registry.get(slug, 'draft');
-    if (existing?.status === 'running') return;
+    if (existing?.status === 'running') return true;
 
     if (existing) {
       this.registry.restart(slug, this.getRuntimeConfig(slug, 'draft'));
-      return;
+      return this.registry.get(slug, 'draft')?.status === 'running';
     }
 
     this.registry.start(slug, this.getRuntimeConfig(slug, 'draft'));
+    return this.registry.get(slug, 'draft')?.status === 'running';
   }
 
   private getStateInfo(slug: string): AppStateInfo {

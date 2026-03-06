@@ -9,7 +9,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('loadAppLayoutData', () => {
-  test('auto prepares stable-only draft app before loading draft UI', async () => {
+  test('loads draft UI without calling a dedicated prepare endpoint', async () => {
     const calls: Array<{ url: string; method: string }> = [];
     const fetchMock: typeof fetch = async (input, init) => {
       const url = String(input);
@@ -29,9 +29,6 @@ describe('loadAppLayoutData', () => {
           },
         });
       }
-      if (url === '/draft/apps/orders/prepare') {
-        return jsonResponse({ data: { success: true } });
-      }
       if (url === '/draft/apps/orders/ui') {
         return jsonResponse({
           data: {
@@ -46,7 +43,6 @@ describe('loadAppLayoutData', () => {
 
     expect(calls).toEqual([
       { url: '/api/v1/apps/orders', method: 'GET' },
-      { url: '/draft/apps/orders/prepare', method: 'POST' },
       { url: '/draft/apps/orders/ui', method: 'GET' },
     ]);
     expect(result.app.slug).toBe('orders');
@@ -89,54 +85,7 @@ describe('loadAppLayoutData', () => {
     ]);
   });
 
-  test('fallback prepares and retries UI when draft UI returns 404 first', async () => {
-    const calls: Array<{ url: string; method: string }> = [];
-    let uiCallCount = 0;
-    const fetchMock: typeof fetch = async (input, init) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      calls.push({ url, method });
-
-      if (url === '/api/v1/apps/orders') {
-        return jsonResponse({
-          data: {
-            slug: 'orders',
-            displayName: 'Orders',
-            description: 'Orders app',
-            stableStatus: 'running',
-            hasDraft: true,
-            current_version: 2,
-            published_version: 1,
-          },
-        });
-      }
-      if (url === '/draft/apps/orders/ui') {
-        uiCallCount += 1;
-        if (uiCallCount === 1) {
-          return jsonResponse({ error: { code: 'NOT_FOUND' } }, 404);
-        }
-        return jsonResponse({ data: { pages: [{ id: 'home', title: 'Home', body: [] }] } });
-      }
-      if (url === '/draft/apps/orders/prepare') {
-        return jsonResponse({ data: { success: true } });
-      }
-      throw new Error(`Unexpected fetch request: ${method} ${url}`);
-    };
-
-    const result = await loadAppLayoutData('orders', 'draft', fetchMock);
-
-    expect(calls).toEqual([
-      { url: '/api/v1/apps/orders', method: 'GET' },
-      { url: '/draft/apps/orders/ui', method: 'GET' },
-      { url: '/draft/apps/orders/prepare', method: 'POST' },
-      { url: '/draft/apps/orders/ui', method: 'GET' },
-    ]);
-    expect(result.pagesJson).toEqual({
-      pages: [{ id: 'home', title: 'Home', body: [] }],
-    });
-  });
-
-  test('throws explicit error when auto prepare fails', async () => {
+  test('returns null pagesJson when draft UI is missing', async () => {
     const calls: Array<{ url: string; method: string }> = [];
     const fetchMock: typeof fetch = async (input, init) => {
       const url = String(input);
@@ -156,18 +105,56 @@ describe('loadAppLayoutData', () => {
           },
         });
       }
-      if (url === '/draft/apps/orders/prepare') {
-        return jsonResponse({ error: { code: 'INTERNAL_ERROR' } }, 500);
+      if (url === '/draft/apps/orders/ui') {
+        return jsonResponse({ error: { code: 'NOT_FOUND' } }, 404);
+      }
+      throw new Error(`Unexpected fetch request: ${method} ${url}`);
+    };
+
+    const result = await loadAppLayoutData('orders', 'draft', fetchMock);
+
+    expect(calls).toEqual([
+      { url: '/api/v1/apps/orders', method: 'GET' },
+      { url: '/draft/apps/orders/ui', method: 'GET' },
+    ]);
+    expect(result.pagesJson).toBeNull();
+  });
+
+  test('throws explicit error when backend auto-prepare fails', async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+
+      if (url === '/api/v1/apps/orders') {
+        return jsonResponse({
+          data: {
+            slug: 'orders',
+            displayName: 'Orders',
+            description: 'Orders app',
+            stableStatus: 'running',
+            hasDraft: false,
+            current_version: 1,
+            published_version: 1,
+          },
+        });
+      }
+      if (url === '/draft/apps/orders/ui') {
+        return jsonResponse(
+          { error: { code: 'DRAFT_PREPARE_FAILED', message: 'Migration failed (001_init.sql): syntax error' } },
+          500,
+        );
       }
       throw new Error(`Unexpected fetch request: ${method} ${url}`);
     };
 
     await expect(loadAppLayoutData('orders', 'draft', fetchMock)).rejects.toThrow(
-      'Failed to prepare draft: HTTP 500',
+      'Failed to load UI: Migration failed (001_init.sql): syntax error',
     );
     expect(calls).toEqual([
       { url: '/api/v1/apps/orders', method: 'GET' },
-      { url: '/draft/apps/orders/prepare', method: 'POST' },
+      { url: '/draft/apps/orders/ui', method: 'GET' },
     ]);
   });
 });

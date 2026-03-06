@@ -553,9 +553,11 @@ describe('createServer() draft runtime startup for materialized draft state', ()
     const { app, registry, startup } = createServer(createTestConfig(handle.root));
     await startup;
 
+    // Draft runtime is NOT started eagerly at startup for stable-only apps
     expect(registry.get('myapp', 'draft')).toBeUndefined();
+    // But auto-prepare middleware prepares it on-demand when a draft route is accessed
     const uiRes = await app.request('/draft/apps/myapp/ui');
-    expect(uiRes.status).toBe(404);
+    expect(uiRes.status).toBe(200);
 
     registry.shutdownAll();
   });
@@ -575,7 +577,9 @@ describe('createServer() draft runtime startup for materialized draft state', ()
     const { app, registry, startup } = createServer(createTestConfig(handle.root));
     await startup;
 
+    // Draft runtime is NOT started eagerly at startup
     expect(registry.get('myapp', 'draft')).toBeUndefined();
+    // Auto-prepare triggers on-demand but UI still returns 404 because this app has no ui/pages.json
     const uiRes = await app.request('/draft/apps/myapp/ui');
     expect(uiRes.status).toBe(404);
 

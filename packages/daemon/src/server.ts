@@ -174,7 +174,7 @@ export function createServer(config: Config) {
     }
   });
 
-  // --- Draft management routes: /draft/apps/:appSlug/(reconcile|prepare|verify|publish) ---
+  // --- Draft management routes: /draft/apps/:appSlug/(reconcile|verify|publish) ---
   // These MUST be registered BEFORE the runtime catch-all at /draft/apps/:name
   // to prevent the runtime's appEntryResolver from hijacking management requests.
 
@@ -196,29 +196,6 @@ export function createServer(config: Config) {
     const result = await draftReconciler.reconcile(appSlug);
 
     // Restart draft in Runtime after reconcile
-    const appContext = workspace.getOrCreateApp(appSlug);
-    if (result.success && appContext?.hasDraftReconcileState()) {
-      registry.restart(appSlug, {
-        mode: 'draft',
-        dbPath: appContext.draftDbPath,
-        functionsDir: join(appContext.draftDataDir, 'functions'),
-        uiDir: join(appContext.draftDataDir, 'ui'),
-      });
-    }
-
-    return c.json({ data: result });
-  });
-
-  app.post('/draft/apps/:appSlug/prepare', draftMgmtMiddleware, async (c) => {
-    const appSlug = c.req.param('appSlug')!;
-    const state = workspace.getAppState(appSlug);
-    if (!state || state.stableStatus === null) {
-      throw new BadRequestError(`App '${appSlug}' has no stable version`);
-    }
-
-    const result = await draftReconciler.reconcile(appSlug, { force: true });
-
-    // Ensure draft runtime is available for stable-only apps after prepare
     const appContext = workspace.getOrCreateApp(appSlug);
     if (result.success && appContext?.hasDraftReconcileState()) {
       registry.restart(appSlug, {
@@ -290,6 +267,18 @@ export function createServer(config: Config) {
     const scheduleName = c.req.param('scheduleName')!;
     const result = await scheduleManager.triggerManual(appSlug, scheduleName, 'stable');
     return c.json({ data: result });
+  });
+
+  // Auto-prepare draft runtime for stable-only apps on any draft route access
+  app.use('/draft/apps/:name/*', async (c, next) => {
+    const name = c.req.param('name');
+    if (name) {
+      const result = await appManager.prepareDraftRuntime(name);
+      if (result.status === 'error' && result.error) {
+        throw new AppError(result.error.statusCode, result.error.message, result.error.code);
+      }
+    }
+    return next();
   });
 
   // --- Mount Runtime routes (stable + draft only, NO /internal) ---
