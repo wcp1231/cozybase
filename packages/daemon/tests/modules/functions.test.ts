@@ -10,6 +10,7 @@ import {
   createTestWorkspace,
   createTestApp,
   addFunction,
+  setAppSpec,
   createStableDb,
   MIGRATION_CREATE_TODOS,
 } from '../helpers/test-workspace';
@@ -51,6 +52,16 @@ export async function GET(ctx) {
 }
 export async function POST(ctx) {
   return { method: "POST" };
+}
+`;
+
+const FN_CRON_CONTEXT = `
+export async function run(ctx) {
+  return {
+    mode: ctx.mode,
+    trigger: ctx.trigger,
+    hasRequest: ctx.req !== undefined,
+  };
 }
 `;
 
@@ -356,6 +367,33 @@ describe('Function Runtime (HTTP integration)', () => {
     expect(res2.status).toBe(200);
     const body2 = await jsonBody(res2);
     expect(body2.version).toBe(2);
+  });
+
+  test('schedule execution builds cron context with optional req', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      functions: { 'jobs.ts': FN_CRON_CONTEXT },
+    });
+    setAppSpec(handle, 'myapp', {
+      description: 'test',
+      schedules: [
+        { name: 'nightly', cron: '*/5 * * * *', function: 'jobs:run' },
+      ],
+    });
+
+    const { app } = createServer(createTestConfig(handle.root));
+    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+    const res = await app.request('/draft/apps/myapp/schedule/nightly/trigger', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await jsonBody(res);
+    expect(body.data.status).toBe('success');
+    expect(body.data.result).toEqual({
+      mode: 'draft',
+      trigger: 'cron',
+      hasRequest: false,
+    });
   });
 
   test('syntax error in function returns 500 with FUNCTION_LOAD_ERROR', async () => {

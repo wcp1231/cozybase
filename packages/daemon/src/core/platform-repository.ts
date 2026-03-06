@@ -55,6 +55,24 @@ export interface AgentMessageRecord {
   created_at: string;
 }
 
+export type ScheduleRunStatus = 'running' | 'success' | 'error' | 'timeout' | 'skipped';
+export type ScheduleRunTriggerMode = 'auto' | 'manual';
+export type ScheduleRunRuntimeMode = 'stable' | 'draft';
+
+export interface ScheduleRunRecord {
+  id: number;
+  app_slug: string;
+  schedule_name: string;
+  runtime_mode: ScheduleRunRuntimeMode;
+  trigger_mode: ScheduleRunTriggerMode;
+  status: ScheduleRunStatus;
+  function_ref: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error_message: string | null;
+}
+
 // --- Repository Classes ---
 
 /**
@@ -349,6 +367,114 @@ export class AgentMessagesRepository {
 }
 
 /**
+ * Repository for schedule_runs table operations
+ */
+export class ScheduleRunsRepository {
+  constructor(private db: Database) {}
+
+  findById(id: number): ScheduleRunRecord | null {
+    return this.db.query('SELECT * FROM schedule_runs WHERE id = ?').get(id) as ScheduleRunRecord | null;
+  }
+
+  findByAppAndSchedule(appSlug: string, scheduleName: string, limit = 100): ScheduleRunRecord[] {
+    return this.db
+      .query(
+        `SELECT * FROM schedule_runs
+         WHERE app_slug = ? AND schedule_name = ?
+         ORDER BY started_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(appSlug, scheduleName, limit) as ScheduleRunRecord[];
+  }
+
+  create(params: {
+    appSlug: string;
+    scheduleName: string;
+    runtimeMode: ScheduleRunRuntimeMode;
+    triggerMode: ScheduleRunTriggerMode;
+    status: ScheduleRunStatus;
+    functionRef: string;
+    startedAt?: string;
+    finishedAt?: string | null;
+    durationMs?: number | null;
+    errorMessage?: string | null;
+  }): number {
+    const result = this.db
+      .query(
+        `INSERT INTO schedule_runs (
+          app_slug,
+          schedule_name,
+          runtime_mode,
+          trigger_mode,
+          status,
+          function_ref,
+          started_at,
+          finished_at,
+          duration_ms,
+          error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?, ?)`,
+      )
+      .run(
+        params.appSlug,
+        params.scheduleName,
+        params.runtimeMode,
+        params.triggerMode,
+        params.status,
+        params.functionRef,
+        params.startedAt ?? null,
+        params.finishedAt ?? null,
+        params.durationMs ?? null,
+        params.errorMessage ?? null,
+      );
+    return Number(result.lastInsertRowid);
+  }
+
+  updateStatus(
+    id: number,
+    params: {
+      status: ScheduleRunStatus;
+      finishedAt?: string;
+      durationMs?: number | null;
+      errorMessage?: string | null;
+    },
+  ): void {
+    this.db
+      .query(
+        `UPDATE schedule_runs
+         SET status = ?,
+             finished_at = COALESCE(?, datetime('now')),
+             duration_ms = ?,
+             error_message = ?
+         WHERE id = ?`,
+      )
+      .run(
+        params.status,
+        params.finishedAt ?? null,
+        params.durationMs ?? null,
+        params.errorMessage ?? null,
+        id,
+      );
+  }
+
+  pruneToRecent(appSlug: string, scheduleName: string, keep = 100): void {
+    this.db
+      .query(
+        `DELETE FROM schedule_runs
+         WHERE id NOT IN (
+           SELECT id
+           FROM schedule_runs
+           WHERE app_slug = ? AND schedule_name = ?
+           ORDER BY started_at DESC, id DESC
+           LIMIT ?
+         )
+         AND app_slug = ?
+         AND schedule_name = ?`,
+      )
+      .run(appSlug, scheduleName, keep, appSlug, scheduleName);
+  }
+}
+
+/**
  * Facade providing access to all repositories
  */
 export class PlatformRepository {
@@ -357,6 +483,7 @@ export class PlatformRepository {
   public readonly apiKeys: ApiKeysRepository;
   public readonly agentSessions: AgentSessionsRepository;
   public readonly agentMessages: AgentMessagesRepository;
+  public readonly scheduleRuns: ScheduleRunsRepository;
 
   constructor(private db: Database) {
     this.apps = new AppsRepository(db);
@@ -364,6 +491,7 @@ export class PlatformRepository {
     this.apiKeys = new ApiKeysRepository(db);
     this.agentSessions = new AgentSessionsRepository(db);
     this.agentMessages = new AgentMessagesRepository(db);
+    this.scheduleRuns = new ScheduleRunsRepository(db);
   }
 
   /**

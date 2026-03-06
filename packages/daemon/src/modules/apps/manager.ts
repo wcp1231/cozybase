@@ -71,13 +71,23 @@ export interface CreateAppResult {
 const TEMPLATE_FUNCTION = `import type { FunctionContext } from 'cozybase';
 
 export async function GET(ctx: FunctionContext) {
-  return { message: 'Hello from CozyBase!' };
+  return {
+    message: 'Hello from CozyBase!',
+    trigger: ctx.trigger,
+    hasRequest: ctx.req !== undefined,
+  };
 }
 `;
 
 /** Callback to clean up agent sessions when apps are deleted/renamed */
 export interface SessionCleanup {
   remove(appSlug: string): void;
+}
+
+export interface StableLifecycleHooks {
+  onStableStarted?: (appSlug: string) => void;
+  onStableStopped?: (appSlug: string) => void;
+  onAppDeleted?: (appSlug: string) => void;
 }
 
 // --- AppManager ---
@@ -89,6 +99,7 @@ export class AppManager {
     private workspace: Workspace,
     private registry?: AppRegistry,
     private draftReconciler?: DraftReconciler,
+    private lifecycleHooks?: StableLifecycleHooks,
   ) {}
 
   /** Set the session cleanup handler (called by server.ts after ChatSessionManager is created) */
@@ -371,6 +382,8 @@ export class AppManager {
     // Clean up in-memory chat session (DB rows cascade-delete via FK)
     this.sessionCleanup?.remove(slug);
 
+    this.invokeLifecycleHook(this.lifecycleHooks?.onAppDeleted, slug);
+
     // Remove from workspace caches (also closes DB connections)
     this.workspace.removeApp(slug);
 
@@ -427,6 +440,8 @@ export class AppManager {
       }
     }
 
+    this.invokeLifecycleHook(this.lifecycleHooks?.onStableStarted, slug);
+
     return this.get(slug);
   }
 
@@ -450,6 +465,8 @@ export class AppManager {
         // Ignore if the runtime was not running.
       }
     }
+
+    this.invokeLifecycleHook(this.lifecycleHooks?.onStableStopped, slug);
 
     return this.get(slug);
   }
@@ -627,6 +644,18 @@ export class AppManager {
       created_at: app.created_at,
       updated_at: app.updated_at,
     };
+  }
+
+  private invokeLifecycleHook(
+    hook: ((appSlug: string) => void) | undefined,
+    appSlug: string,
+  ): void {
+    if (!hook) return;
+    try {
+      hook(appSlug);
+    } catch (err) {
+      console.error(`[app-manager] lifecycle hook failed for '${appSlug}'`, err);
+    }
   }
 }
 

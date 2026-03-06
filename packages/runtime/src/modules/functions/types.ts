@@ -20,11 +20,12 @@ export interface Logger {
 // --- FunctionContext ---
 
 export interface FunctionContext {
-  req: Request;
+  req: Request | undefined;
   db: DatabaseClient;
   env: Record<string, string>;
   app: { name: string };
   mode: 'stable' | 'draft';
+  trigger: 'http' | 'cron';
   log: Logger;
   fetch: typeof globalThis.fetch;
   platform: PlatformClient;
@@ -32,15 +33,18 @@ export interface FunctionContext {
 
 // --- FunctionModule (internal) ---
 
+export type FunctionHandler = (ctx: FunctionContext) => unknown | Promise<unknown>;
+
 export interface FunctionModule {
-  default?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  GET?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  POST?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  PUT?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  PATCH?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  DELETE?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  HEAD?: (ctx: FunctionContext) => unknown | Promise<unknown>;
-  OPTIONS?: (ctx: FunctionContext) => unknown | Promise<unknown>;
+  [key: string]: FunctionHandler | undefined;
+  default?: FunctionHandler;
+  GET?: FunctionHandler;
+  POST?: FunctionHandler;
+  PUT?: FunctionHandler;
+  PATCH?: FunctionHandler;
+  DELETE?: FunctionHandler;
+  HEAD?: FunctionHandler;
+  OPTIONS?: FunctionHandler;
 }
 
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;

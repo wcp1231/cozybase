@@ -12,6 +12,7 @@ import type { Workspace } from '../core/workspace';
 import type { DraftReconciler } from '../core/draft-reconciler';
 import type { Verifier } from '../core/verifier';
 import type { Publisher } from '../core/publisher';
+import type { ScheduleManager } from '../core/schedule-manager';
 import type { UiBridge } from '../core/ui-bridge';
 import type { EventBus } from '../core/event-bus';
 import { type AppRegistry, validateSql, type SqlMode } from '@cozybase/runtime';
@@ -36,6 +37,7 @@ export interface LocalBackendDeps {
   verifier: Verifier;
   publisher: Publisher;
   registry: AppRegistry;
+  scheduleManager?: ScheduleManager;
   uiBridge: UiBridge;
   honoApp: Hono;
   eventBus?: EventBus;
@@ -48,6 +50,7 @@ export class LocalBackend implements CozybaseBackend {
   private verifier: Verifier;
   private publisher: Publisher;
   private registry: AppRegistry;
+  private scheduleManager?: ScheduleManager;
   private uiBridge: UiBridge;
   private honoApp: Hono;
   private eventBus?: EventBus;
@@ -59,6 +62,7 @@ export class LocalBackend implements CozybaseBackend {
     this.verifier = deps.verifier;
     this.publisher = deps.publisher;
     this.registry = deps.registry;
+    this.scheduleManager = deps.scheduleManager;
     this.uiBridge = deps.uiBridge;
     this.honoApp = deps.honoApp;
     this.eventBus = deps.eventBus;
@@ -236,6 +240,12 @@ export class LocalBackend implements CozybaseBackend {
       }
 
       try { this.registry.stop(slug, 'draft'); } catch { /* ignore */ }
+
+      if (state?.stableStatus === 'running') {
+        await this.scheduleManager?.reloadApp(slug);
+      } else {
+        this.scheduleManager?.unloadApp(slug);
+      }
     }
 
     return result;

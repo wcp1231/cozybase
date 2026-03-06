@@ -5,6 +5,7 @@ import { AppManager } from '../../src/modules/apps/manager';
 import {
   MIGRATION_CREATE_TODOS,
   createTestApp,
+  createStableDb,
   createTestWorkspace,
   type TestWorkspaceHandle,
 } from '../helpers/test-workspace';
@@ -89,5 +90,35 @@ describe('AppManager', () => {
     expect(existsSync(join(handle.root, 'draft', 'target'))).toBe(false);
     expect(existsSync(join(handle.root, 'stable', 'survivor'))).toBe(true);
     expect(existsSync(join(handle.root, 'draft', 'survivor'))).toBe(true);
+  });
+
+  test('invokes stable lifecycle hooks on start/stop/delete', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    createStableDb(handle, 'myapp', [MIGRATION_CREATE_TODOS], [1]);
+
+    const db = handle.workspace.getPlatformDb();
+    db.query("UPDATE apps SET stable_status = 'stopped' WHERE slug = ?").run('myapp');
+    handle.workspace.refreshAppState('myapp');
+
+    const events: string[] = [];
+    const manager = new AppManager(
+      handle.workspace,
+      undefined,
+      undefined,
+      {
+        onStableStarted: (slug) => events.push(`start:${slug}`),
+        onStableStopped: (slug) => events.push(`stop:${slug}`),
+        onAppDeleted: (slug) => events.push(`delete:${slug}`),
+      },
+    );
+
+    manager.startStable('myapp');
+    manager.stopStable('myapp');
+    manager.delete('myapp');
+
+    expect(events).toEqual(['start:myapp', 'stop:myapp', 'delete:myapp']);
   });
 });

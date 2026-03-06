@@ -93,6 +93,33 @@ export const PLATFORM_MIGRATIONS: PlatformMigration[] = [
       `);
     },
   },
+  {
+    version: 3,
+    name: 'schedule_runs',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS schedule_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
+          schedule_name TEXT NOT NULL,
+          runtime_mode TEXT NOT NULL,
+          trigger_mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          function_ref TEXT NOT NULL,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          finished_at TEXT,
+          duration_ms INTEGER,
+          error_message TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_schedule_runs_app_schedule_started
+          ON schedule_runs(app_slug, schedule_name, started_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_schedule_runs_status
+          ON schedule_runs(status);
+      `);
+    },
+  },
 ];
 
 /**

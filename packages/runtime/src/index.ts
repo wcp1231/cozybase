@@ -12,6 +12,12 @@ import {
 export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type AppStatus } from './registry';
 export { type PlatformClient, type PlatformHandler, createInProcessPlatformClient } from './platform-client';
 export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
+export {
+  executeFunctionReference,
+  toFunctionResponse,
+  type FunctionReference,
+  type ExecuteFunctionReferenceOptions,
+} from './modules/functions/executor';
 export { validateSql, type SqlMode, type SqlValidationResult } from './modules/db/sql-safety';
 
 export interface RuntimeOptions {
@@ -31,6 +37,8 @@ export function createRuntime(options: RuntimeOptions = {}): {
   app: Hono;
   registry: AppRegistry;
   platformClient: PlatformClient;
+  stablePlatformClient: PlatformClient;
+  draftPlatformClient: PlatformClient;
 } {
   const app = new Hono();
   const registry = new AppRegistry();
@@ -75,5 +83,11 @@ export function createRuntime(options: RuntimeOptions = {}): {
   app.route('/draft/apps/:name/fn', draftFn);
   app.route('/draft/apps/:name', draftUi);
 
-  return { app, registry, platformClient: stablePlatformClient };
+  return {
+    app,
+    registry,
+    platformClient: stablePlatformClient,
+    stablePlatformClient,
+    draftPlatformClient,
+  };
 }

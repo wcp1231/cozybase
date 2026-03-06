@@ -6,6 +6,18 @@ import type { FunctionModule, HttpMethod } from './types';
 import { HTTP_METHODS } from './types';
 import { buildFunctionContext } from './context';
 
+const FUNCTION_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+export interface FunctionReference {
+  functionName: string;
+  exportName?: string;
+}
+
+export interface ExecuteFunctionReferenceOptions {
+  request?: Request;
+  trigger?: 'http' | 'cron';
+}
+
 /**
  * Load and execute a function from an AppEntry's functionsDir.
  * Handles module loading, caching (stable mode), and response conversion.
@@ -17,21 +29,18 @@ export async function executeFunction(
   platformClient: PlatformClient,
 ): Promise<Response> {
   // Validate function name: reject _ prefix and invalid names
-  if (functionName.startsWith('_') || !/^[a-zA-Z0-9_-]+$/.test(functionName)) {
+  if (functionName.startsWith('_') || !isValidFunctionName(functionName)) {
     return jsonError(404, 'NOT_FOUND', `Function '${functionName}' not found`);
   }
 
-  const filePath = join(entry.functionsDir, `${functionName}.ts`);
-  if (!existsSync(filePath)) {
-    return jsonError(404, 'NOT_FOUND', `Function '${functionName}' not found`);
-  }
-
-  // Load module
   let mod: FunctionModule;
   try {
-    mod = await loadModule(entry, functionName, filePath);
+    mod = await loadFunctionModule(entry, functionName);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : `Function '${functionName}' not found`;
+    if (!existsSync(join(entry.functionsDir, `${functionName}.ts`))) {
+      return jsonError(404, 'NOT_FOUND', `Function '${functionName}' not found`);
+    }
     const stack = entry.mode === 'draft' && err instanceof Error ? err.stack : undefined;
     return jsonError(500, 'FUNCTION_LOAD_ERROR', message, stack);
   }
@@ -45,10 +54,13 @@ export async function executeFunction(
   }
 
   // Build context and execute
-  const ctx = buildFunctionContext(entry, functionName, request, platformClient);
+  const ctx = buildFunctionContext(entry, functionName, platformClient, {
+    request,
+    trigger: 'http',
+  });
   try {
     const result = await handler(ctx);
-    return toResponse(result);
+    return toFunctionResponse(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const stack = entry.mode === 'draft' && err instanceof Error ? err.stack : undefined;
@@ -56,11 +68,46 @@ export async function executeFunction(
   }
 }
 
-async function loadModule(
+/**
+ * Execute a function by direct export reference (e.g. file + exportName), without HTTP routing.
+ * Used by the schedule subsystem.
+ */
+export async function executeFunctionReference(
+  entry: AppEntry,
+  reference: FunctionReference,
+  platformClient: PlatformClient,
+  options: ExecuteFunctionReferenceOptions = {},
+): Promise<unknown> {
+  const { functionName } = reference;
+  if (!isValidFunctionName(functionName)) {
+    throw new Error(`Invalid function name '${functionName}'`);
+  }
+
+  const mod = await loadFunctionModule(entry, functionName);
+  const exportName = reference.exportName ?? 'default';
+  const handler = mod[exportName];
+
+  if (!handler) {
+    throw new Error(`Export '${exportName}' not found in function '${functionName}'`);
+  }
+
+  const ctx = buildFunctionContext(entry, functionName, platformClient, {
+    request: options.request,
+    trigger: options.trigger ?? 'cron',
+  });
+
+  return await handler(ctx);
+}
+
+export async function loadFunctionModule(
   entry: AppEntry,
   functionName: string,
-  filePath: string,
 ): Promise<FunctionModule> {
+  const filePath = join(entry.functionsDir, `${functionName}.ts`);
+  if (!existsSync(filePath)) {
+    throw new Error(`Function '${functionName}' not found`);
+  }
+
   // Draft mode: always reload (cache bust)
   if (entry.mode === 'draft') {
     return await import(filePath + '?t=' + Date.now());
@@ -75,7 +122,7 @@ async function loadModule(
   return mod!;
 }
 
-function toResponse(result: unknown): Response {
+export function toFunctionResponse(result: unknown): Response {
   if (result instanceof Response) {
     return result;
   }
@@ -93,4 +140,8 @@ function jsonError(status: number, code: string, message: string, stack?: string
     JSON.stringify({ error: { code, message, ...(stack ? { stack } : {}) } }),
     { status, headers: { 'Content-Type': 'application/json' } },
   );
+}
+
+function isValidFunctionName(functionName: string): boolean {
+  return FUNCTION_NAME_PATTERN.test(functionName);
 }

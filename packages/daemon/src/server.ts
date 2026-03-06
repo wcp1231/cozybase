@@ -23,6 +23,7 @@ import { SessionStore } from './agent/session-store';
 import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
 import { initWorkspace } from './workspace-init';
 import { eventBus } from './core/event-bus';
+import { ScheduleManager } from './core/schedule-manager';
 import type { AgentProvider } from '@cozybase/agent';
 import { ClaudeCodeProvider, CodexProvider } from '@cozybase/agent';
 import { startInProcessMcpHttpBridge, type InProcessMcpHttpBridge } from './mcp/http-bridge';
@@ -81,13 +82,48 @@ export function createServer(config: Config) {
     },
   };
 
-  const { app: runtimeApp, registry } = createRuntime({ platformHandler });
+  const {
+    app: runtimeApp,
+    registry,
+    stablePlatformClient,
+    draftPlatformClient,
+  } = createRuntime({ platformHandler });
+
+  const scheduleManager = new ScheduleManager({
+    platformRepo: workspace.getPlatformRepo(),
+    registry,
+    stablePlatformClient,
+    draftPlatformClient,
+  });
 
   // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
-  const runtimeStartup = initializeRuntime(workspace, registry, publisher, justInitialized);
+  const runtimeStartup = initializeRuntime(
+    workspace,
+    registry,
+    publisher,
+    scheduleManager,
+    justInitialized,
+  );
 
   // --- Shared AppManager (used by REST routes and agent infrastructure) ---
-  const appManager = new AppManager(workspace, registry, draftReconciler);
+  const appManager = new AppManager(
+    workspace,
+    registry,
+    draftReconciler,
+    {
+      onStableStarted: (appSlug) => {
+        void scheduleManager.loadApp(appSlug).catch((err) => {
+          console.error(`Failed to load schedules for '${appSlug}' after start`, err);
+        });
+      },
+      onStableStopped: (appSlug) => {
+        scheduleManager.unloadApp(appSlug);
+      },
+      onAppDeleted: (appSlug) => {
+        scheduleManager.unloadApp(appSlug);
+      },
+    },
+  );
 
   // --- Global middleware ---
   app.use('*', cors());
@@ -231,8 +267,28 @@ export function createServer(config: Config) {
       } catch {
         // Ignore if draft was not running.
       }
+
+      if (state?.stableStatus === 'running') {
+        await scheduleManager.reloadApp(appSlug);
+      } else {
+        scheduleManager.unloadApp(appSlug);
+      }
     }
 
+    return c.json({ data: result });
+  });
+
+  app.post('/draft/apps/:appSlug/schedule/:scheduleName/trigger', draftMgmtMiddleware, async (c) => {
+    const appSlug = c.req.param('appSlug')!;
+    const scheduleName = c.req.param('scheduleName')!;
+    const result = await scheduleManager.triggerManual(appSlug, scheduleName, 'draft');
+    return c.json({ data: result });
+  });
+
+  app.post('/stable/apps/:appSlug/schedule/:scheduleName/trigger', draftMgmtMiddleware, async (c) => {
+    const appSlug = c.req.param('appSlug')!;
+    const scheduleName = c.req.param('scheduleName')!;
+    const result = await scheduleManager.triggerManual(appSlug, scheduleName, 'stable');
     return c.json({ data: result });
   });
 
@@ -277,6 +333,7 @@ export function createServer(config: Config) {
     verifier,
     publisher,
     registry,
+    scheduleManager,
     uiBridge,
     honoApp: app,
     eventBus,
@@ -469,7 +526,9 @@ export function createServer(config: Config) {
     verifier,
     publisher,
     startup,
+    scheduleManager,
     shutdownAgentInfra: async () => {
+      scheduleManager.shutdown();
       if (codexHttpBridge) {
         await codexHttpBridge.close().catch((err) => {
           console.error('Failed to close Codex MCP bridge:', err);
@@ -499,6 +558,7 @@ async function initializeRuntime(
   workspace: Workspace,
   registry: AppRegistry,
   publisher: Publisher,
+  scheduleManager: ScheduleManager,
   justInitialized: boolean,
 ) {
   // Auto-publish template apps on first workspace initialization
@@ -539,6 +599,7 @@ async function initializeRuntime(
           uiDir: join(appContext.stableDataDir, 'ui'),
         });
         console.log(`  Started app: ${appDef.slug}:stable`);
+        await scheduleManager.loadApp(appDef.slug);
       } catch (err) {
         console.error(`  Failed to start ${appDef.slug}:stable:`, err);
       }

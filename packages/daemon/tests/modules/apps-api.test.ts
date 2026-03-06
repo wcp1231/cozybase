@@ -8,6 +8,7 @@ import {
   createTestApp,
   createStableDb,
   addMigration,
+  setAppSpec,
   MIGRATION_CREATE_TODOS,
   MIGRATION_ADD_PRIORITY,
   TEST_UI_PAGES_JSON,
@@ -630,6 +631,171 @@ describe('Management API (/api/v1/apps)', () => {
 
       const res = await app.request('/api/v1/apps/nonexistent', { method: 'DELETE' });
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('schedule trigger API', () => {
+    test('schedule manager follows publish/start/stop lifecycle', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: {
+          'jobs.ts': `
+export async function run() { return { ok: true }; }
+`,
+        },
+      });
+      setAppSpec(handle, 'myapp', {
+        description: 'test',
+        schedules: [
+          { name: 'daily', cron: '*/5 * * * *', function: 'jobs:run' },
+        ],
+      });
+
+      const { app, scheduleManager } = createServer(createTestConfig(handle.root));
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
+      expect((await jsonBody(publishRes)).data.success).toBe(true);
+      expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual(['daily']);
+
+      const stopRes = await app.request('/api/v1/apps/myapp/stop', { method: 'POST' });
+      expect(stopRes.status).toBe(200);
+      expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual([]);
+
+      const startRes = await app.request('/api/v1/apps/myapp/start', { method: 'POST' });
+      expect(startRes.status).toBe(200);
+      expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual(['daily']);
+
+      setAppSpec(handle, 'myapp', {
+        description: 'test',
+        stable_status: 'running',
+        schedules: [
+          { name: 'weekly', cron: '*/10 * * * *', function: 'jobs:run' },
+        ],
+      });
+
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      const publishRes2 = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
+      expect((await jsonBody(publishRes2)).data.success).toBe(true);
+      expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual(['weekly']);
+    });
+
+    test('POST /draft/apps/:appSlug/schedule/:scheduleName/trigger executes schedule in draft mode', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: {
+          'jobs.ts': `
+export async function run(ctx) {
+  return { mode: ctx.mode, trigger: ctx.trigger, hasRequest: ctx.req !== undefined };
+}
+`,
+        },
+      });
+      setAppSpec(handle, 'myapp', {
+        description: 'test',
+        schedules: [
+          { name: 'daily', cron: '*/5 * * * *', function: 'jobs:run' },
+        ],
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+      const triggerRes = await app.request('/draft/apps/myapp/schedule/daily/trigger', {
+        method: 'POST',
+      });
+      expect(triggerRes.status).toBe(200);
+
+      const body = await jsonBody(triggerRes);
+      expect(body.data.status).toBe('success');
+      expect(body.data.runtimeMode).toBe('draft');
+      expect(body.data.result).toEqual({ mode: 'draft', trigger: 'cron', hasRequest: false });
+    });
+
+    test('POST /stable/apps/:appSlug/schedule/:scheduleName/trigger executes schedule in stable mode', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: {
+          'jobs.ts': `
+export async function run(ctx) {
+  return { mode: ctx.mode, trigger: ctx.trigger, hasRequest: ctx.req !== undefined };
+}
+`,
+        },
+      });
+      setAppSpec(handle, 'myapp', {
+        description: 'test',
+        schedules: [
+          { name: 'daily', cron: '*/5 * * * *', function: 'jobs:run' },
+        ],
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
+      expect((await jsonBody(publishRes)).data.success).toBe(true);
+
+      const triggerRes = await app.request('/stable/apps/myapp/schedule/daily/trigger', {
+        method: 'POST',
+      });
+      expect(triggerRes.status).toBe(200);
+
+      const body = await jsonBody(triggerRes);
+      expect(body.data.status).toBe('success');
+      expect(body.data.runtimeMode).toBe('stable');
+      expect(body.data.result).toEqual({ mode: 'stable', trigger: 'cron', hasRequest: false });
+    });
+
+    test('returns 404 when schedule does not exist', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+      const triggerRes = await app.request('/draft/apps/myapp/schedule/not-exists/trigger', {
+        method: 'POST',
+      });
+      expect(triggerRes.status).toBe(404);
+
+      const body = await jsonBody(triggerRes);
+      expect(body.error.code).toBe('NOT_FOUND');
+    });
+
+    test('reports execution error when handler export is missing', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: {
+          'jobs.ts': `
+export async function existing() {
+  return { ok: true };
+}
+`,
+        },
+      });
+      setAppSpec(handle, 'myapp', {
+        description: 'test',
+        schedules: [
+          { name: 'daily', cron: '*/5 * * * *', function: 'jobs:missingExport' },
+        ],
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+      const triggerRes = await app.request('/draft/apps/myapp/schedule/daily/trigger', {
+        method: 'POST',
+      });
+      expect(triggerRes.status).toBe(200);
+
+      const body = await jsonBody(triggerRes);
+      expect(body.data.status).toBe('error');
+      expect(body.data.errorMessage).toContain('missingExport');
     });
   });
 

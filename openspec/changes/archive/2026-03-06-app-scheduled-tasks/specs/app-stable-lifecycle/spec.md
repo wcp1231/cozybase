@@ -1,9 +1,5 @@
-# APP Stable Lifecycle
+## MODIFIED Requirements
 
-## Purpose
-
-管理 Stable 版本 APP 的 running/stopped 运行时状态，提供 start/stop 能力。
-## Requirements
 ### Requirement: Stable 版本具有 running 和 stopped 两种运行时状态
 已发布的 APP 的 Stable 版本 SHALL 具有 `running` 和 `stopped` 两种持久化运行时状态。`running` 状态的 Stable 版本 SHALL 在 Daemon 中加载并运行 runtime 实例。`stopped` 状态的 Stable 版本 SHALL 不运行 runtime 实例。Daemon 启动时，系统 SHALL 仅在 APP 的 `hasDraft == true` 且 Draft 环境已物化（例如存在 `.reconcile-state.json`）时启动 Draft runtime；对于 `hasDraft == false` 的 APP，系统 MUST NOT 仅因为存在已物化 Draft 痕迹而自动恢复 Draft runtime。
 
@@ -109,4 +105,3 @@
 - **WHEN** 调用 `startStable(appName)`
 - **AND** APP 从未发布过（`stable_status` 为 null）
 - **THEN** 系统 SHALL 返回 BadRequestError
-

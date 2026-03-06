@@ -42,11 +42,12 @@ Each function receives a `ctx` parameter with the following properties:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `ctx.req` | `Request` | Web standard Request object |
+| `ctx.req` | `Request \| undefined` | Web standard Request object（HTTP 触发时存在，cron 触发时为 `undefined`） |
 | `ctx.db` | `DatabaseClient` | Database operations interface |
 | `ctx.env` | `Record<string, string>` | Environment variables |
 | `ctx.app` | `{ name: string }` | APP metadata |
 | `ctx.mode` | `'stable' \| 'draft'` | Current runtime mode |
+| `ctx.trigger` | `'http' \| 'cron'` | Trigger source |
 | `ctx.log` | `Logger` | Logging interface |
 | `ctx.fetch` | `typeof fetch` | Global fetch |
 | `ctx.platform` | `PlatformClient` | Platform access client |
@@ -125,6 +126,13 @@ export function GET(ctx) {
 
 ```typescript
 export async function POST(ctx) {
+  if (!ctx.req) {
+    return new Response(JSON.stringify({ error: 'HTTP request is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   // Read JSON body
   const body = await ctx.req.json();
 
@@ -143,6 +151,10 @@ export async function POST(ctx) {
 // functions/todos.ts
 
 export async function GET(ctx) {
+  if (!ctx.req) {
+    return { data: [] };
+  }
+
   const url = new URL(ctx.req.url);
   const status = url.searchParams.get('status');
 
@@ -158,6 +170,13 @@ export async function GET(ctx) {
 }
 
 export async function POST(ctx) {
+  if (!ctx.req) {
+    return new Response(JSON.stringify({ error: 'HTTP request is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const body = await ctx.req.json();
   const title = body?.title?.trim?.();
 
@@ -174,6 +193,13 @@ export async function POST(ctx) {
 }
 
 export async function DELETE(ctx) {
+  if (!ctx.req) {
+    return new Response(JSON.stringify({ error: 'HTTP request is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const body = await ctx.req.json();
   const id = body?.id;
 
