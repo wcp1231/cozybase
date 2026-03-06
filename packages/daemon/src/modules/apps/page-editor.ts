@@ -474,6 +474,58 @@ function buildOutlineNode(node: ComponentSchema): OutlineNode {
 
 /** Page id format: lowercase alphanumeric and hyphens, must start with a letter or digit. */
 const PAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const NESTED_REF_TOKEN_PATTERN = /^\$[A-Za-z_][A-Za-z0-9_-]*$/;
+
+function resolveNestedRefs<T>(
+  value: T,
+  refMap: ReadonlyMap<string, string>,
+  path: string,
+): T {
+  if (typeof value === 'string') {
+    if (!NESTED_REF_TOKEN_PATTERN.test(value)) {
+      return value;
+    }
+
+    const resolved = refMap.get(value);
+    if (resolved === undefined) {
+      throw new PageEditorError(
+        `Nested reference "${value}" at "${path}" is not defined in the current operation context.`,
+        'VALIDATION_ERROR',
+      );
+    }
+    return resolved as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => resolveNestedRefs(item, refMap, `${path}[${index}]`)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = resolveNestedRefs(child, refMap, `${path}.${key}`);
+    }
+    return result as T;
+  }
+
+  return value;
+}
+
+function collectNestedRefTokens(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return NESTED_REF_TOKEN_PATTERN.test(value) ? [value] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectNestedRefTokens(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((child) => collectNestedRefTokens(child));
+  }
+
+  return [];
+}
 
 function getNodeInMemory(data: PagesJson, nodeId: string): ComponentSchema {
   const location = findNodeById(data, nodeId);
@@ -491,14 +543,18 @@ function insertNodeInMemory(
   parentId: string,
   nodeData: Record<string, unknown>,
   index?: number,
+  availableRefs: ReadonlyMap<string, string> = new Map(),
 ): { node: ComponentSchema; nodeId: string } {
   // Auto-generate ID — remove any id the caller may have specified
   const nodeType = String(nodeData.type ?? 'unknown');
+  const newNodeId = generateNodeId(nodeType);
+  const refContext = new Map(availableRefs);
+  refContext.set('$self', newNodeId);
+  const resolvedNodeData = resolveNestedRefs(nodeData, refContext, 'node');
   const newNode = {
-    ...nodeData,
-    id: generateNodeId(nodeType),
+    ...resolvedNodeData,
+    id: newNodeId,
   } as ComponentSchema;
-  const newNodeId = (newNode as { id: string }).id;
 
   // Check if parentId refers to a page (top-level body insertion)
   const page = data.pages.find((p) => p.id === parentId);
@@ -808,9 +864,17 @@ function getOperationDependencies(operation: BatchOperation): string[] {
     case 'get':
     case 'update':
     case 'delete':
-      return [operation.node_id];
+      return [
+        operation.node_id,
+        ...(operation.op === 'update'
+          ? collectNestedRefTokens(operation.props).filter((token) => token !== '$self')
+          : []),
+      ];
     case 'insert':
-      return [operation.parent_id];
+      return [
+        operation.parent_id,
+        ...collectNestedRefTokens(operation.node).filter((token) => token !== '$self'),
+      ];
     case 'move':
       return [operation.node_id, operation.new_parent_id];
     case 'page_remove':
@@ -1046,7 +1110,13 @@ export function batchOperations(
         }
         case 'insert': {
           const parentId = resolveRefOrThrow(operation.parent_id, refMap);
-          const { node, nodeId } = insertNodeInMemory(data, parentId, operation.node, operation.index);
+          const { node, nodeId } = insertNodeInMemory(
+            data,
+            parentId,
+            operation.node,
+            operation.index,
+            refMap,
+          );
           markRefResolved(refMap, failedRefs, operation.ref, nodeId);
           hasSuccessfulWrite = hasSuccessfulWrite || isWriteBatchOperation(operation);
           results.push({
@@ -1059,7 +1129,8 @@ export function batchOperations(
         }
         case 'update': {
           const nodeId = resolveRefOrThrow(operation.node_id, refMap);
-          const node = updateNodeInMemory(data, nodeId, operation.props);
+          const resolvedProps = resolveNestedRefs(operation.props, refMap, 'props');
+          const node = updateNodeInMemory(data, nodeId, resolvedProps);
           markRefResolved(refMap, failedRefs, operation.ref, nodeId);
           hasSuccessfulWrite = hasSuccessfulWrite || isWriteBatchOperation(operation);
           results.push({

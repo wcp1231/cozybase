@@ -83,7 +83,7 @@ update_app_file(app_name: "my-app", path: "ui/pages.json")
 #### Why use UI tools instead of raw file editing?
 
 - **IDs are auto-generated** — You don't need to invent unique IDs; the system generates stable `{type}-{nanoid5}` IDs automatically
-- **Two-pass wiring when IDs matter** — `ui_batch` refs only work in operation fields, not inside nested `node` / `props` JSON; create components first, then update `reload.target` or expression references in a follow-up call if needed
+- **Nested ref wiring is supported** — use exact-match `"$self"` inside `ui_insert` / `ui_batch.insert` payloads, or earlier batch refs like `"$table"` inside `ui_batch.insert` / `ui_batch.update` nested JSON
 - **Validated before write** — Every edit is validated against the full schema before writing; invalid edits are rejected without corrupting the file
 - **Fewer round trips** — `ui_batch` can complete multiple related edits in one call, reducing repeated read/validate/write cycles
 - **Targeted changes** — Use `ui_get` to inspect a specific node, then `ui_update` with only the props you want to change

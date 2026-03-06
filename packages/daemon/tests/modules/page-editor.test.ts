@@ -28,6 +28,7 @@ import {
   removePage,
   updatePageMeta,
   reorderPage,
+  batchOperations,
   PageEditorError,
 } from '../../src/modules/apps/page-editor';
 
@@ -205,6 +206,48 @@ describe('insertNode', () => {
     const id = (inserted as Record<string, unknown>).id as string;
     const node = getNode(getCtx(), id);
     expect((node as Record<string, unknown>).id).toBe(id);
+  });
+
+  test('resolves nested $self to the inserted node id', () => {
+    const inserted = insertNode(getCtx(), 'row-main', {
+      type: 'button',
+      label: 'Refresh self',
+      action: [{ type: 'reload', target: '$self' }],
+    }) as Record<string, unknown>;
+
+    const action = (inserted.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(inserted.id);
+  });
+
+  test('keeps expression strings unchanged during nested ref resolution', () => {
+    const inserted = insertNode(getCtx(), 'row-main', {
+      type: 'button',
+      label: 'Open details',
+      action: { type: 'link', url: '${row.id}' },
+    }) as Record<string, unknown>;
+
+    const action = inserted.action as Record<string, unknown>;
+    expect(action.url).toBe('${row.id}');
+  });
+
+  test('throws VALIDATION_ERROR for unresolved nested refs', () => {
+    expect(() =>
+      insertNode(getCtx(), 'row-main', {
+        type: 'button',
+        label: 'Broken',
+        action: [{ type: 'reload', target: '$missing' }],
+      }),
+    ).toThrow(PageEditorError);
+
+    try {
+      insertNode(getCtx(), 'row-main', {
+        type: 'button',
+        label: 'Broken',
+        action: [{ type: 'reload', target: '$missing' }],
+      });
+    } catch (e) {
+      expect((e as PageEditorError).code).toBe('VALIDATION_ERROR');
+    }
   });
 
   test('throws INVALID_PARENT for non-container type', () => {
@@ -421,6 +464,138 @@ describe('read stability — legacy no-id files', () => {
 
     expect(ids1).toEqual(ids2);
     expect(ids1.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+  });
+});
+
+// ============================================================
+// batchOperations — nested refs
+// ============================================================
+
+describe('batchOperations — nested refs', () => {
+  test('resolves nested $self in insert payloads', () => {
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'insert',
+        parent_id: 'row-main',
+        node: {
+          type: 'button',
+          label: 'Refresh self',
+          action: [{ type: 'reload', target: '$self' }],
+        },
+      },
+    ]);
+
+    expect(result.committed).toBe(true);
+    expect(result.results[0].status).toBe('ok');
+
+    const node = result.results[0].node as Record<string, unknown>;
+    const action = (node.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(node.id);
+  });
+
+  test('resolves earlier batch refs inside nested insert payloads', () => {
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'insert',
+        ref: '$table',
+        parent_id: 'page-home',
+        node: {
+          type: 'table',
+          api: { url: '/fn/_db/tables/users', method: 'GET' },
+          columns: [{ name: 'id', label: 'ID' }],
+        },
+      },
+      {
+        op: 'insert',
+        parent_id: 'row-main',
+        node: {
+          type: 'button',
+          label: 'Refresh table',
+          action: [{ type: 'reload', target: '$table' }],
+        },
+      },
+    ]);
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((item) => item.status)).toEqual(['ok', 'ok']);
+
+    const tableId = result.results[0].node_id;
+    const button = result.results[1].node as Record<string, unknown>;
+    const action = (button.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(tableId);
+  });
+
+  test('resolves earlier batch refs inside nested update props', () => {
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'insert',
+        ref: '$table',
+        parent_id: 'page-home',
+        node: {
+          type: 'table',
+          api: { url: '/fn/_db/tables/users', method: 'GET' },
+          columns: [{ name: 'id', label: 'ID' }],
+        },
+      },
+      {
+        op: 'insert',
+        ref: '$button',
+        parent_id: 'row-main',
+        node: {
+          type: 'button',
+          label: 'Refresh table',
+          action: { type: 'link', url: '/users' },
+        },
+      },
+      {
+        op: 'update',
+        node_id: '$button',
+        props: {
+          action: [{ type: 'reload', target: '$table' }],
+        },
+      },
+    ]);
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((item) => item.status)).toEqual(['ok', 'ok', 'ok']);
+
+    const updated = result.results[2].node as Record<string, unknown>;
+    const action = (updated.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(result.results[0].node_id);
+  });
+
+  test('errors on unresolved nested refs in batch payloads', () => {
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'insert',
+        parent_id: 'row-main',
+        node: {
+          type: 'button',
+          label: 'Broken',
+          action: [{ type: 'reload', target: '$missing' }],
+        },
+      },
+    ]);
+
+    expect(result.committed).toBe(false);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[0].error?.code).toBe('VALIDATION_ERROR');
+  });
+
+  test('rejects $self in update props', () => {
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'update',
+        node_id: 'btn-save',
+        props: {
+          action: [{ type: 'reload', target: '$self' }],
+        },
+      },
+    ]);
+
+    expect(result.committed).toBe(false);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[0].error?.code).toBe('VALIDATION_ERROR');
   });
 });
 

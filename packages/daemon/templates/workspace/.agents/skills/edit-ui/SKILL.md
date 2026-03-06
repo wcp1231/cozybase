@@ -119,9 +119,11 @@ Upload, reconcile, test, verify, and publish following the standard development 
 
 After any UI edit, sync with: `update_app_file(app_name: "my-app", path: "ui/pages.json")`
 
-If a newly created component's generated ID must be used in `reload.target`, `action`, or an expression, split the work into two calls:
-- First call: create the component and capture the returned `node_id`
-- Second call: update the dependent component with that concrete ID
+When nested payload JSON must point at the inserted component itself, use `"$self"`:
+- Example: `{ "type": "reload", "target": "$self" }`
+
+When one batch operation needs to reference a component created by an earlier batch operation inside nested JSON, use that earlier operation's `ref` as an exact string value:
+- Example: `{ "type": "reload", "target": "$table" }`
 
 ## Common Page Patterns
 
@@ -144,7 +146,7 @@ If a newly created component's generated ID must be used in `reload.target`, `ac
 
 ## Tips
 
-- New components always receive generated IDs; when later references need that ID, create first and wire references in a second pass
+- New components always receive generated IDs; use `"$self"` or earlier batch refs when nested JSON needs the generated ID in the same call
 - Use tabs with `${tabs-id.value}` in table `api.params` for filtering
 - Put forms inside `dialog` actions for create/edit workflows
 - Chain actions on existing, already-known component IDs: `onSuccess: [{ "type": "reload", "target": "existing-table-id" }, { "type": "close" }]`

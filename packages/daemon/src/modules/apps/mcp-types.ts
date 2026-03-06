@@ -400,6 +400,7 @@ export const TOOL_DESCRIPTIONS = {
   ui_insert:
     'Insert a new component node into a parent container in `ui/pages.json`.\n\n' +
     'The system auto-generates a stable ID for the new node.\n' +
+    'Use nested `"$self"` in `node` when a nested field must reference the inserted node\'s generated ID.\n' +
     'Returns the inserted node including its generated ID.\n\n' +
     '**Prefer `ui_batch` for related multi-step edits** to reduce round trips and keep dependent operations in one call.\n\n' +
     '**Note:** Only container types (`page`, `row`, `col`, `card`, `dialog`) can receive children.\n\n' +
@@ -442,7 +443,8 @@ export const TOOL_DESCRIPTIONS = {
     '- page_remove: { page_id }\n' +
     '- page_update: { page_id, title }\n\n' +
     'All ops accept optional `ref` (must start with `$`).\n' +
-    'Refs are only resolved in top-level operation fields such as `parent_id` or `node_id`; nested values inside `node` or `props` are not interpolated.\n' +
+    'Refs resolve in top-level operation fields and also in nested exact-match string values inside `insert.node` and `update.props`.\n' +
+    'Use `"$self"` inside `insert.node` to reference the inserted node\'s generated ID; unresolved nested refs raise a validation error.\n' +
     'Insert always generates a fresh component ID and ignores any caller-provided `id`.\n' +
     'Cannot modify `id` or `type` via update (use delete + insert).\n' +
     'Call `get_guide("ui/batch")` for examples.',

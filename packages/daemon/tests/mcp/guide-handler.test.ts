@@ -64,7 +64,7 @@ describe('handleGetGuide', () => {
     const schedules = handleGetGuide('scheduled-tasks');
 
     expect(uiBatch).toContain('# ui_batch');
-    expect(uiBatch).toContain('Refs are only resolved in operation-level fields');
+    expect(uiBatch).toContain('Refs are always resolved in operation-level fields');
     expect(schedules).toContain('# Scheduled Tasks');
     expect(schedules).toContain('Manual Trigger Endpoints');
   });

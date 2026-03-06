@@ -274,6 +274,21 @@ describe('handleUiInsert', () => {
     expect((fetched as Record<string, unknown>).id).toBe(id);
   });
 
+  test('resolves nested $self during insert', () => {
+    const inserted = handleUiInsert(makeCtx(), {
+      app_name: APP_NAME,
+      parent_id: 'row-actions',
+      node: {
+        type: 'button',
+        label: 'Refresh self',
+        action: [{ type: 'reload', target: '$self' }],
+      },
+    }) as Record<string, unknown>;
+
+    const action = (inserted.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(inserted.id);
+  });
+
   test('inserts into page body when parent_id is a page id', () => {
     const inserted = handleUiInsert(makeCtx(), {
       app_name: APP_NAME,
@@ -661,6 +676,98 @@ describe('handleUiBatch', () => {
     expect(outline.pages[0].body).toHaveLength(1);
   });
 
+  test('resolves nested $self in batch insert payloads', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        {
+          op: 'insert',
+          parent_id: 'row-actions',
+          node: {
+            type: 'button',
+            label: 'Refresh self',
+            action: [{ type: 'reload', target: '$self' }],
+          },
+        },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    const node = result.results[0].node as Record<string, unknown>;
+    const action = (node.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(node.id);
+  });
+
+  test('resolves nested refs from earlier batch operations', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        {
+          op: 'insert',
+          ref: '$table',
+          parent_id: 'page-main',
+          node: {
+            type: 'table',
+            api: { url: '/fn/_db/tables/users', method: 'GET' },
+            columns: [{ name: 'id', label: 'ID' }],
+          },
+        },
+        {
+          op: 'insert',
+          parent_id: 'row-actions',
+          node: {
+            type: 'button',
+            label: 'Refresh table',
+            action: [{ type: 'reload', target: '$table' }],
+          },
+        },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok']);
+
+    const button = result.results[1].node as Record<string, unknown>;
+    const action = (button.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(result.results[0].node_id);
+  });
+
+  test('resolves nested refs in update props', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        {
+          op: 'insert',
+          ref: '$table',
+          parent_id: 'page-main',
+          node: {
+            type: 'table',
+            api: { url: '/fn/_db/tables/users', method: 'GET' },
+            columns: [{ name: 'id', label: 'ID' }],
+          },
+        },
+        {
+          op: 'insert',
+          ref: '$button',
+          parent_id: 'row-actions',
+          node: { type: 'button', label: 'Refresh table', action: { type: 'link', url: '/users' } },
+        },
+        {
+          op: 'update',
+          node_id: '$button',
+          props: { action: [{ type: 'reload', target: '$table' }] },
+        },
+      ],
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok', 'ok']);
+
+    const updated = result.results[2].node as Record<string, unknown>;
+    const action = (updated.action as Array<Record<string, unknown>>)[0];
+    expect(action.target).toBe(result.results[0].node_id);
+  });
+
   test('does not write pages.json for pure get batches', () => {
     const filePath = join(appsDir, APP_NAME, 'ui', 'pages.json');
     const before = readFileSync(filePath, 'utf-8');
@@ -709,6 +816,27 @@ describe('handleUiBatch', () => {
     expect(result.results[1].status).toBe('error');
     expect(result.results[0].error?.code).toBe('FORBIDDEN_UPDATE');
     expect(result.results[1].error?.code).toBe('FORBIDDEN_UPDATE');
+  });
+
+  test('errors on unresolved nested refs in batch payloads', () => {
+    const result = handleUiBatch(makeCtx(), {
+      app_name: APP_NAME,
+      operations: [
+        {
+          op: 'insert',
+          parent_id: 'row-actions',
+          node: {
+            type: 'button',
+            label: 'Broken',
+            action: [{ type: 'reload', target: '$missing' }],
+          },
+        },
+      ],
+    });
+
+    expect(result.committed).toBe(false);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[0].error?.code).toBe('VALIDATION_ERROR');
   });
 });
 

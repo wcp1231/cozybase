@@ -86,11 +86,25 @@ Every operation accepts an optional `ref` field (must start with `$`). The ref b
 - **page_add**: `ref` binds the page ID (same as the `id` you provided)
 - **get/update/delete/move**: `ref` binds the `node_id`
 
-Refs are only resolved in operation-level fields such as `parent_id`, `node_id`, `new_parent_id`, and `page_id`.
-Refs are **not** interpolated inside nested JSON like `node.action.target`, `node.api.params`, or `props`.
-If a new component's generated ID must be referenced from component JSON, do it in two passes:
-- First call: create the node and capture its returned `node_id`
-- Second call: update the dependent component with the real ID
+Refs are always resolved in operation-level fields such as `parent_id`, `node_id`, `new_parent_id`, and `page_id`.
+
+Nested exact-match string values are also resolved in:
+- `insert.node`
+- `update.props`
+
+Supported nested tokens:
+- `"$self"` inside `insert.node` → the inserted node's generated ID
+- earlier batch refs like `"$table"` or `"$row"` inside `insert.node` / `update.props`
+
+Nested refs only work when the full string value is exactly the token. These examples resolve:
+- `"target": "$self"`
+- `"target": "$table"`
+
+These examples do **not** resolve:
+- `"url": "/api/$table"`
+- `"text": "table = $table"`
+
+Unresolved nested refs raise a validation error.
 
 When an operation **fails**, any later operation that references its `$ref` is automatically **skipped** (status `skipped`). Unrelated operations continue normally.
 
@@ -162,24 +176,31 @@ ui_batch(app_name: "my-app", operations: [
 ])
 ```
 
-### Two-pass update when another component must reference a new ID
+### Reference the inserted node from inside its own payload
 
-First call:
+```
+ui_batch(app_name: "my-app", operations: [
+  { op: "insert", parent_id: "row-actions", node: {
+    type: "button",
+    label: "Refresh Self",
+    action: [{ type: "reload", target: "$self" }]
+  } }
+])
+```
+
+### Reference an earlier batch ref inside nested payload JSON
 
 ```
 ui_batch(app_name: "my-app", operations: [
   { op: "insert", ref: "$table", parent_id: "user-list", node: { type: "table", api: { url: "/fn/_db/tables/users", method: "GET" }, columns: [
     { name: "id", label: "ID" },
     { name: "name", label: "Name" }
-  ] } }
-])
-```
-
-Then read the returned `results[0].node_id` and use it in a follow-up call:
-
-```
-ui_batch(app_name: "my-app", operations: [
-  { op: "update", node_id: "btn-refresh", props: { action: { type: "reload", target: "table-ab123" } } }
+  ] } },
+  { op: "insert", parent_id: "row-actions", node: {
+    type: "button",
+    label: "Refresh Table",
+    action: [{ type: "reload", target: "$table" }]
+  } }
 ])
 ```
 
@@ -213,5 +234,6 @@ Result:
 
 - Cannot modify `id` or `type` via update — use delete + insert to change a node's type
 - Insert always generates a fresh component ID and ignores any caller-provided `id`
+- Nested refs only resolve when the full string value is exactly `"$self"` or an earlier batch ref like `"$table"`
 - Insert and move only work with container types: `page`, `row`, `col`, `card`, `dialog`
 - `ref` must start with `$` (e.g. `$myRef`, `$row1`)
