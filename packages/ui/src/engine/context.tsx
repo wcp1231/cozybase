@@ -31,6 +31,7 @@ interface ConfirmEntry {
 
 interface PageContextValue {
   baseUrl: string;
+  currentPath?: string;
   customComponents?: Record<string, CustomComponentSchema>;
   navigate?: (url: string) => void;
   // Component state
@@ -92,11 +93,13 @@ export function useConfirm(): ConfirmEntry | null {
 
 export function PageProvider({
   baseUrl,
+  currentPath,
   customComponents,
   navigate,
   children,
 }: {
   baseUrl: string;
+  currentPath?: string;
   customComponents?: Record<string, CustomComponentSchema>;
   navigate?: (url: string) => void;
   children: ReactNode;
@@ -133,6 +136,7 @@ export function PageProvider({
 
   const value: PageContextValue = {
     baseUrl,
+    currentPath,
     customComponents,
     navigate,
 

@@ -40,6 +40,7 @@ export function toArray<T>(value: unknown): T[] {
 export interface SchemaRendererProps {
   schema: PageSchema;
   baseUrl: string;
+  currentPath?: string;
   components?: Record<string, CustomComponentSchema>;
   params?: Record<string, string>;
   navigate?: (url: string) => void;
@@ -48,13 +49,19 @@ export interface SchemaRendererProps {
 export function SchemaRenderer({
   schema,
   baseUrl,
+  currentPath,
   components,
   params,
   navigate,
 }: SchemaRendererProps) {
   const extraContext = params ? { params } : undefined;
   return (
-    <PageProvider baseUrl={baseUrl} customComponents={components} navigate={navigate}>
+    <PageProvider
+      baseUrl={baseUrl}
+      currentPath={currentPath}
+      customComponents={components}
+      navigate={navigate}
+    >
       <PageBody body={schema.body} customComponents={components} extraContext={extraContext} />
       <DialogLayer customComponents={components} />
       <ConfirmLayer />

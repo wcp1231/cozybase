@@ -32,7 +32,7 @@ describe('loadAppLayoutData', () => {
       if (url === '/draft/apps/orders/ui') {
         return jsonResponse({
           data: {
-            pages: [{ id: 'home', title: 'Home', body: [] }],
+            pages: [{ path: 'home', title: 'Home', body: [] }],
           },
         });
       }
@@ -47,7 +47,7 @@ describe('loadAppLayoutData', () => {
     ]);
     expect(result.app.slug).toBe('orders');
     expect(result.pagesJson).toEqual({
-      pages: [{ id: 'home', title: 'Home', body: [] }],
+      pages: [{ path: 'home', title: 'Home', body: [] }],
     });
   });
 
@@ -85,7 +85,54 @@ describe('loadAppLayoutData', () => {
     ]);
   });
 
-  test('returns null pagesJson when draft UI is missing', async () => {
+  test('fallback prepares and retries UI when draft UI returns 404 first', async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    let uiCallCount = 0;
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+
+      if (url === '/api/v1/apps/orders') {
+        return jsonResponse({
+          data: {
+            slug: 'orders',
+            displayName: 'Orders',
+            description: 'Orders app',
+            stableStatus: 'running',
+            hasDraft: true,
+            current_version: 2,
+            published_version: 1,
+          },
+        });
+      }
+      if (url === '/draft/apps/orders/ui') {
+        uiCallCount += 1;
+        if (uiCallCount === 1) {
+          return jsonResponse({ error: { code: 'NOT_FOUND' } }, 404);
+        }
+        return jsonResponse({ data: { pages: [{ path: 'home', title: 'Home', body: [] }] } });
+      }
+      if (url === '/draft/apps/orders/prepare') {
+        return jsonResponse({ data: { success: true } });
+      }
+      throw new Error(`Unexpected fetch request: ${method} ${url}`);
+    };
+
+    const result = await loadAppLayoutData('orders', 'draft', fetchMock);
+
+    expect(calls).toEqual([
+      { url: '/api/v1/apps/orders', method: 'GET' },
+      { url: '/draft/apps/orders/ui', method: 'GET' },
+      { url: '/draft/apps/orders/prepare', method: 'POST' },
+      { url: '/draft/apps/orders/ui', method: 'GET' },
+    ]);
+    expect(result.pagesJson).toEqual({
+      pages: [{ path: 'home', title: 'Home', body: [] }],
+    });
+  });
+
+  test('throws explicit error when auto prepare fails', async () => {
     const calls: Array<{ url: string; method: string }> = [];
     const fetchMock: typeof fetch = async (input, init) => {
       const url = String(input);

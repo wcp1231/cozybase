@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Database, History, Loader2, Play } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
-import { type AppMode } from './content-slot';
+import { getDefaultPagePath, toAppPagePath, type AppMode } from './content-slot';
 import { AppSectionHeader } from '../features/apps/app-section-header';
 
 type ConsoleTab = 'errors' | 'schedules' | 'database';
@@ -82,10 +82,14 @@ export function AppConsolePage() {
     app,
     appLoading,
     appError,
+    pagesJson,
     toggleSidebar,
     sidebarVisible,
   } = useAppContext();
   const [searchParams, setSearchParams] = useSearchParams();
+  const appHomeTo = appName
+    ? toAppPagePath(appName, getDefaultPagePath(pagesJson?.pages ?? []), mode)
+    : undefined;
 
   const activeTab = parseConsoleTab(searchParams.get('tab'));
   const errorFilter = parseErrorSource(searchParams.get('source'));
@@ -164,8 +168,9 @@ export function AppConsolePage() {
         mode={mode}
         appName={appName}
         appDisplayName={app?.displayName}
+        appHomeTo={appHomeTo}
         stableStatus={app?.stableStatus ?? null}
-        sectionLabel="Console"
+        breadcrumbs={[{ label: 'Console' }]}
         toggleSidebar={toggleSidebar}
         sidebarVisible={sidebarVisible}
       />

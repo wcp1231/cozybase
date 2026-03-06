@@ -7,6 +7,7 @@ import { resolveExpression } from './expression';
 
 interface ActionContext {
   baseUrl: string;
+  currentPath?: string;
   expressionContext: ExpressionContext;
   triggerReload: (target: string) => void;
   openDialog: (entry: {
@@ -127,6 +128,7 @@ function handleLinkAction(
   const url = resolveUrl(
     String(resolveExpression(action.url, ctx.expressionContext) ?? action.url),
     ctx.baseUrl,
+    ctx.currentPath,
   );
   if (ctx.navigate) {
     ctx.navigate(url);
@@ -156,12 +158,17 @@ async function handleConfirmAction(
 
 // ---- Helpers ----
 
-function resolveUrl(url: string, baseUrl: string): string {
+function resolveUrl(url: string, baseUrl: string, currentPath?: string): string {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  // Relative URL like "/db/todo" → baseUrl + url
-  return baseUrl + url;
+  if (url.startsWith('/')) {
+    return baseUrl + url;
+  }
+
+  const pathBase = currentPath ?? `${baseUrl}/`;
+  const normalizedBase = pathBase.endsWith('/') ? pathBase : `${pathBase}/`;
+  return normalizedBase + url;
 }
 
 function resolveBody(

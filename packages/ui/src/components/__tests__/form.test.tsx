@@ -68,7 +68,7 @@ describe('FormRenderer', () => {
   describe('defaultValue expression resolution', () => {
     test('static defaultValue populates the input field', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -94,7 +94,7 @@ describe('FormRenderer', () => {
 
     test('expression defaultValue without row context resolves to empty', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -123,7 +123,7 @@ describe('FormRenderer', () => {
   describe('initialValues expression resolution', () => {
     test('static initialValues populate form fields', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -150,7 +150,7 @@ describe('FormRenderer', () => {
 
     test('initialValues with ${params.xxx} expressions resolve correctly', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -180,7 +180,7 @@ describe('FormRenderer', () => {
 
     test('initialValues expressions without context resolve to empty', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -205,7 +205,7 @@ describe('FormRenderer', () => {
 
     test('initialValues take precedence over defaultValue', async () => {
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -235,7 +235,7 @@ describe('FormRenderer', () => {
       globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
       const schema: PageSchema = {
-        id: 'test',
+        path: 'test',
         title: 'Test',
         body: [
           {
@@ -286,7 +286,7 @@ describe('params expression resolution', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -323,7 +323,7 @@ describe('params expression resolution', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -360,7 +360,7 @@ describe('params expression resolution', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -389,7 +389,7 @@ describe('params expression resolution', () => {
 
   test('form defaultValue resolves ${params.xxx} when params are provided', async () => {
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -420,7 +420,7 @@ describe('params expression resolution', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {

@@ -456,6 +456,24 @@ describe('dispatchAction', () => {
       expect(navigate).toHaveBeenCalledWith('http://localhost:3000/items/5');
     });
 
+    test('resolves path-relative links against current page path', async () => {
+      const navigate = mock(() => {});
+      const ctx = makeCtx({
+        navigate,
+        baseUrl: 'http://localhost:3000/draft/apps/orders',
+        currentPath: 'http://localhost:3000/draft/apps/orders/1024',
+      });
+
+      await dispatchAction(
+        { type: 'link', url: 'refund' } as ActionSchema,
+        ctx,
+      );
+
+      expect(navigate).toHaveBeenCalledWith(
+        'http://localhost:3000/draft/apps/orders/1024/refund',
+      );
+    });
+
     test('falls back to window.location.href when navigate is not provided', async () => {
       (globalThis as any).window.location = { href: '' };
       const ctx = makeCtx({ navigate: undefined });

@@ -78,7 +78,7 @@ describe('normalizePagesJson', () => {
     const data = {
       pages: [
         {
-          id: 'page-home',
+          path: 'page-home',
           title: 'Home',
           body: [btn],
         },
@@ -93,7 +93,7 @@ describe('normalizePagesJson', () => {
     const btn = { type: 'button', id: 'button-exist', label: 'OK' };
     const data = {
       pages: [
-        { id: 'page-home', title: 'Home', body: [btn] },
+        { path: 'page-home', title: 'Home', body: [btn] },
       ],
     };
     normalizePagesJson(data);
@@ -101,13 +101,13 @@ describe('normalizePagesJson', () => {
   });
 
   it('returns the same reference (mutates in place)', () => {
-    const data = { pages: [{ id: 'page-x', title: 'X', body: [] }] };
+    const data = { pages: [{ path: 'page-x', title: 'X', body: [] }] };
     const result = normalizePagesJson(data);
     expect(result).toBe(data);
   });
 
   it('handles pages with no body gracefully', () => {
-    const data = { pages: [{ id: 'page-x', title: 'X' }] };
+    const data = { pages: [{ path: 'page-x', title: 'X' }] };
     expect(() => normalizePagesJson(data)).not.toThrow();
   });
 
@@ -122,7 +122,7 @@ describe('normalizePagesJson', () => {
     const data = {
       pages: [
         {
-          id: 'page-home',
+          path: 'page-home',
           title: 'Home',
           body: [
             {

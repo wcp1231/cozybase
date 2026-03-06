@@ -39,19 +39,19 @@ export const batchOperationSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('page_add'),
     ref: batchRefSchema,
-    id: z.string(),
+    path: z.string(),
     title: z.string(),
     index: z.number().int().nonnegative().optional(),
   }),
   z.object({
     op: z.literal('page_remove'),
     ref: batchRefSchema,
-    page_id: z.string(),
+    page_path: z.string(),
   }),
   z.object({
     op: z.literal('page_update'),
     ref: batchRefSchema,
-    page_id: z.string(),
+    page_path: z.string(),
     title: z.string(),
   }),
 ]);

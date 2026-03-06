@@ -35,8 +35,8 @@ function makeRow(id: string, children: unknown[] = []) {
   return { type: 'row', id, children };
 }
 
-function makePage(id: string, body: unknown[] = []) {
-  return { id, title: id, body };
+function makePage(path: string, body: unknown[] = []) {
+  return { path, title: path, body };
 }
 
 function makeDoc(pages: unknown[]) {
@@ -59,7 +59,7 @@ describe('validatePagesJson — valid documents', () => {
   it('accepts a button with a valid reload.target', () => {
     const doc = makeDoc([
       {
-        id: 'page-home',
+        path: 'page-home',
         title: 'Home',
         body: [
           makeText('text-t1', 'Title'),
@@ -76,7 +76,7 @@ describe('validatePagesJson — valid documents', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.pages).toHaveLength(1);
-      expect(result.data.pages[0].id).toBe('page-home');
+      expect(result.data.pages[0].path).toBe('page-home');
     }
   });
 });
@@ -173,7 +173,7 @@ describe('validatePagesJson — invalid reload.target', () => {
   it('rejects reload.target that does not match any node id', () => {
     const doc = makeDoc([
       {
-        id: 'page-home',
+        path: 'page-home',
         title: 'Home',
         body: [
           {
@@ -209,5 +209,24 @@ describe('validatePagesJson — missing required fields', () => {
     expect(validatePagesJson(null).ok).toBe(false);
     expect(validatePagesJson('string').ok).toBe(false);
     expect(validatePagesJson(42).ok).toBe(false);
+  });
+
+  it('rejects an invalid page path pattern', () => {
+    const result = validatePagesJson(makeDoc([{ path: 'orders//refund', title: 'Bad', body: [] }]));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.path.includes('.path'))).toBe(true);
+    }
+  });
+
+  it('rejects duplicate page paths', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'orders', title: 'Orders', body: [] },
+      { path: 'orders', title: 'Orders 2', body: [] },
+    ]));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes('duplicated'))).toBe(true);
+    }
   });
 });

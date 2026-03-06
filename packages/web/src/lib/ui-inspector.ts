@@ -25,7 +25,7 @@ export interface InspectNode {
 }
 
 export interface InspectResult {
-  page: { id: string; title: string };
+  page: { path: string; title: string };
   tree: InspectNode[];
 }
 
@@ -216,12 +216,12 @@ function inspectElement(el: Element, depth: number): InspectNode {
  * Inspect the rendered UI tree starting from a root element.
  * Returns a structured tree of components with their content, data, and state.
  */
-export function inspectPage(root: Element, pageId: string): InspectResult {
+export function inspectPage(root: Element, pagePath: string): InspectResult {
   const titleEl = root.querySelector('h1, h2, h3');
-  const title = titleEl?.textContent?.trim() || pageId;
+  const title = titleEl?.textContent?.trim() || pagePath;
 
   const topLevel = findDirectSchemaChildren(root);
   const tree = topLevel.map((el) => inspectElement(el, 0));
 
-  return { page: { id: pageId, title }, tree };
+  return { page: { path: pagePath, title }, tree };
 }

@@ -3,6 +3,7 @@ import './components';
 
 export { SchemaRenderer } from './renderer';
 export type { SchemaRendererProps } from './renderer';
+export { resolveExpression, resolveExpressions, resolveStyleExpressions } from './engine/expression';
 export type * from './schema/types';
 export * from './schema/validate';
 export * from './schema/normalize';

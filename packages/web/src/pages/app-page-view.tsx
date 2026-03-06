@@ -4,7 +4,16 @@ import { SchemaRenderer } from '@cozybase/ui';
 import { ActivitySquare, Loader2, Menu, Play, Rocket, Square } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
-import { isAppMode, resolveContentSlotState, toAppConsolePath, toAppPagePath, type AppMode } from './content-slot';
+import {
+  getDefaultPagePath,
+  getTopLevelPages,
+  isAppMode,
+  normalizeSubPath,
+  resolveContentSlotState,
+  toAppConsolePath,
+  toAppPagePath,
+  type AppMode,
+} from './content-slot';
 import { BridgeClient } from '../lib/bridge-client';
 import { inspectPage } from '../lib/ui-inspector';
 import { AppSectionHeader } from '../features/apps/app-section-header';
@@ -66,15 +75,32 @@ export function AppPageView() {
 
   const slotState = resolveContentSlotState({
     appName,
-    pageId: subPath,
+    subPath,
     mode,
     pagesJson,
     appLoading,
     appError,
   });
 
-  const currentPageId = slotState.type === 'render' ? slotState.page.id : pagesJson?.pages[0]?.id;
-  const currentPageTitle = pagesJson?.pages.find((page) => page.id === currentPageId)?.title ?? '页面';
+  const topLevelPages = useMemo(
+    () => getTopLevelPages(pagesJson?.pages ?? []),
+    [pagesJson?.pages],
+  );
+  const fallbackSubPath = getDefaultPagePath(pagesJson?.pages ?? []);
+  const appHomeTo = fallbackSubPath ? toAppPagePath(appName ?? '', fallbackSubPath, mode) : undefined;
+  const currentSubPath = slotState.type === 'render'
+    ? slotState.match.subPath
+    : normalizeSubPath(subPath) ?? fallbackSubPath;
+  const currentPagePath = slotState.type === 'render'
+    ? slotState.match.pagePath
+    : fallbackSubPath;
+  const breadcrumbs = slotState.type === 'render' && slotState.match.breadcrumbs.length > 1
+    ? slotState.match.breadcrumbs.map((item, index, list) => ({
+      label: item.label,
+      to: index < list.length - 1 ? toAppPagePath(appName ?? '', item.subPath, mode) : undefined,
+    }))
+    : undefined;
+  const childTabs = slotState.type === 'render' ? slotState.match.childTabs : [];
 
   const goToUrl = useCallback(
     (url: string) => {
@@ -98,7 +124,7 @@ export function AppPageView() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       await Promise.all([refreshApp(), refreshApps()]);
-      navigate(toAppPagePath(appName, currentPageId, 'stable'));
+      navigate(toAppPagePath(appName, currentSubPath, 'stable'));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -135,8 +161,9 @@ export function AppPageView() {
         mode={mode}
         appName={appName}
         appDisplayName={app?.displayName}
+        appHomeTo={appHomeTo}
         stableStatus={app?.stableStatus ?? null}
-        sectionLabel={currentPageTitle}
+        breadcrumbs={breadcrumbs}
         toggleSidebar={toggleSidebar}
         sidebarVisible={sidebarVisible}
         actions={
@@ -192,20 +219,39 @@ export function AppPageView() {
           <EmptyState message={slotState.message} />
         ) : (
           <div className="min-h-full overflow-hidden bg-[#F8FAFC]">
-            {pagesJson && pagesJson.pages.length > 1 ? (
+            {topLevelPages.length > 1 ? (
               <div className="flex h-11 items-end gap-1 border-b border-[#E7EBF2] bg-white px-4 md:px-8">
-                {pagesJson.pages.map((page) => (
+                {topLevelPages.map((page) => (
                   <Link
-                    key={page.id}
-                    to={toAppPagePath(appName ?? '', page.id, mode)}
+                    key={page.path}
+                    to={toAppPagePath(appName ?? '', page.path, mode)}
                     className={clsx(
                       'inline-flex h-full items-center border-b-2 px-3 text-[13px] no-underline transition-colors',
-                      page.id === currentPageId
+                      page.path === currentPagePath
                         ? 'border-[#4F46E5] font-semibold text-[#4F46E5]'
                         : 'border-transparent font-medium text-[#94A3B8] hover:text-[#475569]',
                     )}
                   >
                     {page.title}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+
+            {childTabs.length > 0 ? (
+              <div className="flex min-h-10 items-center gap-2 border-b border-[#E7EBF2] bg-[#FCFDFE] px-4 py-2 md:px-8">
+                {childTabs.map((page) => (
+                  <Link
+                    key={page.pagePath}
+                    to={toAppPagePath(appName ?? '', page.subPath, mode)}
+                    className={clsx(
+                      'inline-flex h-7 items-center rounded-full px-3 text-xs font-medium no-underline transition-colors',
+                      page.active
+                        ? 'bg-[#EEF2FF] text-[#4F46E5]'
+                        : 'bg-[#F8FAFC] text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#334155]',
+                    )}
+                  >
+                    {page.label}
                   </Link>
                 ))}
               </div>
@@ -220,11 +266,11 @@ export function AppPageView() {
                   <div className="flex flex-col gap-0.5 px-2 pb-2">
                     {pagesJson.pages.map((page, index) => (
                       <Link
-                        key={page.id}
-                        to={toAppPagePath(appName ?? '', page.id, mode)}
+                        key={page.path}
+                        to={toAppPagePath(appName ?? '', page.path, mode)}
                         className={clsx(
                           'flex h-8 items-center gap-2 rounded-[6px] px-2.5 text-xs no-underline transition-colors',
-                          page.id === currentPageId
+                          page.path === currentPagePath
                             ? 'bg-[#EEF2FF] font-semibold text-[#4F46E5]'
                             : 'font-medium text-[#475569] hover:bg-[#F8FAFC]',
                         )}
@@ -232,7 +278,7 @@ export function AppPageView() {
                         <span
                           className={clsx(
                             'inline-flex h-[15px] w-[15px] items-center justify-center rounded text-[10px]',
-                            page.id === currentPageId ? 'bg-[#E0E7FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]',
+                            page.path === currentPagePath ? 'bg-[#E0E7FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]',
                           )}
                         >
                           {index + 1}
@@ -252,10 +298,11 @@ export function AppPageView() {
                 )}
               >
                 <SchemaRenderer
-                  schema={slotState.page}
+                  schema={slotState.match.page}
                   baseUrl={slotState.baseUrl}
+                  currentPath={slotState.currentPath}
                   components={pagesJson?.components ?? {}}
-                  params={params}
+                  params={slotState.type === 'render' ? { ...params, ...slotState.match.params } : params}
                   navigate={goToUrl}
                 />
               </div>

@@ -58,20 +58,42 @@ export function validatePagesJson(data: unknown): ValidationOutcome {
 
 function runSemanticChecks(pages: PagesJson): ValidationError[] {
   const errors: ValidationError[] = [];
+  const pagePaths = new Set<string>();
 
   // Global ID uniqueness across all pages (node_id lookups are document-wide)
   const globalIds = new Set<string>();
-  for (const page of pages.pages) {
-    const collector = new PageSemanticChecker(page.id);
-    collector.collectBodyIds(page.body, `pages[${page.id}].body`);
-    errors.push(...collector.checkReferences(page.body, `pages[${page.id}].body`));
+  for (let i = 0; i < pages.pages.length; i++) {
+    const page = pages.pages[i];
+    const pageEntryPath = `pages[${i}]`;
+
+    if (!isValidPagePath(page.path)) {
+      errors.push({
+        path: `${pageEntryPath}.path`,
+        message:
+          `Invalid page path "${page.path}". ` +
+          'Each segment must be a lowercase static segment (`orders`) or a parameter segment (`:orderId`).',
+      });
+    }
+
+    if (pagePaths.has(page.path)) {
+      errors.push({
+        path: `${pageEntryPath}.path`,
+        message: `Page path "${page.path}" is duplicated in pages.json.`,
+      });
+    } else {
+      pagePaths.add(page.path);
+    }
+
+    const collector = new PageSemanticChecker(page.path);
+    collector.collectBodyIds(page.body, `${pageEntryPath}.body`);
+    errors.push(...collector.checkReferences(page.body, `${pageEntryPath}.body`));
     errors.push(...collector.duplicateErrors);
 
     // Check for cross-page duplicates
     for (const id of collector.collectedIds) {
       if (globalIds.has(id)) {
         errors.push({
-          path: `pages[${page.id}]`,
+          path: pageEntryPath,
           message: `Component id "${id}" is already used in another page — ids must be unique across the entire document`,
         });
       } else {
@@ -83,6 +105,20 @@ function runSemanticChecks(pages: PagesJson): ValidationError[] {
   return errors;
 }
 
+const STATIC_PATH_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const PARAM_PATH_SEGMENT_PATTERN = /^:[a-zA-Z][a-zA-Z0-9]*$/;
+
+export function isValidPagePath(path: string): boolean {
+  if (!path || path.startsWith('/') || path.endsWith('/')) return false;
+  const segments = path.split('/');
+  if (segments.length === 0) return false;
+
+  return segments.every((segment) => (
+    STATIC_PATH_SEGMENT_PATTERN.test(segment) ||
+    PARAM_PATH_SEGMENT_PATTERN.test(segment)
+  ));
+}
+
 class PageSemanticChecker {
   /** All component IDs collected in this page */
   private allIds = new Set<string>();
@@ -91,7 +127,7 @@ class PageSemanticChecker {
   /** All IDs collected (exposed for cross-page deduplication) */
   get collectedIds(): ReadonlySet<string> { return this.allIds; }
 
-  constructor(private pageId: string) {}
+  constructor(private pagePath: string) {}
 
   /** First pass: collect all IDs and detect duplicates */
   collectBodyIds(nodes: unknown[], path: string): void {
@@ -108,7 +144,7 @@ class PageSemanticChecker {
       if (this.allIds.has(n.id)) {
         this.duplicateErrors.push({
           path,
-          message: `Duplicate component id "${n.id}" in page "${this.pageId}"`,
+          message: `Duplicate component id "${n.id}" in page "${this.pagePath}"`,
         });
       } else {
         this.allIds.add(n.id);
@@ -231,7 +267,7 @@ class PageSemanticChecker {
         if (!this.allIds.has(a.target)) {
           errors.push({
             path: `${path}[${i}].target`,
-            message: `reload.target "${a.target}" does not match any component id in page "${this.pageId}"`,
+            message: `reload.target "${a.target}" does not match any component id in page "${this.pagePath}"`,
           });
         }
       }

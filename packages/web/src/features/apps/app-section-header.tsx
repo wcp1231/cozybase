@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { AppMode } from '../../pages/content-slot';
@@ -8,8 +9,9 @@ interface AppSectionHeaderProps {
   mode: AppMode;
   appName?: string;
   appDisplayName?: string | null;
+  appHomeTo?: string;
   stableStatus?: 'running' | 'stopped' | null;
-  sectionLabel: string;
+  breadcrumbs?: Array<{ label: string; to?: string }>;
   toggleSidebar: () => void;
   sidebarVisible: boolean;
   actions?: ReactNode;
@@ -19,8 +21,9 @@ export function AppSectionHeader({
   mode,
   appName,
   appDisplayName,
+  appHomeTo,
   stableStatus,
-  sectionLabel,
+  breadcrumbs,
   toggleSidebar,
   sidebarVisible,
   actions,
@@ -72,11 +75,29 @@ export function AppSectionHeader({
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
 
-      <div className="flex h-8 items-center gap-2 px-4 pb-2 text-xs md:px-8">
-        <span className="font-medium text-[#94A3B8]">{title}</span>
-        <span className="text-[#CBD5E1]">/</span>
-        <span className="font-semibold text-[#1E293B]">{sectionLabel}</span>
-      </div>
+      {breadcrumbs?.length ? (
+        <div className="flex h-8 items-center gap-2 px-4 pb-2 text-xs md:px-8">
+          {appHomeTo ? (
+            <Link to={appHomeTo} className="font-medium text-[#94A3B8] no-underline hover:text-[#64748B]">
+              {title}
+            </Link>
+          ) : (
+            <span className="font-medium text-[#94A3B8]">{title}</span>
+          )}
+          {breadcrumbs.map((item, index) => (
+            <div key={`${item.label}-${index}`} className="contents">
+              <span className="text-[#CBD5E1]">/</span>
+              {item.to ? (
+                <Link to={item.to} className="font-medium text-[#64748B] no-underline hover:text-[#334155]">
+                  {item.label}
+                </Link>
+              ) : (
+                <span className="font-semibold text-[#1E293B]">{item.label}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </header>
   );
 }

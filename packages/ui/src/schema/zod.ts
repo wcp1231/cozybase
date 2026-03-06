@@ -600,7 +600,7 @@ export const customComponentSchema = z.object({
 // ============================================================
 
 export const pageSchema = z.object({
-  id: z.string(),
+  path: z.string(),
   title: z.string(),
   body: z.array(componentSchema),
 });

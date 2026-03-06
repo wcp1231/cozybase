@@ -209,7 +209,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
       tool(
         'ui_outline',
         TOOL_DESCRIPTIONS.ui_outline,
-        { app_name: z.string(), page_id: z.string().optional() },
+        { app_name: z.string(), page_path: z.string().optional() },
         async (args) => jsonResult(handleUiOutline(ctx, args)),
       ),
 
@@ -285,7 +285,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
         TOOL_DESCRIPTIONS.pages_add,
         {
           app_name: z.string(),
-          id: z.string(),
+          path: z.string(),
           title: z.string(),
           index: z.number().int().nonnegative().optional(),
         },
@@ -295,7 +295,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
       tool(
         'pages_remove',
         TOOL_DESCRIPTIONS.pages_remove,
-        { app_name: z.string(), page_id: z.string() },
+        { app_name: z.string(), page_path: z.string() },
         async (args) => jsonResult(handlePagesRemove(ctx, args)),
       ),
 
@@ -304,7 +304,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
         TOOL_DESCRIPTIONS.pages_update,
         {
           app_name: z.string(),
-          page_id: z.string(),
+          page_path: z.string(),
           title: z.string(),
         },
         async (args) => jsonResult(handlePagesUpdate(ctx, args)),
@@ -315,7 +315,7 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
         TOOL_DESCRIPTIONS.pages_reorder,
         {
           app_name: z.string(),
-          page_id: z.string(),
+          page_path: z.string(),
           index: z.number().int().nonnegative(),
         },
         async (args) => jsonResult(handlePagesReorder(ctx, args)),

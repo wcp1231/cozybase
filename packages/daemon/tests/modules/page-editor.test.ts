@@ -48,13 +48,35 @@ function writePagesJson(data: unknown) {
   const appDir = join(appsDir, APP_NAME);
   const uiDir = join(appDir, 'ui');
   mkdirSync(uiDir, { recursive: true });
-  writeFileSync(join(uiDir, 'pages.json'), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileSync(
+    join(uiDir, 'pages.json'),
+    JSON.stringify(normalizePageTestData(data), null, 2),
+    'utf-8',
+  );
 }
 
 function readPagesJson(): unknown {
   return JSON.parse(
     readFileSync(join(appsDir, APP_NAME, 'ui', 'pages.json'), 'utf-8'),
   );
+}
+
+function normalizePageTestData(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const value = data as Record<string, unknown>;
+  if (!Array.isArray(value.pages)) return data;
+
+  return {
+    ...value,
+    pages: value.pages.map((page) => {
+      if (!page || typeof page !== 'object' || Array.isArray(page)) return page;
+      const candidate = page as Record<string, unknown>;
+      if (typeof candidate.path === 'string') return candidate;
+      if (typeof candidate.id !== 'string') return candidate;
+      const { id, ...rest } = candidate;
+      return { path: id, ...rest };
+    }),
+  };
 }
 
 function makeMinimalDoc() {
@@ -98,7 +120,7 @@ describe('getPageOutline', () => {
   test('returns all pages and their component tree', () => {
     const result = getPageOutline(getCtx());
     expect(result.pages).toHaveLength(1);
-    expect(result.pages[0].id).toBe('page-home');
+    expect(result.pages[0].path).toBe('page-home');
     expect(result.pages[0].body).toHaveLength(2);
   });
 
@@ -119,12 +141,12 @@ describe('getPageOutline', () => {
     expect(rowNode.children![0].id).toBe('btn-save');
   });
 
-  test('filters by page_id when provided', () => {
+  test('filters by page_path when provided', () => {
     const result = getPageOutline(getCtx(), 'page-home');
     expect(result.pages).toHaveLength(1);
   });
 
-  test('throws NODE_NOT_FOUND for unknown page_id', () => {
+  test('throws NODE_NOT_FOUND for unknown page_path', () => {
     expect(() => getPageOutline(getCtx(), 'nonexistent-page')).toThrow(PageEditorError);
   });
 
@@ -989,7 +1011,7 @@ describe('component slots — singleton delete/move semantics', () => {
 // ============================================================
 
 describe('listPages', () => {
-  test('returns id and title for each page', () => {
+  test('returns path and title for each page', () => {
     writePagesJson({
       pages: [
         { id: 'home', title: 'Home', body: [] },
@@ -998,8 +1020,8 @@ describe('listPages', () => {
     });
     const result = listPages(getCtx());
     expect(result.pages).toHaveLength(2);
-    expect(result.pages[0]).toEqual({ id: 'home', title: 'Home' });
-    expect(result.pages[1]).toEqual({ id: 'settings', title: 'Settings' });
+    expect(result.pages[0]).toEqual({ path: 'home', title: 'Home' });
+    expect(result.pages[1]).toEqual({ path: 'settings', title: 'Settings' });
   });
 
   test('returns empty array for empty pages.json', () => {
@@ -1016,10 +1038,10 @@ describe('listPages', () => {
 describe('addPage', () => {
   test('adds a page at end by default', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
-    addPage(getCtx(), { id: 'settings', title: 'Settings' });
+    addPage(getCtx(), { path: 'settings', title: 'Settings' });
     const result = listPages(getCtx());
     expect(result.pages).toHaveLength(2);
-    expect(result.pages[1].id).toBe('settings');
+    expect(result.pages[1].path).toBe('settings');
   });
 
   test('adds a page at specified index', () => {
@@ -1029,33 +1051,33 @@ describe('addPage', () => {
         { id: 'about', title: 'About', body: [] },
       ],
     });
-    addPage(getCtx(), { id: 'settings', title: 'Settings' }, 1);
+    addPage(getCtx(), { path: 'settings', title: 'Settings' }, 1);
     const result = listPages(getCtx());
-    expect(result.pages[1].id).toBe('settings');
-    expect(result.pages[2].id).toBe('about');
+    expect(result.pages[1].path).toBe('settings');
+    expect(result.pages[2].path).toBe('about');
   });
 
-  test('returns {id, title} of added page', () => {
+  test('returns {path, title} of added page', () => {
     writePagesJson({ pages: [] });
-    const result = addPage(getCtx(), { id: 'dashboard', title: 'Dashboard' });
-    expect(result).toEqual({ id: 'dashboard', title: 'Dashboard' });
+    const result = addPage(getCtx(), { path: 'dashboard', title: 'Dashboard' });
+    expect(result).toEqual({ path: 'dashboard', title: 'Dashboard' });
   });
 
-  test('throws on duplicate page id', () => {
+  test('throws on duplicate page path', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
-    expect(() => addPage(getCtx(), { id: 'home', title: 'Home 2' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { path: 'home', title: 'Home 2' })).toThrow(PageEditorError);
   });
 
-  test('throws on invalid page id format', () => {
+  test('throws on invalid page path format', () => {
     writePagesJson({ pages: [] });
-    expect(() => addPage(getCtx(), { id: 'My Page', title: 'My Page' })).toThrow(PageEditorError);
-    expect(() => addPage(getCtx(), { id: '-start', title: 'Bad' })).toThrow(PageEditorError);
-    expect(() => addPage(getCtx(), { id: 'UPPER', title: 'Bad' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { path: 'My Page', title: 'My Page' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { path: '-start', title: 'Bad' })).toThrow(PageEditorError);
+    expect(() => addPage(getCtx(), { path: 'UPPER', title: 'Bad' })).toThrow(PageEditorError);
   });
 
-  test('does not write if id is duplicate', () => {
+  test('does not write if path is duplicate', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
-    expect(() => addPage(getCtx(), { id: 'home', title: 'X' })).toThrow();
+    expect(() => addPage(getCtx(), { path: 'home', title: 'X' })).toThrow();
     const result = listPages(getCtx());
     expect(result.pages).toHaveLength(1);
   });
@@ -1076,10 +1098,10 @@ describe('removePage', () => {
     removePage(getCtx(), 'home');
     const result = listPages(getCtx());
     expect(result.pages).toHaveLength(1);
-    expect(result.pages[0].id).toBe('about');
+    expect(result.pages[0].path).toBe('about');
   });
 
-  test('throws on non-existent page id', () => {
+  test('throws on non-existent page path', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
     expect(() => removePage(getCtx(), 'no-such-page')).toThrow(PageEditorError);
   });
@@ -1093,17 +1115,17 @@ describe('updatePageMeta', () => {
   test('updates page title', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
     const result = updatePageMeta(getCtx(), 'home', { title: 'Homepage' });
-    expect(result).toEqual({ id: 'home', title: 'Homepage' });
+    expect(result).toEqual({ path: 'home', title: 'Homepage' });
     const pages = listPages(getCtx());
     expect(pages.pages[0].title).toBe('Homepage');
   });
 
-  test('throws when trying to modify id', () => {
+  test('throws when trying to modify path', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
-    expect(() => updatePageMeta(getCtx(), 'home', { id: 'new-id' } as { title: string })).toThrow(PageEditorError);
+    expect(() => updatePageMeta(getCtx(), 'home', { path: 'new-path' } as { title: string })).toThrow(PageEditorError);
   });
 
-  test('throws on non-existent page id', () => {
+  test('throws on non-existent page path', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
     expect(() => updatePageMeta(getCtx(), 'no-such-page', { title: 'X' })).toThrow(PageEditorError);
   });
@@ -1127,15 +1149,15 @@ describe('reorderPage', () => {
   test('moves page to new index', () => {
     reorderPage(getCtx(), 'contact', 0);
     const result = listPages(getCtx());
-    expect(result.pages.map((p) => p.id)).toEqual(['contact', 'home', 'about']);
+    expect(result.pages.map((p) => p.path)).toEqual(['contact', 'home', 'about']);
   });
 
   test('returns updated page list', () => {
     const result = reorderPage(getCtx(), 'home', 2);
-    expect(result.pages.map((p) => p.id)).toEqual(['about', 'contact', 'home']);
+    expect(result.pages.map((p) => p.path)).toEqual(['about', 'contact', 'home']);
   });
 
-  test('throws on non-existent page id', () => {
+  test('throws on non-existent page path', () => {
     expect(() => reorderPage(getCtx(), 'no-such', 0)).toThrow(PageEditorError);
   });
 

@@ -286,7 +286,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     'ui_outline',
     {
       description: TOOL_DESCRIPTIONS.ui_outline,
-      inputSchema: { app_name: z.string(), page_id: z.string().optional() },
+      inputSchema: { app_name: z.string(), page_path: z.string().optional() },
     },
     (args) => {
       return jsonText(handleUiOutline(ctx, args));
@@ -395,7 +395,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       description: TOOL_DESCRIPTIONS.pages_add,
       inputSchema: {
         app_name: z.string(),
-        id: z.string(),
+        path: z.string(),
         title: z.string(),
         index: z.number().int().nonnegative().optional(),
       },
@@ -409,7 +409,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     'pages_remove',
     {
       description: TOOL_DESCRIPTIONS.pages_remove,
-      inputSchema: { app_name: z.string(), page_id: z.string() },
+      inputSchema: { app_name: z.string(), page_path: z.string() },
     },
     (args) => {
       return jsonText(handlePagesRemove(ctx, args));
@@ -422,7 +422,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       description: TOOL_DESCRIPTIONS.pages_update,
       inputSchema: {
         app_name: z.string(),
-        page_id: z.string(),
+        page_path: z.string(),
         title: z.string(),
       },
     },
@@ -437,7 +437,7 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
       description: TOOL_DESCRIPTIONS.pages_reorder,
       inputSchema: {
         app_name: z.string(),
-        page_id: z.string(),
+        page_path: z.string(),
         index: z.number().int().nonnegative(),
       },
     },

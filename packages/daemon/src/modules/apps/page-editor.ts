@@ -16,6 +16,7 @@ import { join } from 'path';
 import {
   normalizePagesJson,
   validatePagesJson,
+  isValidPagePath,
   generateNodeId,
   getComponentSummary,
   isContainerType,
@@ -41,7 +42,7 @@ export interface OutlineNode {
 }
 
 export interface PageOutline {
-  id: string;
+  path: string;
   title: string;
   body: OutlineNode[];
 }
@@ -51,7 +52,7 @@ export interface PageOutlineResult {
 }
 
 export interface PageSummary {
-  id: string;
+  path: string;
   title: string;
 }
 
@@ -93,19 +94,19 @@ export type BatchOperation =
   | {
     op: 'page_add';
     ref?: string;
-    id: string;
+    path: string;
     title: string;
     index?: number;
   }
   | {
     op: 'page_remove';
     ref?: string;
-    page_id: string;
+    page_path: string;
   }
   | {
     op: 'page_update';
     ref?: string;
-    page_id: string;
+    page_path: string;
     title: string;
   };
 
@@ -121,7 +122,7 @@ export interface BatchOperationResult {
   status: 'ok' | 'error' | 'skipped';
   ref?: string;
   node_id?: string;
-  page_id?: string;
+  page_path?: string;
   node?: ComponentSchema;
   page?: PageSummary;
   deleted?: string;
@@ -527,6 +528,10 @@ function collectNestedRefTokens(value: unknown): string[] {
   return [];
 }
 
+function findPageByPath(data: PagesJson, pagePath: string) {
+  return data.pages.find((p) => p.path === pagePath);
+}
+
 function getNodeInMemory(data: PagesJson, nodeId: string): ComponentSchema {
   const location = findNodeById(data, nodeId);
   if (!location) {
@@ -556,8 +561,8 @@ function insertNodeInMemory(
     id: newNodeId,
   } as ComponentSchema;
 
-  // Check if parentId refers to a page (top-level body insertion)
-  const page = data.pages.find((p) => p.id === parentId);
+  // Check if parentId refers to a page path (top-level body insertion)
+  const page = findPageByPath(data, parentId);
   if (page) {
     const body = page.body as ComponentSchema[];
     if (index !== undefined && index >= 0 && index <= body.length) {
@@ -572,7 +577,7 @@ function insertNodeInMemory(
   const parentLocation = findNodeById(data, parentId);
   if (!parentLocation) {
     throw new PageEditorError(
-      `Parent "${parentId}" not found in pages.json. Use a page id or a container node id.`,
+      `Parent "${parentId}" not found in pages.json. Use a page path or a container node id.`,
       'INVALID_PARENT',
     );
   }
@@ -740,39 +745,40 @@ function deleteNodeInMemory(data: PagesJson, nodeId: string): void {
 
 function addPageInMemory(
   data: PagesJson,
-  pageData: { id: string; title: string; body?: unknown[] },
+  pageData: { path: string; title: string; body?: unknown[] },
   index?: number,
 ): PageSummary {
-  const { id, title, body = [] } = pageData;
+  const { path, title, body = [] } = pageData;
 
-  if (!PAGE_ID_PATTERN.test(id)) {
+  if (!isValidPagePath(path)) {
     throw new PageEditorError(
-      `Invalid page id "${id}". Must match pattern [a-z0-9][a-z0-9-]* (lowercase alphanumeric and hyphens, start with letter or digit).`,
+      `Invalid page path "${path}". ` +
+      'Each segment must be a lowercase static segment or a parameter segment like ":orderId".',
       'VALIDATION_ERROR',
     );
   }
 
-  if (data.pages.some((p) => p.id === id)) {
+  if (data.pages.some((p) => p.path === path)) {
     throw new PageEditorError(
-      `Page with id "${id}" already exists in pages.json.`,
+      `Page with path "${path}" already exists in pages.json.`,
       'VALIDATION_ERROR',
     );
   }
 
-  const newPage = { id, title, body };
+  const newPage = { path, title, body };
   if (index !== undefined && index >= 0 && index <= data.pages.length) {
     (data.pages as unknown[]).splice(index, 0, newPage);
   } else {
     (data.pages as unknown[]).push(newPage);
   }
-  return { id, title };
+  return { path, title };
 }
 
-function removePageInMemory(data: PagesJson, pageId: string): void {
-  const idx = data.pages.findIndex((p) => p.id === pageId);
+function removePageInMemory(data: PagesJson, pagePath: string): void {
+  const idx = data.pages.findIndex((p) => p.path === pagePath);
   if (idx === -1) {
     throw new PageEditorError(
-      `Page "${pageId}" not found in pages.json.`,
+      `Page "${pagePath}" not found in pages.json.`,
       'NODE_NOT_FOUND',
     );
   }
@@ -781,20 +787,20 @@ function removePageInMemory(data: PagesJson, pageId: string): void {
 
 function updatePageMetaInMemory(
   data: PagesJson,
-  pageId: string,
+  pagePath: string,
   props: { title?: string },
 ): PageSummary {
-  if ('id' in props) {
+  if ('path' in props) {
     throw new PageEditorError(
-      'Cannot modify page "id". Page ids are immutable.',
+      'Cannot modify page "path". Page paths are immutable.',
       'FORBIDDEN_UPDATE',
     );
   }
 
-  const page = data.pages.find((p) => p.id === pageId);
+  const page = findPageByPath(data, pagePath);
   if (!page) {
     throw new PageEditorError(
-      `Page "${pageId}" not found in pages.json.`,
+      `Page "${pagePath}" not found in pages.json.`,
       'NODE_NOT_FOUND',
     );
   }
@@ -802,7 +808,7 @@ function updatePageMetaInMemory(
   if (props.title !== undefined) {
     (page as Record<string, unknown>).title = props.title;
   }
-  return { id: page.id, title: page.title };
+  return { path: page.path, title: page.title };
 }
 
 // ============================================================
@@ -879,7 +885,7 @@ function getOperationDependencies(operation: BatchOperation): string[] {
       return [operation.node_id, operation.new_parent_id];
     case 'page_remove':
     case 'page_update':
-      return [operation.page_id];
+      return [operation.page_path];
     case 'page_add':
       return [];
     default:
@@ -928,24 +934,24 @@ function markRefResolved(
 /** Get an outline of the page structure (tree with IDs and summaries). */
 export function getPageOutline(
   ctx: PageEditorContext,
-  pageId?: string,
+  pagePath?: string,
 ): PageOutlineResult {
   const data = readPagesJson(ctx);
 
-  const pages = pageId
-    ? data.pages.filter((p) => p.id === pageId)
+  const pages = pagePath
+    ? data.pages.filter((p) => p.path === pagePath)
     : data.pages;
 
-  if (pageId && pages.length === 0) {
+  if (pagePath && pages.length === 0) {
     throw new PageEditorError(
-      `Page "${pageId}" not found in pages.json.`,
+      `Page "${pagePath}" not found in pages.json.`,
       'NODE_NOT_FOUND',
     );
   }
 
   return {
     pages: pages.map((page) => ({
-      id: page.id,
+      path: page.path,
       title: page.title,
       body: page.body.map(buildOutlineNode),
     })),
@@ -1012,18 +1018,18 @@ export function deleteNode(
   writePagesJson(ctx, data);
 }
 
-/** List all pages with their id and title. */
+/** List all pages with their path and title. */
 export function listPages(ctx: PageEditorContext): PagesListResult {
   const data = readPagesJson(ctx);
   return {
-    pages: data.pages.map((p) => ({ id: p.id, title: p.title })),
+    pages: data.pages.map((p) => ({ path: p.path, title: p.title })),
   };
 }
 
-/** Add a new page. The page id must be unique and match [a-z0-9][a-z0-9-]*. */
+/** Add a new page. The page path must be unique and match the path route syntax. */
 export function addPage(
   ctx: PageEditorContext,
-  pageData: { id: string; title: string; body?: unknown[] },
+  pageData: { path: string; title: string; body?: unknown[] },
   index?: number,
 ): PageSummary {
   const data = readPagesJson(ctx);
@@ -1033,20 +1039,20 @@ export function addPage(
 }
 
 /** Remove a page and all its components. */
-export function removePage(ctx: PageEditorContext, pageId: string): void {
+export function removePage(ctx: PageEditorContext, pagePath: string): void {
   const data = readPagesJson(ctx);
-  removePageInMemory(data, pageId);
+  removePageInMemory(data, pagePath);
   writePagesJson(ctx, data);
 }
 
-/** Update page metadata (title only; id is immutable). */
+/** Update page metadata (title only; path is immutable). */
 export function updatePageMeta(
   ctx: PageEditorContext,
-  pageId: string,
+  pagePath: string,
   props: { title?: string },
 ): PageSummary {
   const data = readPagesJson(ctx);
-  const summary = updatePageMetaInMemory(data, pageId, props);
+  const summary = updatePageMetaInMemory(data, pagePath, props);
   writePagesJson(ctx, data);
   return summary;
 }
@@ -1169,39 +1175,39 @@ export function batchOperations(
           break;
         }
         case 'page_add': {
-          const page = addPageInMemory(data, { id: operation.id, title: operation.title }, operation.index);
-          markRefResolved(refMap, failedRefs, operation.ref, page.id);
+          const page = addPageInMemory(data, { path: operation.path, title: operation.title }, operation.index);
+          markRefResolved(refMap, failedRefs, operation.ref, page.path);
           hasSuccessfulWrite = hasSuccessfulWrite || isWriteBatchOperation(operation);
           results.push({
             ...baseResult,
             status: 'ok',
-            page_id: page.id,
+            page_path: page.path,
             page,
           });
           break;
         }
         case 'page_remove': {
-          const pageId = resolveRefOrThrow(operation.page_id, refMap);
-          removePageInMemory(data, pageId);
-          markRefResolved(refMap, failedRefs, operation.ref, pageId);
+          const pagePath = resolveRefOrThrow(operation.page_path, refMap);
+          removePageInMemory(data, pagePath);
+          markRefResolved(refMap, failedRefs, operation.ref, pagePath);
           hasSuccessfulWrite = hasSuccessfulWrite || isWriteBatchOperation(operation);
           results.push({
             ...baseResult,
             status: 'ok',
-            page_id: pageId,
-            deleted: pageId,
+            page_path: pagePath,
+            deleted: pagePath,
           });
           break;
         }
         case 'page_update': {
-          const pageId = resolveRefOrThrow(operation.page_id, refMap);
-          const page = updatePageMetaInMemory(data, pageId, { title: operation.title });
-          markRefResolved(refMap, failedRefs, operation.ref, page.id);
+          const pagePath = resolveRefOrThrow(operation.page_path, refMap);
+          const page = updatePageMetaInMemory(data, pagePath, { title: operation.title });
+          markRefResolved(refMap, failedRefs, operation.ref, page.path);
           hasSuccessfulWrite = hasSuccessfulWrite || isWriteBatchOperation(operation);
           results.push({
             ...baseResult,
             status: 'ok',
-            page_id: page.id,
+            page_path: page.path,
             page,
           });
           break;
@@ -1246,15 +1252,15 @@ export function batchOperations(
 /** Move a page to a new index in the pages array. */
 export function reorderPage(
   ctx: PageEditorContext,
-  pageId: string,
+  pagePath: string,
   index: number,
 ): PagesListResult {
   const data = readPagesJson(ctx);
-  const fromIdx = data.pages.findIndex((p) => p.id === pageId);
+  const fromIdx = data.pages.findIndex((p) => p.path === pagePath);
 
   if (fromIdx === -1) {
     throw new PageEditorError(
-      `Page "${pageId}" not found in pages.json.`,
+      `Page "${pagePath}" not found in pages.json.`,
       'NODE_NOT_FOUND',
     );
   }
@@ -1270,5 +1276,5 @@ export function reorderPage(
   data.pages.splice(index, 0, page);
 
   writePagesJson(ctx, data);
-  return { pages: data.pages.map((p) => ({ id: p.id, title: p.title })) };
+  return { pages: data.pages.map((p) => ({ path: p.path, title: p.title })) };
 }

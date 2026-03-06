@@ -287,7 +287,7 @@ export function handleUiOutline(
   ctx: HandlerContext,
   input: UiOutlineInput,
 ): ReturnType<typeof getPageOutline> {
-  return getPageOutline(makePageEditorCtx(ctx, input.app_name), input.page_id);
+  return getPageOutline(makePageEditorCtx(ctx, input.app_name), input.page_path);
 }
 
 export function handleUiGet(
@@ -365,7 +365,7 @@ export function handlePagesAdd(
 ): ReturnType<typeof addPage> {
   return addPage(
     makePageEditorCtx(ctx, input.app_name),
-    { id: input.id, title: input.title },
+    { path: input.path, title: input.title },
     input.index,
   );
 }
@@ -374,8 +374,8 @@ export function handlePagesRemove(
   ctx: HandlerContext,
   input: PagesRemoveInput,
 ): { deleted: string } {
-  removePage(makePageEditorCtx(ctx, input.app_name), input.page_id);
-  return { deleted: input.page_id };
+  removePage(makePageEditorCtx(ctx, input.app_name), input.page_path);
+  return { deleted: input.page_path };
 }
 
 export function handlePagesUpdate(
@@ -384,7 +384,7 @@ export function handlePagesUpdate(
 ): ReturnType<typeof updatePageMeta> {
   return updatePageMeta(
     makePageEditorCtx(ctx, input.app_name),
-    input.page_id,
+    input.page_path,
     { title: input.title },
   );
 }
@@ -395,7 +395,7 @@ export function handlePagesReorder(
 ): ReturnType<typeof reorderPage> {
   return reorderPage(
     makePageEditorCtx(ctx, input.app_name),
-    input.page_id,
+    input.page_path,
     input.index,
   );
 }

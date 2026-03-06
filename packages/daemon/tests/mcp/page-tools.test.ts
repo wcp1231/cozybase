@@ -50,7 +50,29 @@ function makeCtx(): HandlerContext {
 function writePagesJson(data: unknown) {
   const uiDir = join(appsDir, APP_NAME, 'ui');
   mkdirSync(uiDir, { recursive: true });
-  writeFileSync(join(uiDir, 'pages.json'), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileSync(
+    join(uiDir, 'pages.json'),
+    JSON.stringify(normalizePageTestData(data), null, 2),
+    'utf-8',
+  );
+}
+
+function normalizePageTestData(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const value = data as Record<string, unknown>;
+  if (!Array.isArray(value.pages)) return data;
+
+  return {
+    ...value,
+    pages: value.pages.map((page) => {
+      if (!page || typeof page !== 'object' || Array.isArray(page)) return page;
+      const candidate = page as Record<string, unknown>;
+      if (typeof candidate.path === 'string') return candidate;
+      if (typeof candidate.id !== 'string') return candidate;
+      const { id, ...rest } = candidate;
+      return { path: id, ...rest };
+    }),
+  };
 }
 
 function makeSampleDoc() {
@@ -92,12 +114,12 @@ describe('handleUiOutline', () => {
   test('returns page outline', () => {
     const result = handleUiOutline(makeCtx(), { app_name: APP_NAME });
     expect(result.pages).toHaveLength(1);
-    expect(result.pages[0].id).toBe('page-main');
+    expect(result.pages[0].path).toBe('page-main');
     expect(result.pages[0].body).toHaveLength(2);
   });
 
-  test('filters by page_id', () => {
-    const result = handleUiOutline(makeCtx(), { app_name: APP_NAME, page_id: 'page-main' });
+  test('filters by page_path', () => {
+    const result = handleUiOutline(makeCtx(), { app_name: APP_NAME, page_path: 'page-main' });
     expect(result.pages).toHaveLength(1);
   });
 
@@ -289,7 +311,7 @@ describe('handleUiInsert', () => {
     expect(action.target).toBe(inserted.id);
   });
 
-  test('inserts into page body when parent_id is a page id', () => {
+  test('inserts into page body when parent_id is a page path', () => {
     const inserted = handleUiInsert(makeCtx(), {
       app_name: APP_NAME,
       parent_id: 'page-main',
@@ -660,7 +682,7 @@ describe('handleUiBatch', () => {
     const result = handleUiBatch(makeCtx(), {
       app_name: APP_NAME,
       operations: [
-        { op: 'page_add', ref: '$settings', id: 'settings', title: 'Settings' },
+        { op: 'page_add', ref: '$settings', path: 'settings', title: 'Settings' },
         { op: 'insert', parent_id: '$settings', node: { type: 'text', text: 'Settings Page' } },
       ],
     });
@@ -669,9 +691,9 @@ describe('handleUiBatch', () => {
     expect(result.results.map((r) => r.status)).toEqual(['ok', 'ok']);
 
     const pages = handlePagesList(makeCtx(), { app_name: APP_NAME });
-    expect(pages.pages.some((p) => p.id === 'settings')).toBe(true);
+    expect(pages.pages.some((p) => p.path === 'settings')).toBe(true);
 
-    const outline = handleUiOutline(makeCtx(), { app_name: APP_NAME, page_id: 'settings' });
+    const outline = handleUiOutline(makeCtx(), { app_name: APP_NAME, page_path: 'settings' });
     expect(outline.pages).toHaveLength(1);
     expect(outline.pages[0].body).toHaveLength(1);
   });
@@ -845,7 +867,7 @@ describe('handleUiBatch', () => {
 // ============================================================
 
 describe('handlePagesList', () => {
-  test('returns all page ids and titles', () => {
+  test('returns all page paths and titles', () => {
     writePagesJson({
       pages: [
         { id: 'home', title: 'Home', body: [] },
@@ -854,8 +876,8 @@ describe('handlePagesList', () => {
     });
     const result = handlePagesList(makeCtx(), { app_name: APP_NAME });
     expect(result.pages).toHaveLength(2);
-    expect(result.pages[0]).toEqual({ id: 'home', title: 'Home' });
-    expect(result.pages[1]).toEqual({ id: 'settings', title: 'Settings' });
+    expect(result.pages[0]).toEqual({ path: 'home', title: 'Home' });
+    expect(result.pages[1]).toEqual({ path: 'settings', title: 'Settings' });
   });
 
   test('returns empty array when pages is empty', () => {
@@ -870,10 +892,10 @@ describe('handlePagesList', () => {
 // ============================================================
 
 describe('handlePagesAdd', () => {
-  test('adds a new page and returns {id, title}', () => {
+  test('adds a new page and returns {path, title}', () => {
     writePagesJson({ pages: [] });
-    const result = handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'dashboard', title: 'Dashboard' });
-    expect(result).toEqual({ id: 'dashboard', title: 'Dashboard' });
+    const result = handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'dashboard', title: 'Dashboard' });
+    expect(result).toEqual({ path: 'dashboard', title: 'Dashboard' });
     const list = handlePagesList(makeCtx(), { app_name: APP_NAME });
     expect(list.pages).toHaveLength(1);
   });
@@ -885,29 +907,29 @@ describe('handlePagesAdd', () => {
         { id: 'about', title: 'About', body: [] },
       ],
     });
-    handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'settings', title: 'Settings', index: 1 });
+    handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'settings', title: 'Settings', index: 1 });
     const list = handlePagesList(makeCtx(), { app_name: APP_NAME });
-    expect(list.pages[1].id).toBe('settings');
-    expect(list.pages[2].id).toBe('about');
+    expect(list.pages[1].path).toBe('settings');
+    expect(list.pages[2].path).toBe('about');
   });
 
-  test('throws on duplicate page id', () => {
+  test('throws on duplicate page path', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
     expect(() =>
-      handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'home', title: 'Home 2' }),
+      handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'home', title: 'Home 2' }),
     ).toThrow(PageEditorError);
   });
 
-  test('throws on invalid page id format', () => {
+  test('throws on invalid page path format', () => {
     writePagesJson({ pages: [] });
     expect(() =>
-      handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'My Page', title: 'Bad' }),
+      handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'My Page', title: 'Bad' }),
     ).toThrow(PageEditorError);
   });
 
   test('page body can be populated via ui_insert after pages_add', () => {
     writePagesJson({ pages: [] });
-    handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'dashboard', title: 'Dashboard' });
+    handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'dashboard', title: 'Dashboard' });
     const inserted = handleUiInsert(makeCtx(), {
       app_name: APP_NAME,
       parent_id: 'dashboard',
@@ -923,24 +945,24 @@ describe('handlePagesAdd', () => {
 // ============================================================
 
 describe('handlePagesRemove', () => {
-  test('removes a page and returns { deleted: page_id }', () => {
+  test('removes a page and returns { deleted: page_path }', () => {
     writePagesJson({
       pages: [
         { id: 'home', title: 'Home', body: [] },
         { id: 'about', title: 'About', body: [] },
       ],
     });
-    const result = handlePagesRemove(makeCtx(), { app_name: APP_NAME, page_id: 'home' });
+    const result = handlePagesRemove(makeCtx(), { app_name: APP_NAME, page_path: 'home' });
     expect(result).toEqual({ deleted: 'home' });
     const list = handlePagesList(makeCtx(), { app_name: APP_NAME });
     expect(list.pages).toHaveLength(1);
-    expect(list.pages[0].id).toBe('about');
+    expect(list.pages[0].path).toBe('about');
   });
 
   test('throws on non-existent page', () => {
     writePagesJson({ pages: [] });
     expect(() =>
-      handlePagesRemove(makeCtx(), { app_name: APP_NAME, page_id: 'no-such' }),
+      handlePagesRemove(makeCtx(), { app_name: APP_NAME, page_path: 'no-such' }),
     ).toThrow(PageEditorError);
   });
 });
@@ -952,8 +974,8 @@ describe('handlePagesRemove', () => {
 describe('handlePagesUpdate', () => {
   test('updates page title', () => {
     writePagesJson({ pages: [{ id: 'home', title: 'Home', body: [] }] });
-    const result = handlePagesUpdate(makeCtx(), { app_name: APP_NAME, page_id: 'home', title: 'Homepage' });
-    expect(result).toEqual({ id: 'home', title: 'Homepage' });
+    const result = handlePagesUpdate(makeCtx(), { app_name: APP_NAME, page_path: 'home', title: 'Homepage' });
+    expect(result).toEqual({ path: 'home', title: 'Homepage' });
     const list = handlePagesList(makeCtx(), { app_name: APP_NAME });
     expect(list.pages[0].title).toBe('Homepage');
   });
@@ -961,7 +983,7 @@ describe('handlePagesUpdate', () => {
   test('throws on non-existent page', () => {
     writePagesJson({ pages: [] });
     expect(() =>
-      handlePagesUpdate(makeCtx(), { app_name: APP_NAME, page_id: 'no-such', title: 'X' }),
+      handlePagesUpdate(makeCtx(), { app_name: APP_NAME, page_path: 'no-such', title: 'X' }),
     ).toThrow(PageEditorError);
   });
 });
@@ -982,25 +1004,25 @@ describe('handlePagesReorder', () => {
   });
 
   test('moves page to new position', () => {
-    handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_id: 'contact', index: 0 });
+    handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_path: 'contact', index: 0 });
     const list = handlePagesList(makeCtx(), { app_name: APP_NAME });
-    expect(list.pages.map((p) => p.id)).toEqual(['contact', 'home', 'about']);
+    expect(list.pages.map((p) => p.path)).toEqual(['contact', 'home', 'about']);
   });
 
   test('returns updated page list', () => {
-    const result = handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_id: 'home', index: 2 });
-    expect(result.pages.map((p) => p.id)).toEqual(['about', 'contact', 'home']);
+    const result = handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_path: 'home', index: 2 });
+    expect(result.pages.map((p) => p.path)).toEqual(['about', 'contact', 'home']);
   });
 
   test('throws on non-existent page', () => {
     expect(() =>
-      handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_id: 'no-such', index: 0 }),
+      handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_path: 'no-such', index: 0 }),
     ).toThrow(PageEditorError);
   });
 
   test('throws on out-of-range index', () => {
     expect(() =>
-      handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_id: 'home', index: 10 }),
+      handlePagesReorder(makeCtx(), { app_name: APP_NAME, page_path: 'home', index: 10 }),
     ).toThrow(PageEditorError);
   });
 });
@@ -1042,7 +1064,7 @@ describe('handler output format (used by both MCP servers)', () => {
 
   test('handlePagesAdd returns a plain object', () => {
     writePagesJson({ pages: [] });
-    const result = handlePagesAdd(makeCtx(), { app_name: APP_NAME, id: 'test-page', title: 'Test' });
+    const result = handlePagesAdd(makeCtx(), { app_name: APP_NAME, path: 'test-page', title: 'Test' });
     expect(() => JSON.stringify(result)).not.toThrow();
   });
 });

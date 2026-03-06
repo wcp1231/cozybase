@@ -72,7 +72,7 @@ async function renderPage(
 describe('CardRenderer', () => {
   test('card without action renders as non-clickable container', async () => {
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -99,7 +99,7 @@ describe('CardRenderer', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -134,7 +134,7 @@ describe('CardRenderer', () => {
 
   test('card with action has cursor-pointer class', async () => {
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -167,7 +167,7 @@ describe('CardRenderer', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -217,7 +217,7 @@ describe('CardRenderer', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -273,7 +273,7 @@ describe('CardRenderer', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {
@@ -313,7 +313,7 @@ describe('CardRenderer', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const schema: PageSchema = {
-      id: 'test',
+      path: 'test',
       title: 'Test',
       body: [
         {

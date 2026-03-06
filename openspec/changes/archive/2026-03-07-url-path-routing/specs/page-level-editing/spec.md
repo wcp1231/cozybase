@@ -4,7 +4,7 @@
 
 定义 Agent 通过页面级 MCP 工具对 `ui/pages.json` 中 `pages[]` 集合进行结构化编辑时，如何使用 URL 路径模式作为页面标识，并保持页面数组顺序的可控性。
 
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 系统提供页面列表读取能力
 
@@ -16,12 +16,6 @@
 - **THEN** 系统 SHALL 按 `pages[]` 当前顺序返回全部页面的摘要列表
 - **AND** 每个页面摘要 SHALL 包含页面 `path` 与 `title`
 - **AND** 返回结果 MUST NOT 包含页面 `body` 的完整节点详情
-
-#### Scenario: 页面定义文件缺失时返回明确错误
-
-- **WHEN** Agent 对不存在 `ui/pages.json` 的 APP 调用 `pages_list`
-- **THEN** 系统 SHALL 返回明确的文件不存在错误
-- **AND** 系统 MUST NOT 返回空页面列表冒充成功
 
 ### Requirement: 系统提供基于页面路径的结构化写操作
 
@@ -77,20 +71,3 @@
 - **WHEN** Agent 调用 `pages_add` 为顶层页面传入 `index: 0`
 - **THEN** 系统 SHALL 将该页面插入到 `pages[]` 开头
 - **AND** 后续访问 APP 根路径时，该页面 SHALL 成为首个可重定向的顶层页面
-
-### Requirement: 页面级工具默认作用于 Agent working copy
-
-`pages_list` 以及所有页面级写工具 SHALL 默认读取和写入 Agent working copy 中的 `ui/pages.json`，而不是直接修改 Cozybase backend 中的持久化版本。页面级工具产生的变更 SHALL 继续通过现有的 `update_app_file` / `update_app` 工作流同步回 Cozybase。
-
-#### Scenario: 页面级写操作先修改 working copy
-
-- **WHEN** Agent 成功调用任一页面级写工具修改 `ui/pages.json`
-- **THEN** 变更 SHALL 先落到 Agent working copy
-- **AND** 在 Agent 未调用 `update_app_file` 或 `update_app` 前，系统 SHALL 不要求 Cozybase backend 已同步该变更
-
-#### Scenario: 页面级读取工具看到 working copy 的最新结果
-
-- **WHEN** Agent 先调用页面级写工具成功修改 `ui/pages.json`
-- **AND** 随后再次调用 `pages_list`
-- **THEN** 页面级读取工具 SHALL 返回 working copy 中最新的页面列表
-- **AND** 返回结果 MUST NOT 回退到 backend 中的旧版本

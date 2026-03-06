@@ -1,14 +1,9 @@
 {
   "pages": [
     {
-      "id": "todo-list",
+      "path": "todo-list",
       "title": "TODO List",
       "body": [
-        {
-          "type": "heading",
-          "text": "TODO List",
-          "level": 2
-        },
         {
           "type": "row",
           "justify": "space-between",

@@ -197,7 +197,7 @@ export interface GetAppErrorsInput {
 
 export interface UiOutlineInput {
   app_name: string;
-  page_id?: string;
+  page_path?: string;
 }
 
 // -- ui_get --
@@ -259,7 +259,7 @@ export interface PagesListInput {
 
 export interface PagesAddInput {
   app_name: string;
-  id: string;
+  path: string;
   title: string;
   index?: number;
 }
@@ -268,14 +268,14 @@ export interface PagesAddInput {
 
 export interface PagesRemoveInput {
   app_name: string;
-  page_id: string;
+  page_path: string;
 }
 
 // -- pages_update --
 
 export interface PagesUpdateInput {
   app_name: string;
-  page_id: string;
+  page_path: string;
   title: string;
 }
 
@@ -283,7 +283,7 @@ export interface PagesUpdateInput {
 
 export interface PagesReorderInput {
   app_name: string;
-  page_id: string;
+  page_path: string;
   index: number;
 }
 
@@ -413,7 +413,7 @@ export const TOOL_DESCRIPTIONS = {
 
   ui_outline:
     'Get a structural outline of `ui/pages.json` from the Agent working copy.\n\n' +
-    'Returns a tree with page IDs, component IDs, types, and short summaries.\n' +
+    'Returns a tree with page paths, component IDs, types, and short summaries.\n' +
     'Use this to understand the page structure before making targeted edits.\n\n' +
     '**Workflow:**\n' +
     '1. Call `fetch_app` to populate the working copy\n' +
@@ -479,14 +479,14 @@ export const TOOL_DESCRIPTIONS = {
     'Call `get_guide("ui/batch")` for examples.',
 
   pages_list:
-    'List all pages in `ui/pages.json` with their id and title.\n\n' +
+    'List all pages in `ui/pages.json` with their path and title.\n\n' +
     'Use this to see which pages exist before adding, removing, or reordering them.\n\n' +
     'Call `fetch_app` first to populate the working copy.',
 
   pages_add:
     'Add a new page to `ui/pages.json`.\n\n' +
-    'The page `id` serves as the URL route segment (e.g., `user-list` → `/user-list`).\n' +
-    '**id format:** lowercase alphanumeric and hyphens, must start with a letter or digit (e.g., `todo-list`, `dashboard`).\n' +
+    'The page `path` is a route pattern (e.g., `orders`, `orders/:orderId`, `orders/:orderId/refund`).\n' +
+    '**path format:** slash-separated lowercase static segments and `:param` segments.\n' +
     'The page is created with an empty body; use `ui_insert` to add components.\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
@@ -497,12 +497,12 @@ export const TOOL_DESCRIPTIONS = {
 
   pages_update:
     'Update the title of an existing page in `ui/pages.json`.\n\n' +
-    '**Note:** Page `id` (the URL route) cannot be changed.\n\n' +
+    '**Note:** Page `path` cannot be changed.\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 
   pages_reorder:
     'Move a page to a new position in the pages list.\n\n' +
-    'The page order determines the navigation menu order.\n' +
+    'The page order determines route matching precedence and top-level navigation order.\n' +
     '`index` is 0-based (0 = first position).\n\n' +
     'After editing, call `update_app_file` with path `ui/pages.json` to sync to cozybase.',
 } as const;

@@ -4,8 +4,8 @@ import { resolveContentSlotState, toAppPagePath } from './content-slot';
 
 const pagesJson: PagesJson = {
   pages: [
-    { id: 'todo-list', title: 'Todo', body: [] },
-    { id: 'settings', title: 'Settings', body: [] },
+    { path: 'todo-list', title: 'Todo', body: [] },
+    { path: 'settings', title: 'Settings', body: [] },
   ],
 };
 
@@ -16,7 +16,7 @@ describe('content slot navigation flow', () => {
 
     const result = resolveContentSlotState({
       appName: 'welcome',
-      pageId: undefined,
+      subPath: undefined,
       mode: 'draft',
       pagesJson,
       appLoading: false,
@@ -32,7 +32,7 @@ describe('content slot navigation flow', () => {
   test('page switching keeps rendering in slot', () => {
     const first = resolveContentSlotState({
       appName: 'welcome',
-      pageId: 'todo-list',
+      subPath: 'todo-list',
       mode: 'stable',
       pagesJson,
       appLoading: false,
@@ -42,7 +42,7 @@ describe('content slot navigation flow', () => {
 
     const second = resolveContentSlotState({
       appName: 'welcome',
-      pageId: 'settings',
+      subPath: 'settings',
       mode: 'draft',
       pagesJson,
       appLoading: false,
@@ -54,7 +54,7 @@ describe('content slot navigation flow', () => {
   test('missing page shows error state without crashing shell', () => {
     const result = resolveContentSlotState({
       appName: 'welcome',
-      pageId: 'missing',
+      subPath: 'missing',
       mode: 'stable',
       pagesJson,
       appLoading: false,

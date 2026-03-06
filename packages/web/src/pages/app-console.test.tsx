@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test';
+import type { PagesJson } from '@cozybase/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { AppSidebar } from '../features/shell/app-sidebar';
 import { AppConsolePage } from './app-console';
 import { AppContext, type AppContextValue } from './app-layout';
+
+const pagesJson: PagesJson = {
+  pages: [
+    { path: 'orders', title: '订单列表', body: [] },
+  ],
+};
 
 function renderWithAppContext(
   ui: JSX.Element,
@@ -58,6 +65,7 @@ describe('App console UI shell', () => {
       <AppConsolePage />,
       {
         mode: 'draft',
+        pagesJson,
       },
       '/draft/apps/myapp/console?tab=schedules',
     );
@@ -65,6 +73,7 @@ describe('App console UI shell', () => {
     expect(html).toContain('My App');
     expect(html).toContain('草稿');
     expect(html).toContain('Console');
+    expect(html).toContain('href="/draft/apps/myapp/orders"');
     expect(html).toContain('错误日志');
     expect(html).toContain('定时任务');
     expect(html).toContain('数据库');
