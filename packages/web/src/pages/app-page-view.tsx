@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SchemaRenderer } from '@cozybase/ui';
-import { ArrowLeft, ChevronRight, Loader2, Menu, PanelLeftClose, PanelLeftOpen, Play, Rocket, Square } from 'lucide-react';
+import { ActivitySquare, Loader2, Menu, Play, Rocket, Square } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
-import { isAppMode, resolveContentSlotState, toAppListPath, toAppPagePath, type AppMode } from './content-slot';
+import { isAppMode, resolveContentSlotState, toAppConsolePath, toAppPagePath, type AppMode } from './content-slot';
 import { BridgeClient } from '../lib/bridge-client';
 import { inspectPage } from '../lib/ui-inspector';
-import { getAppInitials, getAppTone } from '../features/apps/app-utils';
+import { AppSectionHeader } from '../features/apps/app-section-header';
 
 export function AppPageView() {
   const { appName, '*': subPath, mode: modeParam } = useParams<{ appName: string; '*': string; mode: string }>();
@@ -75,7 +75,6 @@ export function AppPageView() {
 
   const currentPageId = slotState.type === 'render' ? slotState.page.id : pagesJson?.pages[0]?.id;
   const currentPageTitle = pagesJson?.pages.find((page) => page.id === currentPageId)?.title ?? '页面';
-  const tone = getAppTone(app?.slug ?? appName ?? 'app', app?.stableStatus ?? null);
 
   const goToUrl = useCallback(
     (url: string) => {
@@ -132,90 +131,53 @@ export function AppPageView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="sticky top-0 z-20 bg-[#F3F5F9] px-4 pb-2 pt-4 md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label="Toggle menu"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white text-[#475569] shadow-sm transition-colors hover:bg-[#F8FAFC] md:hidden"
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label="Toggle sidebar"
-              className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white text-[#475569] shadow-sm transition-colors hover:bg-[#F8FAFC] md:inline-flex"
-            >
-              {sidebarVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            </button>
-
-            <Link
-              to={toAppListPath(mode)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1F5F9] text-[#475569] no-underline transition-colors hover:bg-[#E2E8F0]"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-
-            <div className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase', tone.iconBg, tone.iconText)}>
-              {getAppInitials(app?.displayName || app?.slug || appName || 'app')}
-            </div>
-
-            <div className="min-w-0 flex gap-2">
-              <div className='truncate font-["Outfit",sans-serif] text-[22px] font-extrabold text-[#18181B]'>
-                {app?.displayName || app?.slug || appName || '应用详情'}
-              </div>
-              {(mode === 'draft' || app?.stableStatus === 'stopped') && (
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span
-                    className={clsx(
-                      'inline-flex h-6 items-center rounded-md px-2.5 text-[11px] font-semibold',
-                      mode === 'draft'
-                        ? 'bg-[#FEF3C7] text-[#92400E]'
-                        : 'bg-[#F1F5F9] text-[#475569]',
-                    )}
-                  >
-                    {mode === 'draft' ? '草稿' : '已停止'}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {mode === 'draft' ? (
+      <AppSectionHeader
+        mode={mode}
+        appName={appName}
+        appDisplayName={app?.displayName}
+        stableStatus={app?.stableStatus ?? null}
+        sectionLabel={currentPageTitle}
+        toggleSidebar={toggleSidebar}
+        sidebarVisible={sidebarVisible}
+        actions={
+          mode === 'draft' ? (
+            <>
+              <Link
+                to={toAppConsolePath(appName ?? '', mode)}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] no-underline transition-colors hover:bg-[#F8FAFC]"
+              >
+                <ActivitySquare className="h-4 w-4" />
+                控制台
+              </Link>
               <button
                 type="button"
                 onClick={handlePublish}
                 disabled={busyAction !== null}
-                className="inline-flex h-[34px] items-center justify-center gap-2 rounded-lg bg-[#4F46E5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#4F46E5] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busyAction === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
                 发布
               </button>
-            ) : app?.stableStatus ? (
-              <button
-                type="button"
-                onClick={handleToggleStable}
-                disabled={busyAction !== null}
-                className="inline-flex h-[34px] items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busyAction ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : app.stableStatus === 'running' ? (
-                  <Square className="h-4 w-4" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-                {app.stableStatus === 'running' ? '停止' : '启动'}
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </header>
+            </>
+          ) : app?.stableStatus ? (
+            <button
+              type="button"
+              onClick={handleToggleStable}
+              disabled={busyAction !== null}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busyAction ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : app.stableStatus === 'running' ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              {app.stableStatus === 'running' ? '停止' : '启动'}
+            </button>
+          ) : null
+        }
+      />
 
       <main className="min-h-0 flex-1 overflow-auto">
         {actionError && (
@@ -248,12 +210,6 @@ export function AppPageView() {
                 ))}
               </div>
             ) : null}
-
-            <div className="flex h-9 items-center gap-2 border-b border-[#E7EBF2] bg-white px-4 text-xs md:px-8">
-              <span className="font-medium text-[#94A3B8]">{app?.slug ?? appName}</span>
-              <ChevronRight className="h-3.5 w-3.5 text-[#CBD5E1]" />
-              <span className="font-semibold text-[#1E293B]">{currentPageTitle}</span>
-            </div>
 
             <div className="flex min-h-[620px] bg-white">
               {mode === 'draft' && pagePanelOpen && pagesJson?.pages.length ? (

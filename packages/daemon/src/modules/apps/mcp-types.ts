@@ -176,6 +176,23 @@ export interface CallApiOutput {
   body: unknown;
 }
 
+// -- get_app_console --
+
+export interface GetAppConsoleInput {
+  app_name: string;
+  mode?: 'draft' | 'stable';
+}
+
+// -- get_app_errors --
+
+export interface GetAppErrorsInput {
+  app_name: string;
+  mode?: 'draft' | 'stable';
+  limit?: number;
+  offset?: number;
+  source_type?: 'http_function' | 'schedule' | 'build';
+}
+
 // -- ui_outline --
 
 export interface UiOutlineInput {
@@ -350,6 +367,18 @@ export const TOOL_DESCRIPTIONS = {
     '- Database REST API: `/fn/_db/tables/{table}` and `/fn/_db/tables/{table}/{id}`\n' +
     '- TypeScript functions: ANY `/fn/{name}`\n\n' +
     'Default mode is `draft`.',
+
+  get_app_console:
+    'Get a compact diagnostic overview for an APP Console.\n\n' +
+    'Returns APP runtime status, a 24-hour error summary, and schedule health summary.\n' +
+    'Use this first when investigating whether an APP is failing before requesting full error details.\n\n' +
+    'Default mode is `stable`.',
+
+  get_app_errors:
+    'Get detailed APP error records, including stack traces when available.\n\n' +
+    'Supports pagination via `limit` and `offset`, and filtering by `source_type` (`http_function`, `schedule`, `build`).\n' +
+    'Use this after `get_app_console` when you need the actual error payloads.\n\n' +
+    'Default mode is `stable`. Default limit is `10`; default offset is `0`.',
 
   get_guide:
     'Get detailed reference documentation for APP development.\n\n' +
@@ -589,5 +618,30 @@ export const INPUT_SCHEMAS = {
       mode: { type: 'string', enum: ['draft', 'stable'], description: 'App mode (default: draft)' },
     },
     required: ['app_name', 'method', 'path'],
+  },
+
+  get_app_console: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP slug' },
+      mode: { type: 'string', enum: ['draft', 'stable'], description: 'Runtime mode. Defaults to stable.' },
+    },
+    required: ['app_name'],
+  },
+
+  get_app_errors: {
+    type: 'object' as const,
+    properties: {
+      app_name: { type: 'string', description: 'APP slug' },
+      mode: { type: 'string', enum: ['draft', 'stable'], description: 'Runtime mode. Defaults to stable.' },
+      limit: { type: 'number', description: 'Maximum number of errors to return. Defaults to 10.' },
+      offset: { type: 'number', description: 'Number of errors to skip before returning results. Defaults to 0.' },
+      source_type: {
+        type: 'string',
+        enum: ['http_function', 'schedule', 'build'],
+        description: 'Optional error source filter.',
+      },
+    },
+    required: ['app_name'],
   },
 } as const;

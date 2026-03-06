@@ -40,6 +40,8 @@ import type {
   ExecuteSqlOutput,
   CallApiInput,
   CallApiOutput,
+  GetAppConsoleInput,
+  GetAppErrorsInput,
   UiOutlineInput,
   UiGetInput,
   UiInsertInput,
@@ -253,6 +255,26 @@ export async function handleCallApi(
 ): Promise<CallApiOutput> {
   const mode = input.mode ?? 'draft';
   return ctx.backend.callApi(input.app_name, input.method, input.path, input.body, mode);
+}
+
+export async function handleGetAppConsole(
+  ctx: HandlerContext,
+  input: GetAppConsoleInput,
+) {
+  return ctx.backend.getAppConsole(input.app_name, input.mode ?? 'stable');
+}
+
+export async function handleGetAppErrors(
+  ctx: HandlerContext,
+  input: GetAppErrorsInput,
+) {
+  return ctx.backend.getAppErrors(
+    input.app_name,
+    input.mode ?? 'stable',
+    input.limit ?? 10,
+    input.offset ?? 0,
+    input.source_type,
+  );
 }
 
 // --- UI Component Editing (ui_*) ---

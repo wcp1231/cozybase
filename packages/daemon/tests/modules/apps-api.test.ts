@@ -214,6 +214,100 @@ describe('Management API (/api/v1/apps)', () => {
     });
   });
 
+  describe('Console API', () => {
+    test('returns console summary, errors, schedules, and runs for an app', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+        functions: {
+          'jobs.ts': `
+export async function run() {
+  return { ok: true };
+}
+`,
+        },
+        spec: {
+          description: 'test',
+          schedules: [
+            { name: 'nightly', cron: '*/5 * * * *', function: 'jobs:run', enabled: true },
+          ],
+        },
+      });
+
+      const { app, startup } = createServer(createTestConfig(handle.root));
+      await startup;
+      const reconcileRes = await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      expect((await jsonBody(reconcileRes)).data.success).toBe(true);
+      const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
+      expect((await jsonBody(publishRes)).data.success).toBe(true);
+
+      const repo = handle.workspace.getPlatformRepo();
+      repo.appErrorLogs.create({
+        appSlug: 'myapp',
+        runtimeMode: 'stable',
+        sourceType: 'schedule',
+        sourceDetail: 'schedule:nightly',
+        errorCode: 'SCHEDULE_ERROR',
+        errorMessage: 'nightly failed',
+      });
+      repo.scheduleRuns.create({
+        appSlug: 'myapp',
+        scheduleName: 'nightly',
+        runtimeMode: 'stable',
+        triggerMode: 'manual',
+        status: 'error',
+        functionRef: 'jobs:run',
+        errorMessage: 'nightly failed',
+      });
+
+      const consoleRes = await app.request('/api/v1/apps/myapp/console?mode=stable');
+      expect(consoleRes.status).toBe(200);
+      const consoleBody = await jsonBody(consoleRes);
+      expect(consoleBody.data.error_summary.total_24h).toBe(1);
+      expect(consoleBody.data.error_summary.by_source.schedule).toBe(1);
+      expect(consoleBody.data.schedules_summary.failing_names).toEqual(['nightly']);
+
+      const errorsRes = await app.request('/api/v1/apps/myapp/errors?mode=stable&source_type=schedule&limit=10');
+      expect(errorsRes.status).toBe(200);
+      const errorsBody = await jsonBody(errorsRes);
+      expect(errorsBody.data.errors).toHaveLength(1);
+      expect(errorsBody.data.errors[0].error_message).toBe('nightly failed');
+
+      const schedulesRes = await app.request('/api/v1/apps/myapp/schedules?mode=stable');
+      expect(schedulesRes.status).toBe(200);
+      const schedulesBody = await jsonBody(schedulesRes);
+      expect(schedulesBody.data.schedules).toHaveLength(1);
+      expect(schedulesBody.data.schedules[0].name).toBe('nightly');
+      expect(schedulesBody.data.schedules[0].next_run).toBeTruthy();
+      expect(schedulesBody.data.schedules[0].last_run.status).toBe('error');
+
+      const runsRes = await app.request('/api/v1/apps/myapp/schedules/nightly/runs?mode=stable&limit=10');
+      expect(runsRes.status).toBe(200);
+      const runsBody = await jsonBody(runsRes);
+      expect(runsBody.data.runs).toHaveLength(1);
+      expect(runsBody.data.runs[0].status).toBe('error');
+    });
+
+    test('returns 404 for schedule runs of an unknown schedule', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        spec: {
+          description: 'test',
+          stable_status: 'running',
+          schedules: [],
+        },
+      });
+
+      const { app, startup } = createServer(createTestConfig(handle.root));
+      await startup;
+
+      const runsRes = await app.request('/api/v1/apps/myapp/schedules/missing/runs?mode=stable&limit=10');
+      expect(runsRes.status).toBe(404);
+      const body = await jsonBody(runsRes);
+      expect(body.error.code).toBe('NOT_FOUND');
+    });
+  });
+
   // --- Path traversal safety ---
 
   describe('path traversal protection', () => {

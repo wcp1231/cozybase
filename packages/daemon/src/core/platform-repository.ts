@@ -55,6 +55,35 @@ export interface AgentMessageRecord {
   created_at: string;
 }
 
+export type AppErrorLogRuntimeMode = 'stable' | 'draft';
+export type AppErrorLogSourceType = 'http_function' | 'schedule' | 'build';
+
+export interface AppErrorLogRecord {
+  id: number;
+  app_slug: string;
+  runtime_mode: AppErrorLogRuntimeMode;
+  source_type: AppErrorLogSourceType;
+  source_detail: string | null;
+  error_code: string | null;
+  error_message: string;
+  stack_trace: string | null;
+  occurrence_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppErrorLogListOptions {
+  limit?: number;
+  offset?: number;
+  sourceType?: AppErrorLogSourceType;
+}
+
+export interface AppErrorLogSummary {
+  total24h: number;
+  bySource: Partial<Record<AppErrorLogSourceType, number>>;
+  latest: AppErrorLogRecord | null;
+}
+
 export type ScheduleRunStatus = 'running' | 'success' | 'error' | 'timeout' | 'skipped';
 export type ScheduleRunTriggerMode = 'auto' | 'manual';
 export type ScheduleRunRuntimeMode = 'stable' | 'draft';
@@ -367,6 +396,199 @@ export class AgentMessagesRepository {
 }
 
 /**
+ * Repository for app_error_logs table operations
+ */
+export class AppErrorLogsRepository {
+  constructor(private db: Database) {}
+
+  findById(id: number): AppErrorLogRecord | null {
+    return this.db.query('SELECT * FROM app_error_logs WHERE id = ?').get(id) as AppErrorLogRecord | null;
+  }
+
+  findRecentDuplicate(params: {
+    appSlug: string;
+    runtimeMode: AppErrorLogRuntimeMode;
+    sourceType: AppErrorLogSourceType;
+    sourceDetail?: string | null;
+    errorMessage: string;
+    withinSeconds?: number;
+  }): AppErrorLogRecord | null {
+    const withinSeconds = params.withinSeconds ?? 60;
+    const lookback = `-${withinSeconds} seconds`;
+
+    return this.db
+      .query(
+        `SELECT * FROM app_error_logs
+         WHERE app_slug = ?
+           AND runtime_mode = ?
+           AND source_type = ?
+           AND (((source_detail IS NULL) AND (? IS NULL)) OR source_detail = ?)
+           AND error_message = ?
+           AND updated_at >= datetime('now', ?)
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(
+        params.appSlug,
+        params.runtimeMode,
+        params.sourceType,
+        params.sourceDetail ?? null,
+        params.sourceDetail ?? null,
+        params.errorMessage,
+        lookback,
+      ) as AppErrorLogRecord | null;
+  }
+
+  create(params: {
+    appSlug: string;
+    runtimeMode: AppErrorLogRuntimeMode;
+    sourceType: AppErrorLogSourceType;
+    sourceDetail?: string | null;
+    errorCode?: string | null;
+    errorMessage: string;
+    stackTrace?: string | null;
+    occurrenceCount?: number;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }): number {
+    const result = this.db
+      .query(
+        `INSERT INTO app_error_logs (
+          app_slug,
+          runtime_mode,
+          source_type,
+          source_detail,
+          error_code,
+          error_message,
+          stack_trace,
+          occurrence_count,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
+      )
+      .run(
+        params.appSlug,
+        params.runtimeMode,
+        params.sourceType,
+        params.sourceDetail ?? null,
+        params.errorCode ?? null,
+        params.errorMessage,
+        params.stackTrace ?? null,
+        params.occurrenceCount ?? 1,
+        params.createdAt ?? null,
+        params.updatedAt ?? null,
+      );
+    return Number(result.lastInsertRowid);
+  }
+
+  incrementOccurrence(id: number, updatedAt?: string): void {
+    this.db
+      .query(
+        `UPDATE app_error_logs
+         SET occurrence_count = occurrence_count + 1,
+             updated_at = COALESCE(?, datetime('now'))
+         WHERE id = ?`,
+      )
+      .run(updatedAt ?? null, id);
+  }
+
+  listByAppAndMode(
+    appSlug: string,
+    runtimeMode: AppErrorLogRuntimeMode,
+    options: AppErrorLogListOptions = {},
+  ): AppErrorLogRecord[] {
+    const limit = options.limit ?? 20;
+    const offset = options.offset ?? 0;
+
+    if (options.sourceType) {
+      return this.db
+        .query(
+          `SELECT * FROM app_error_logs
+           WHERE app_slug = ? AND runtime_mode = ? AND source_type = ?
+           ORDER BY updated_at DESC, id DESC
+           LIMIT ? OFFSET ?`,
+        )
+        .all(appSlug, runtimeMode, options.sourceType, limit, offset) as AppErrorLogRecord[];
+    }
+
+    return this.db
+      .query(
+        `SELECT * FROM app_error_logs
+         WHERE app_slug = ? AND runtime_mode = ?
+         ORDER BY updated_at DESC, id DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(appSlug, runtimeMode, limit, offset) as AppErrorLogRecord[];
+  }
+
+  findLatestByAppAndMode(
+    appSlug: string,
+    runtimeMode: AppErrorLogRuntimeMode,
+  ): AppErrorLogRecord | null {
+    return this.db
+      .query(
+        `SELECT * FROM app_error_logs
+         WHERE app_slug = ? AND runtime_mode = ?
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(appSlug, runtimeMode) as AppErrorLogRecord | null;
+  }
+
+  summarizeLast24h(
+    appSlug: string,
+    runtimeMode: AppErrorLogRuntimeMode,
+  ): AppErrorLogSummary {
+    const aggregateRows = this.db
+      .query(
+        `SELECT source_type, SUM(occurrence_count) AS total
+         FROM app_error_logs
+         WHERE app_slug = ?
+           AND runtime_mode = ?
+           AND updated_at >= datetime('now', '-1 day')
+         GROUP BY source_type`,
+      )
+      .all(appSlug, runtimeMode) as { source_type: AppErrorLogSourceType; total: number }[];
+
+    const bySource: Partial<Record<AppErrorLogSourceType, number>> = {};
+    let total24h = 0;
+    for (const row of aggregateRows) {
+      bySource[row.source_type] = Number(row.total);
+      total24h += Number(row.total);
+    }
+
+    return {
+      total24h,
+      bySource,
+      latest: this.findLatestByAppAndMode(appSlug, runtimeMode),
+    };
+  }
+
+  pruneToRecent(appSlug: string, runtimeMode: AppErrorLogRuntimeMode, keep = 200): void {
+    this.db
+      .query(
+        `DELETE FROM app_error_logs
+         WHERE id NOT IN (
+           SELECT id
+           FROM app_error_logs
+           WHERE app_slug = ? AND runtime_mode = ?
+           ORDER BY updated_at DESC, id DESC
+           LIMIT ?
+         )
+         AND app_slug = ?
+         AND runtime_mode = ?`,
+      )
+      .run(appSlug, runtimeMode, keep, appSlug, runtimeMode);
+  }
+
+  deleteByAppAndMode(appSlug: string, runtimeMode: AppErrorLogRuntimeMode): void {
+    this.db
+      .query('DELETE FROM app_error_logs WHERE app_slug = ? AND runtime_mode = ?')
+      .run(appSlug, runtimeMode);
+  }
+}
+
+/**
  * Repository for schedule_runs table operations
  */
 export class ScheduleRunsRepository {
@@ -376,7 +598,23 @@ export class ScheduleRunsRepository {
     return this.db.query('SELECT * FROM schedule_runs WHERE id = ?').get(id) as ScheduleRunRecord | null;
   }
 
-  findByAppAndSchedule(appSlug: string, scheduleName: string, limit = 100): ScheduleRunRecord[] {
+  findByAppAndSchedule(
+    appSlug: string,
+    scheduleName: string,
+    limit = 100,
+    runtimeMode?: ScheduleRunRuntimeMode,
+  ): ScheduleRunRecord[] {
+    if (runtimeMode) {
+      return this.db
+        .query(
+          `SELECT * FROM schedule_runs
+           WHERE app_slug = ? AND schedule_name = ? AND runtime_mode = ?
+           ORDER BY started_at DESC, id DESC
+           LIMIT ?`,
+        )
+        .all(appSlug, scheduleName, runtimeMode, limit) as ScheduleRunRecord[];
+    }
+
     return this.db
       .query(
         `SELECT * FROM schedule_runs
@@ -521,6 +759,7 @@ export class PlatformRepository {
   public readonly apiKeys: ApiKeysRepository;
   public readonly agentSessions: AgentSessionsRepository;
   public readonly agentMessages: AgentMessagesRepository;
+  public readonly appErrorLogs: AppErrorLogsRepository;
   public readonly scheduleRuns: ScheduleRunsRepository;
   public readonly settings: SettingsRepository;
 
@@ -530,6 +769,7 @@ export class PlatformRepository {
     this.apiKeys = new ApiKeysRepository(db);
     this.agentSessions = new AgentSessionsRepository(db);
     this.agentMessages = new AgentMessagesRepository(db);
+    this.appErrorLogs = new AppErrorLogsRepository(db);
     this.scheduleRuns = new ScheduleRunsRepository(db);
     this.settings = new SettingsRepository(db);
   }

@@ -40,6 +40,10 @@ export function toAppPagePath(appName: string, pageId: string | undefined, mode:
   return pageId ? `${path}/${pageId}` : path;
 }
 
+export function toAppConsolePath(appName: string, mode: AppMode): string {
+  return `${toAppListPath(mode)}/${appName}/console`;
+}
+
 export function resolveContentSlotState(
   input: ResolveContentSlotInput,
 ): ContentSlotState {

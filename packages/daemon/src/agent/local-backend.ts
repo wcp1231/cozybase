@@ -8,6 +8,7 @@
 
 import { join } from 'path';
 import type { Hono } from 'hono';
+import { AppConsoleService } from '../core/app-console-service';
 import type { Workspace } from '../core/workspace';
 import type { DraftReconciler } from '../core/draft-reconciler';
 import type { Verifier } from '../core/verifier';
@@ -37,7 +38,7 @@ export interface LocalBackendDeps {
   verifier: Verifier;
   publisher: Publisher;
   registry: AppRegistry;
-  scheduleManager?: ScheduleManager;
+  scheduleManager: ScheduleManager;
   uiBridge: UiBridge;
   honoApp: Hono;
   eventBus?: EventBus;
@@ -50,7 +51,8 @@ export class LocalBackend implements CozybaseBackend {
   private verifier: Verifier;
   private publisher: Publisher;
   private registry: AppRegistry;
-  private scheduleManager?: ScheduleManager;
+  private scheduleManager: ScheduleManager;
+  private appConsole: AppConsoleService;
   private uiBridge: UiBridge;
   private honoApp: Hono;
   private eventBus?: EventBus;
@@ -63,6 +65,7 @@ export class LocalBackend implements CozybaseBackend {
     this.publisher = deps.publisher;
     this.registry = deps.registry;
     this.scheduleManager = deps.scheduleManager;
+    this.appConsole = new AppConsoleService(deps.workspace, deps.scheduleManager);
     this.uiBridge = deps.uiBridge;
     this.honoApp = deps.honoApp;
     this.eventBus = deps.eventBus;
@@ -321,6 +324,44 @@ export class LocalBackend implements CozybaseBackend {
       headers,
       body: responseBody,
     };
+  }
+
+  async getAppConsole(slug: string, mode?: string) {
+    return this.appConsole.getConsoleOverview(slug, mode === 'draft' ? 'draft' : 'stable');
+  }
+
+  async getAppErrors(
+    slug: string,
+    mode?: string,
+    limit?: number,
+    offset?: number,
+    sourceType?: string,
+  ) {
+    return this.appConsole.getErrors(slug, mode === 'draft' ? 'draft' : 'stable', {
+      limit,
+      offset,
+      sourceType: sourceType === 'http_function' || sourceType === 'schedule' || sourceType === 'build'
+        ? sourceType
+        : undefined,
+    });
+  }
+
+  async getAppSchedules(slug: string, mode?: string) {
+    return this.appConsole.getSchedules(slug, mode === 'draft' ? 'draft' : 'stable');
+  }
+
+  async getAppScheduleRuns(
+    slug: string,
+    scheduleName: string,
+    mode?: string,
+    limit?: number,
+  ) {
+    return this.appConsole.getScheduleRuns(
+      slug,
+      scheduleName,
+      mode === 'draft' ? 'draft' : 'stable',
+      limit ?? 20,
+    );
   }
 
   // --- UI Inspection ---

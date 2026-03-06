@@ -11,6 +11,7 @@ import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { SeedLoader } from './seed-loader';
 import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
+import { AppErrorRecorder } from './app-error-recorder';
 import { BadRequestError } from './errors';
 import { HTTP_METHODS } from '@cozybase/runtime';
 
@@ -45,7 +46,10 @@ export class DraftReconciler {
   private migrationRunner = new MigrationRunner();
   private seedLoader = new SeedLoader();
 
-  constructor(private workspace: Workspace) {}
+  constructor(
+    private workspace: Workspace,
+    private errorRecorder?: AppErrorRecorder,
+  ) {}
 
   /** Reconcile a draft app: rebuild draft DB only when migrations changed */
   async reconcile(
@@ -101,6 +105,11 @@ export class DraftReconciler {
       migrationResult = this.migrationRunner.executeMigrations(db, migrations);
 
       if (!migrationResult.success) {
+        this.recordBuildError(
+          appName,
+          'DRAFT_MIGRATION_ERROR',
+          `Migration failed (${migrationResult.failedMigration}): ${migrationResult.error}`,
+        );
         return {
           success: false,
           migrations: migrationResult.executed,
@@ -115,6 +124,11 @@ export class DraftReconciler {
       seedResult = this.seedLoader.loadSeedsFromRecords(db, seedRecords);
 
       if (!seedResult.success) {
+        this.recordBuildError(
+          appName,
+          'DRAFT_SEED_ERROR',
+          `Seed loading failed (${seedResult.failedSeed}): ${seedResult.error}`,
+        );
         return {
           success: false,
           migrations: migrationResult.executed,
@@ -144,11 +158,26 @@ export class DraftReconciler {
       }
     } catch (err: unknown) {
       console.warn(`[reconciler] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
+      this.recordBuildError(
+        appName,
+        'DRAFT_UI_EXPORT_ERROR',
+        err instanceof Error ? err.message : String(err),
+        err instanceof Error ? err.stack : undefined,
+      );
       uiResult = { exported: false };
     }
 
     // 8. Export package.json and run bun install (non-blocking on failure)
     const npmResult = await this.exportPackageJsonAndInstall(appName, appContext.draftDataDir);
+    if (npmResult && !npmResult.installed && npmResult.warning) {
+      this.recordBuildError(
+        appName,
+        'DRAFT_NPM_INSTALL_ERROR',
+        npmResult.warning,
+        undefined,
+        'draft-npm-install',
+      );
+    }
 
     return {
       success: true,
@@ -253,6 +282,13 @@ export class DraftReconciler {
         );
 
         if (!hasDefault && !hasMethodExport) {
+          this.recordBuildError(
+            appName,
+            'FUNCTION_VALIDATION_ERROR',
+            'No valid handler export found (need default export or HTTP method export)',
+            undefined,
+            `function:${name}`,
+          );
           warnings.push({
             name,
             valid: false,
@@ -263,6 +299,13 @@ export class DraftReconciler {
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        this.recordBuildError(
+          appName,
+          'FUNCTION_VALIDATION_ERROR',
+          message,
+          err instanceof Error ? err.stack : undefined,
+          `function:${name}`,
+        );
         warnings.push({ name, valid: false, error: message });
       }
     }
@@ -308,5 +351,23 @@ export class DraftReconciler {
     } catch (err: any) {
       return { installed: false, warning: `bun install failed: ${err.message}` };
     }
+  }
+
+  private recordBuildError(
+    appSlug: string,
+    errorCode: string,
+    errorMessage: string,
+    stackTrace?: string,
+    sourceDetail = 'draft-reconcile',
+  ): void {
+    this.errorRecorder?.record({
+      appSlug,
+      runtimeMode: 'draft',
+      sourceType: 'build',
+      sourceDetail,
+      errorCode,
+      errorMessage,
+      stackTrace,
+    });
   }
 }

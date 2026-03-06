@@ -9,7 +9,7 @@ import { useChatStore } from '../stores/chat-store';
 import { isAppMode, type AppMode } from './content-slot';
 import type { AppInfo, AppSummary } from '../features/apps/types';
 
-interface AppContextValue {
+export interface AppContextValue {
   mode: AppMode;
   apps: AppSummary[];
   appsLoading: boolean;
@@ -26,7 +26,7 @@ interface AppContextValue {
   sidebarVisible: boolean;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+export const AppContext = createContext<AppContextValue | null>(null);
 
 const CHAT_PANEL_DEFAULT_WIDTH = 380;
 const CHAT_PANEL_MIN_WIDTH = 320;

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createRuntime } from '@cozybase/runtime';
+import { AppErrorRecorder } from '../../src/core/app-error-recorder';
 import { ScheduleManager } from '../../src/core/schedule-manager';
 import {
   createTestApp,
@@ -256,5 +257,67 @@ export async function run() {
     const result = await manager.triggerManual('myapp', 'timeout-job', 'stable');
     expect(result.status).toBe('timeout');
     expect(result.errorMessage).toContain('timed out');
+  });
+
+  test('records schedule failures in app_error_logs and exposes schedule status', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      spec: {
+        description: 'test',
+        stable_status: 'running',
+        schedules: [
+          { name: 'failing-job', cron: '*/5 * * * *', function: 'jobs:run', timeout: 5000 },
+        ],
+      },
+    });
+
+    runtime = createRuntime();
+    const stableDir = join(handle.root, 'stable', 'myapp');
+    const functionsDir = join(stableDir, 'functions');
+    const uiDir = join(stableDir, 'ui');
+    mkdirSync(functionsDir, { recursive: true });
+    mkdirSync(uiDir, { recursive: true });
+    writeFileSync(join(uiDir, 'pages.json'), '{"pages":[]}', 'utf-8');
+    writeFileSync(join(functionsDir, 'jobs.ts'), `
+export async function run() {
+  throw new Error('schedule boom');
+}
+`, 'utf-8');
+
+    runtime.registry.start('myapp', {
+      mode: 'stable',
+      dbPath: join(stableDir, 'db.sqlite'),
+      functionsDir,
+      uiDir,
+    });
+
+    const errorRecorder = new AppErrorRecorder(handle.workspace.getPlatformRepo());
+    const manager = new ScheduleManager({
+      platformRepo: handle.workspace.getPlatformRepo(),
+      registry: runtime.registry,
+      stablePlatformClient: runtime.stablePlatformClient,
+      draftPlatformClient: runtime.draftPlatformClient,
+      errorRecorder,
+    });
+
+    await manager.loadApp('myapp');
+    const result = await manager.triggerManual('myapp', 'failing-job', 'stable');
+    expect(result.status).toBe('error');
+
+    const errorLogs = handle.workspace.getPlatformRepo().appErrorLogs.listByAppAndMode('myapp', 'stable', {
+      limit: 10,
+      sourceType: 'schedule',
+    });
+    expect(errorLogs).toHaveLength(1);
+    expect(errorLogs[0]?.error_message).toBe('schedule boom');
+
+    const statuses = manager.getAppScheduleStatus('myapp', 'stable');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.name).toBe('failing-job');
+    expect(statuses[0]?.nextRun).not.toBeNull();
+    expect(statuses[0]?.lastRun?.status).toBe('error');
+
+    const draftStatuses = manager.getAppScheduleStatus('myapp', 'draft');
+    expect(draftStatuses[0]?.nextRun).toBeNull();
   });
 });

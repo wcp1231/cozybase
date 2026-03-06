@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
+import { AppConsoleService } from '../../core/app-console-service';
 import type { Workspace } from '../../core/workspace';
 import type { AppManager } from './manager';
 import { BadRequestError } from '../../core/errors';
 
-export function createAppRoutes(workspace: Workspace, manager: AppManager) {
+export function createAppRoutes(
+  workspace: Workspace,
+  manager: AppManager,
+  appConsole: AppConsoleService,
+) {
   const app = new Hono();
 
   // GET /apps - List all apps with derived states
@@ -50,6 +55,40 @@ export function createAppRoutes(workspace: Workspace, manager: AppManager) {
     const slug = c.req.param('slug')!;
     const appWithFiles = manager.getAppWithFiles(slug);
     return c.json({ data: appWithFiles });
+  });
+
+  app.get('/apps/:slug/console', (c) => {
+    const slug = c.req.param('slug')!;
+    const mode = parseMode(c.req.query('mode'));
+    return c.json({ data: appConsole.getConsoleOverview(slug, mode) });
+  });
+
+  app.get('/apps/:slug/errors', (c) => {
+    const slug = c.req.param('slug')!;
+    const mode = parseMode(c.req.query('mode'));
+    const limit = parsePositiveInt(c.req.query('limit'), 10, 'limit');
+    const offset = parseNonNegativeInt(c.req.query('offset'), 0, 'offset');
+    const sourceType = parseSourceType(c.req.query('source_type'));
+    return c.json({
+      data: appConsole.getErrors(slug, mode, { limit, offset, sourceType }),
+    });
+  });
+
+  // Keep this more specific route above `/apps/:slug/schedules` so `:name/runs` is not shadowed.
+  app.get('/apps/:slug/schedules/:name/runs', (c) => {
+    const slug = c.req.param('slug')!;
+    const scheduleName = c.req.param('name')!;
+    const mode = parseMode(c.req.query('mode'));
+    const limit = parsePositiveInt(c.req.query('limit'), 20, 'limit');
+    return c.json({
+      data: appConsole.getScheduleRuns(slug, scheduleName, mode, limit),
+    });
+  });
+
+  app.get('/apps/:slug/schedules', (c) => {
+    const slug = c.req.param('slug')!;
+    const mode = parseMode(c.req.query('mode'));
+    return c.json({ data: appConsole.getSchedules(slug, mode) });
   });
 
   // PUT /apps/:slug - Whole-app update (optimistic lock)
@@ -146,4 +185,48 @@ export function createAppRoutes(workspace: Workspace, manager: AppManager) {
   });
 
   return app;
+}
+
+function parseMode(rawMode: string | undefined): 'stable' | 'draft' {
+  if (rawMode === undefined) {
+    return 'stable';
+  }
+  if (rawMode === 'stable' || rawMode === 'draft') {
+    return rawMode;
+  }
+  throw new BadRequestError('Query parameter "mode" must be "stable" or "draft"');
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number, field: string): number {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new BadRequestError(`Query parameter "${field}" must be a positive integer`);
+  }
+  return value;
+}
+
+function parseNonNegativeInt(raw: string | undefined, fallback: number, field: string): number {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new BadRequestError(`Query parameter "${field}" must be a non-negative integer`);
+  }
+  return value;
+}
+
+function parseSourceType(raw: string | undefined): 'http_function' | 'schedule' | 'build' | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (raw === 'http_function' || raw === 'schedule' || raw === 'build') {
+    return raw;
+  }
+  throw new BadRequestError(
+    'Query parameter "source_type" must be one of "http_function", "schedule", or "build"',
+  );
 }

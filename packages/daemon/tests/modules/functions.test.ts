@@ -36,6 +36,20 @@ export async function GET(ctx) {
 }
 `;
 
+const FN_APP_ERROR = `
+class AppError extends Error {
+  constructor(statusCode, message, code) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export async function POST() {
+  throw new AppError(400, "invalid input", "INVALID_INPUT");
+}
+`;
+
 const FN_SYNTAX_ERROR = `
 export async function GET(ctx) {
   return {{ invalid syntax
@@ -78,6 +92,25 @@ function createTestConfig(root: string): Config {
 
 async function jsonBody(res: Response): Promise<any> {
   return res.json();
+}
+
+async function waitFor<T>(
+  getValue: () => T,
+  predicate: (value: T) => boolean,
+  timeoutMs = 250,
+): Promise<T> {
+  const startedAt = Date.now();
+
+  while (true) {
+    const value = getValue();
+    if (predicate(value)) {
+      return value;
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      return value;
+    }
+    await Bun.sleep(10);
+  }
 }
 
 // --- Tests ---
@@ -237,6 +270,41 @@ describe('Function Runtime (HTTP integration)', () => {
     expect(body.error.code).toBe('FUNCTION_ERROR');
     expect(body.error.message).toBe('intentional error');
     expect(body.error.stack).toBeDefined(); // Stack trace included in draft mode
+
+    const errorLogs = await waitFor(
+      () => handle.workspace.getPlatformRepo().appErrorLogs.listByAppAndMode('myapp', 'draft', {
+        limit: 10,
+        sourceType: 'http_function',
+      }),
+      (logs) => logs.length === 1,
+    );
+    expect(errorLogs).toHaveLength(1);
+    expect(errorLogs[0]?.error_code).toBe('FUNCTION_ERROR');
+    expect(errorLogs[0]?.error_message).toBe('intentional error');
+  });
+
+  test('4xx app errors preserve response semantics and do not write app_error_logs', async () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      functions: { 'submit.ts': FN_APP_ERROR },
+    });
+
+    const { app } = createServer(createTestConfig(handle.root));
+    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+
+    const res = await app.request('/draft/apps/myapp/fn/submit', { method: 'POST' });
+    expect(res.status).toBe(400);
+
+    const body = await jsonBody(res);
+    expect(body.error.code).toBe('INVALID_INPUT');
+    expect(body.error.message).toBe('invalid input');
+
+    const errorLogs = handle.workspace.getPlatformRepo().appErrorLogs.listByAppAndMode('myapp', 'draft', {
+      limit: 10,
+      sourceType: 'http_function',
+    });
+    expect(errorLogs).toHaveLength(0);
   });
 
   test('404 for _ prefix function (reserved)', async () => {
@@ -411,6 +479,16 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const body = await jsonBody(res);
     expect(body.error.code).toBe('FUNCTION_LOAD_ERROR');
+
+    const errorLogs = await waitFor(
+      () => handle.workspace.getPlatformRepo().appErrorLogs.listByAppAndMode('myapp', 'draft', {
+        limit: 10,
+        sourceType: 'http_function',
+      }),
+      (logs) => logs.length === 1,
+    );
+    expect(errorLogs).toHaveLength(1);
+    expect(errorLogs[0]?.error_code).toBe('FUNCTION_LOAD_ERROR');
   });
 
   test('shutdown clears function runtime caches', async () => {

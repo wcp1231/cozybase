@@ -2,7 +2,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import type { AppEntry } from '../../registry';
 import type { PlatformClient } from '../../platform-client';
-import type { FunctionModule, HttpMethod } from './types';
+import type { ErrorRecorder, FunctionModule, HttpMethod } from './types';
 import { HTTP_METHODS } from './types';
 import { buildFunctionContext } from './context';
 
@@ -27,6 +27,7 @@ export async function executeFunction(
   functionName: string,
   request: Request,
   platformClient: PlatformClient,
+  errorRecorder?: ErrorRecorder,
 ): Promise<Response> {
   // Validate function name: reject _ prefix and invalid names
   if (functionName.startsWith('_') || !isValidFunctionName(functionName)) {
@@ -41,6 +42,15 @@ export async function executeFunction(
     if (!existsSync(join(entry.functionsDir, `${functionName}.ts`))) {
       return jsonError(404, 'NOT_FOUND', `Function '${functionName}' not found`);
     }
+    recordError(errorRecorder, {
+      appSlug: entry.name,
+      runtimeMode: entry.mode,
+      sourceType: 'http_function',
+      sourceDetail: buildSourceDetail(request, functionName),
+      errorCode: 'FUNCTION_LOAD_ERROR',
+      errorMessage: message,
+      stackTrace: err instanceof Error ? err.stack : undefined,
+    });
     const stack = entry.mode === 'draft' && err instanceof Error ? err.stack : undefined;
     return jsonError(500, 'FUNCTION_LOAD_ERROR', message, stack);
   }
@@ -62,7 +72,20 @@ export async function executeFunction(
     const result = await handler(ctx);
     return toFunctionResponse(result);
   } catch (err: unknown) {
+    if (isClientAppError(err)) {
+      return jsonError(err.statusCode, err.code ?? 'APP_ERROR', err.message);
+    }
+
     const message = err instanceof Error ? err.message : String(err);
+    recordError(errorRecorder, {
+      appSlug: entry.name,
+      runtimeMode: entry.mode,
+      sourceType: 'http_function',
+      sourceDetail: buildSourceDetail(request, functionName),
+      errorCode: 'FUNCTION_ERROR',
+      errorMessage: message,
+      stackTrace: err instanceof Error ? err.stack : undefined,
+    });
     const stack = entry.mode === 'draft' && err instanceof Error ? err.stack : undefined;
     return jsonError(500, 'FUNCTION_ERROR', message, stack);
   }
@@ -144,4 +167,37 @@ function jsonError(status: number, code: string, message: string, stack?: string
 
 function isValidFunctionName(functionName: string): boolean {
   return FUNCTION_NAME_PATTERN.test(functionName);
+}
+
+function buildSourceDetail(request: Request, functionName: string): string {
+  try {
+    const url = new URL(request.url);
+    return `${request.method.toUpperCase()} ${url.pathname}`;
+  } catch {
+    return `${request.method.toUpperCase()} ${functionName}`;
+  }
+}
+
+function isClientAppError(
+  err: unknown,
+): err is Error & { statusCode: number; code?: string } {
+  const maybeAppError = err as (Error & { statusCode?: unknown; code?: unknown }) | null;
+  return err instanceof Error
+    && typeof maybeAppError?.statusCode === 'number'
+    && maybeAppError.statusCode >= 400
+    && maybeAppError.statusCode < 500;
+}
+
+function recordError(errorRecorder: ErrorRecorder | undefined, entry: Parameters<ErrorRecorder['record']>[0]): void {
+  if (!errorRecorder) {
+    return;
+  }
+
+  try {
+    void Promise.resolve(errorRecorder.record(entry)).catch((err) => {
+      console.error('[runtime] Failed to record function error', err);
+    });
+  } catch (err) {
+    console.error('[runtime] Failed to record function error', err);
+  }
 }

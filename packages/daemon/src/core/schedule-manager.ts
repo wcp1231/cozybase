@@ -4,6 +4,7 @@ import {
   type AppRegistry,
   type PlatformClient,
 } from '@cozybase/runtime';
+import { AppErrorRecorder } from './app-error-recorder';
 import { NotFoundError } from './errors';
 import type { PlatformRepository, ScheduleRunRuntimeMode, ScheduleRunStatus, ScheduleRunTriggerMode } from './platform-repository';
 import { loadSchedulesFromAppConfig, type AppSchedule } from './schedule-config';
@@ -13,6 +14,7 @@ interface ScheduleManagerDeps {
   registry: AppRegistry;
   stablePlatformClient: PlatformClient;
   draftPlatformClient: PlatformClient;
+  errorRecorder?: AppErrorRecorder;
 }
 
 interface LoadedAppSchedules {
@@ -49,6 +51,18 @@ export interface ScheduleExecutionResult {
   durationMs: number;
   errorMessage?: string;
   result?: unknown;
+}
+
+export interface AppScheduleStatus {
+  name: string;
+  cron: string;
+  enabled: boolean;
+  function: string;
+  concurrency: AppSchedule['concurrency'];
+  timeout: number;
+  timezone: string;
+  nextRun: string | null;
+  lastRun: ReturnType<PlatformRepository['scheduleRuns']['findById']>;
 }
 
 class ScheduleTimeoutError extends Error {
@@ -168,6 +182,43 @@ export class ScheduleManager {
     return Array.from(loaded.schedules.keys()).sort();
   }
 
+  getAppScheduleStatus(
+    appSlug: string,
+    runtimeMode: ScheduleRunRuntimeMode,
+  ): AppScheduleStatus[] {
+    const { schedules, warnings } = loadSchedulesFromAppConfig(this.deps.platformRepo, appSlug);
+    for (const warning of warnings) {
+      console.warn(`[schedule:${appSlug}] ${warning}`);
+    }
+
+    const loaded = runtimeMode === 'stable' ? this.loadedApps.get(appSlug) : undefined;
+
+    return schedules
+      .map((schedule) => {
+        const job = loaded?.jobs.get(schedule.name);
+        const nextRun = job?.nextRun();
+        const lastRun = this.deps.platformRepo.scheduleRuns.findByAppAndSchedule(
+          appSlug,
+          schedule.name,
+          1,
+          runtimeMode,
+        )[0] ?? null;
+
+        return {
+          name: schedule.name,
+          cron: schedule.cron,
+          enabled: schedule.enabled,
+          function: schedule.functionRef.raw,
+          concurrency: schedule.concurrency,
+          timeout: schedule.timeout,
+          timezone: schedule.timezone,
+          nextRun: nextRun ? nextRun.toISOString() : null,
+          lastRun,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   private async executeSchedule(request: ScheduleExecutionRequest): Promise<ScheduleExecutionResult> {
     const key = this.executionStateKey(
       request.appSlug,
@@ -277,6 +328,15 @@ export class ScheduleManager {
         request.schedule.name,
         100,
       );
+      this.deps.errorRecorder?.record({
+        appSlug: request.appSlug,
+        runtimeMode: request.runtimeMode,
+        sourceType: 'schedule',
+        sourceDetail: `schedule:${request.schedule.name}`,
+        errorCode: timeout ? 'SCHEDULE_TIMEOUT' : 'SCHEDULE_ERROR',
+        errorMessage,
+        stackTrace: err instanceof Error ? err.stack : undefined,
+      });
 
       return {
         runId,

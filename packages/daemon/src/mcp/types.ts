@@ -6,6 +6,12 @@
  */
 
 import type { StableStatus } from '../core/workspace';
+import type {
+  AppConsoleErrorsResult,
+  AppConsoleOverview,
+  AppConsoleScheduleRunsResult,
+  AppConsoleSchedulesResult,
+} from '../core/app-console-service';
 import type { DraftReconcileResult } from '../core/draft-reconciler';
 import type { VerifyResult } from '../core/verifier';
 import type { PublishResult } from '../core/publisher';
@@ -68,6 +74,8 @@ export interface ApiResponse {
   body: unknown;
 }
 
+export type { AppConsoleOverview, AppConsoleErrorsResult, AppConsoleSchedulesResult, AppConsoleScheduleRunsResult };
+
 // --- Backend Interface ---
 
 /**
@@ -97,6 +105,21 @@ export interface CozybaseBackend {
   // Runtime interaction
   executeSql(slug: string, sql: string, mode: string): Promise<SqlResult>;
   callApi(slug: string, method: string, path: string, body?: unknown, mode?: string): Promise<ApiResponse>;
+  getAppConsole(slug: string, mode?: string): Promise<AppConsoleOverview>;
+  getAppErrors(
+    slug: string,
+    mode?: string,
+    limit?: number,
+    offset?: number,
+    sourceType?: string,
+  ): Promise<AppConsoleErrorsResult>;
+  getAppSchedules(slug: string, mode?: string): Promise<AppConsoleSchedulesResult>;
+  getAppScheduleRuns(
+    slug: string,
+    scheduleName: string,
+    mode?: string,
+    limit?: number,
+  ): Promise<AppConsoleScheduleRunsResult>;
 
   // UI inspection (requires browser session)
   inspectUi(appSlug: string, page?: string): Promise<unknown>;

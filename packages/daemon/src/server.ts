@@ -5,6 +5,8 @@ import { existsSync, readFileSync, mkdirSync, symlinkSync, lstatSync } from 'fs'
 import { resolve, join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
+import { AppErrorRecorder } from './core/app-error-recorder';
+import { AppConsoleService } from './core/app-console-service';
 import { DraftReconciler } from './core/draft-reconciler';
 import { Verifier } from './core/verifier';
 import { Publisher } from './core/publisher';
@@ -59,9 +61,10 @@ export function createServer(config: Config) {
   workspace.load();
 
   // --- Core services ---
-  const draftReconciler = new DraftReconciler(workspace);
+  const appErrorRecorder = new AppErrorRecorder(workspace.getPlatformRepo());
+  const draftReconciler = new DraftReconciler(workspace, appErrorRecorder);
   const verifier = new Verifier(workspace);
-  const publisher = new Publisher(workspace);
+  const publisher = new Publisher(workspace, appErrorRecorder);
 
   // --- Create Runtime ---
   const platformHandler: PlatformHandler = {
@@ -92,14 +95,16 @@ export function createServer(config: Config) {
     registry,
     stablePlatformClient,
     draftPlatformClient,
-  } = createRuntime({ platformHandler });
+  } = createRuntime({ platformHandler, errorRecorder: appErrorRecorder });
 
   const scheduleManager = new ScheduleManager({
     platformRepo: workspace.getPlatformRepo(),
     registry,
     stablePlatformClient,
     draftPlatformClient,
+    errorRecorder: appErrorRecorder,
   });
+  const appConsole = new AppConsoleService(workspace, scheduleManager);
 
   // --- Startup promise: auto-publish template apps (if first init), then load all apps ---
   const runtimeStartup = initializeRuntime(
@@ -153,7 +158,7 @@ export function createServer(config: Config) {
   app.get('/health', (c) => c.json({ status: 'ok', version: '0.1.0' }));
 
   // --- Platform API (app listing / status) ---
-  app.route('/api/v1', createAppRoutes(workspace, appManager));
+  app.route('/api/v1', createAppRoutes(workspace, appManager, appConsole));
 
   // --- Theme API ---
   app.route('/api/v1', createThemeRoutes(workspace, registry));

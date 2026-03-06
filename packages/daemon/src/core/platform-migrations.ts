@@ -133,6 +133,36 @@ export const PLATFORM_MIGRATIONS: PlatformMigration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'app_error_logs',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS app_error_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
+          runtime_mode TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          source_detail TEXT,
+          error_code TEXT,
+          error_message TEXT NOT NULL,
+          stack_trace TEXT,
+          occurrence_count INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_app_error_logs_app_mode_updated
+          ON app_error_logs(app_slug, runtime_mode, updated_at DESC, id DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_app_error_logs_app_mode_created
+          ON app_error_logs(app_slug, runtime_mode, created_at DESC, id DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_app_error_logs_source
+          ON app_error_logs(source_type, updated_at DESC, id DESC);
+      `);
+    },
+  },
 ];
 
 /**

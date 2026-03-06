@@ -3,6 +3,7 @@ import { existsSync, copyFileSync, unlinkSync, rmSync, mkdirSync, writeFileSync 
 import type { Workspace } from './workspace';
 import { MigrationRunner } from './migration-runner';
 import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
+import { AppErrorRecorder } from './app-error-recorder';
 import { BadRequestError } from './errors';
 
 // --- Types ---
@@ -20,7 +21,10 @@ export interface PublishResult {
 export class Publisher {
   private migrationRunner = new MigrationRunner();
 
-  constructor(private workspace: Workspace) {}
+  constructor(
+    private workspace: Workspace,
+    private errorRecorder?: AppErrorRecorder,
+  ) {}
 
   /** Publish draft changes to stable */
   async publish(appName: string): Promise<PublishResult> {
@@ -89,6 +93,11 @@ export class Publisher {
         // Rollback: restore backup (don't update version or immutable)
         appContext.closeStable();
         this.restoreBackup(appContext.stableDbPath, backupPath, isNewApp);
+        this.recordBuildError(
+          appName,
+          'STABLE_MIGRATION_ERROR',
+          `Migration failed (${result.failedMigration}): ${result.error}`,
+        );
         return {
           success: false,
           migrationsApplied: result.executed,
@@ -113,6 +122,7 @@ export class Publisher {
       // 10. Mark executed migrations immutable + update published_version
       const allExecutedVersions = [...executedVersions, ...pendingMigrations.map(m => m.version)];
       this.markImmutableAndUpdateVersion(appName, allExecutedVersions, previousStableStatus);
+      this.errorRecorder?.clearDraftErrors(appName);
 
       // 10. Cleanup
       this.cleanup(appContext);
@@ -128,6 +138,12 @@ export class Publisher {
       // Unexpected error: attempt rollback (don't update version or immutable)
       appContext.closeStable();
       this.restoreBackup(appContext.stableDbPath, backupPath, isNewApp);
+      this.recordBuildError(
+        appName,
+        'STABLE_PUBLISH_ERROR',
+        `Unexpected error: ${err.message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
       return {
         success: false,
         migrationsApplied: [],
@@ -178,6 +194,13 @@ export class Publisher {
       return undefined;
     } catch (err: unknown) {
       console.warn(`[publisher] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
+      this.recordBuildError(
+        appName,
+        'STABLE_UI_EXPORT_ERROR',
+        err instanceof Error ? err.message : String(err),
+        err instanceof Error ? err.stack : undefined,
+        'stable-ui-export',
+      );
       return { exported: false };
     }
   }
@@ -237,7 +260,17 @@ export class Publisher {
     mkdirSync(appDir, { recursive: true });
     writeFileSync(join(appDir, 'package.json'), record.content, 'utf-8');
 
-    return this.runBunInstall(appDir);
+    const result = await this.runBunInstall(appDir);
+    if (result && !result.installed && result.warning) {
+      this.recordBuildError(
+        appName,
+        'STABLE_NPM_INSTALL_ERROR',
+        result.warning,
+        undefined,
+        'stable-npm-install',
+      );
+    }
+    return result;
   }
 
   /** Run bun install in the given directory; returns result without throwing on failure */
@@ -262,5 +295,23 @@ export class Publisher {
     } catch (err: any) {
       return { installed: false, warning: `bun install failed: ${err.message}` };
     }
+  }
+
+  private recordBuildError(
+    appSlug: string,
+    errorCode: string,
+    errorMessage: string,
+    stackTrace?: string,
+    sourceDetail = 'stable-publish',
+  ): void {
+    this.errorRecorder?.record({
+      appSlug,
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail,
+      errorCode,
+      errorMessage,
+      stackTrace,
+    });
   }
 }

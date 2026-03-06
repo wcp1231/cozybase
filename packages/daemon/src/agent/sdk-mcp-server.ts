@@ -23,6 +23,8 @@ import {
   handlePublishApp,
   handleExecuteSql,
   handleCallApi,
+  handleGetAppConsole,
+  handleGetAppErrors,
   handleInspectUi,
   handleUiOutline,
   handleUiGet,
@@ -157,6 +159,28 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
           mode: z.enum(['draft', 'stable']).optional(),
         },
         async (args) => jsonResult(await handleCallApi(ctx, args)),
+      ),
+
+      tool(
+        'get_app_console',
+        TOOL_DESCRIPTIONS.get_app_console,
+        {
+          app_name: z.string(),
+          mode: z.enum(['draft', 'stable']).optional(),
+        },
+        async (args) => jsonResult(await handleGetAppConsole(ctx, args)),
+      ),
+
+      tool(
+        'get_app_errors',
+        TOOL_DESCRIPTIONS.get_app_errors,
+        {
+          app_name: z.string(),
+          mode: z.enum(['draft', 'stable']).optional(),
+          limit: z.number().int().positive().optional(),
+          source_type: z.enum(['http_function', 'schedule', 'build']).optional(),
+        },
+        async (args) => jsonResult(await handleGetAppErrors(ctx, args)),
       ),
 
       // --- UI Inspection ---

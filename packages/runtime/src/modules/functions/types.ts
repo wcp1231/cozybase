@@ -17,6 +17,20 @@ export interface Logger {
   debug(message: string, data?: Record<string, unknown>): void;
 }
 
+export interface ErrorRecordEntry {
+  appSlug: string;
+  runtimeMode: 'stable' | 'draft';
+  sourceType: 'http_function' | 'schedule' | 'build';
+  sourceDetail?: string;
+  errorCode?: string;
+  errorMessage: string;
+  stackTrace?: string;
+}
+
+export interface ErrorRecorder {
+  record(entry: ErrorRecordEntry): void | Promise<void>;
+}
+
 // --- FunctionContext ---
 
 export interface FunctionContext {

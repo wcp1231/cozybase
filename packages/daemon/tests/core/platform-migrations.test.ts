@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { AppErrorRecorder } from '../../src/core/app-error-recorder';
 import { runPlatformMigrations } from '../../src/core/platform-migrations';
 import { PlatformRepository } from '../../src/core/platform-repository';
 
@@ -11,6 +12,36 @@ function createMigratedDb(): Database {
 }
 
 describe('Platform migrations', () => {
+  test('creates app_error_logs table and indexes', () => {
+    const db = createMigratedDb();
+
+    const table = db
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'app_error_logs'")
+      .get() as { name: string } | null;
+    expect(table?.name).toBe('app_error_logs');
+
+    const columns = db.query('PRAGMA table_info(app_error_logs)').all() as { name: string }[];
+    const columnNames = columns.map((c) => c.name);
+    expect(columnNames).toContain('app_slug');
+    expect(columnNames).toContain('runtime_mode');
+    expect(columnNames).toContain('source_type');
+    expect(columnNames).toContain('source_detail');
+    expect(columnNames).toContain('error_code');
+    expect(columnNames).toContain('error_message');
+    expect(columnNames).toContain('stack_trace');
+    expect(columnNames).toContain('occurrence_count');
+    expect(columnNames).toContain('created_at');
+    expect(columnNames).toContain('updated_at');
+
+    const indexes = db.query("SELECT name FROM sqlite_master WHERE type = 'index'").all() as { name: string }[];
+    const indexNames = indexes.map((idx) => idx.name);
+    expect(indexNames).toContain('idx_app_error_logs_app_mode_updated');
+    expect(indexNames).toContain('idx_app_error_logs_app_mode_created');
+    expect(indexNames).toContain('idx_app_error_logs_source');
+
+    db.close();
+  });
+
   test('creates schedule_runs table and indexes', () => {
     const db = createMigratedDb();
 
@@ -45,6 +76,139 @@ describe('Platform migrations', () => {
 
     const rows = db.query('SELECT version FROM _platform_migrations ORDER BY version').all() as { version: number }[];
     expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+
+    db.close();
+  });
+});
+
+describe('AppErrorRecorder', () => {
+  test('deduplicates repeated errors and increments occurrence count', () => {
+    const db = createMigratedDb();
+    const repo = new PlatformRepository(db);
+    repo.apps.create({ slug: 'myapp' });
+    const recorder = new AppErrorRecorder(repo);
+
+    recorder.record({
+      appSlug: 'myapp',
+      runtimeMode: 'draft',
+      sourceType: 'http_function',
+      sourceDetail: 'GET /draft/apps/myapp/fn/broken',
+      errorCode: 'FUNCTION_ERROR',
+      errorMessage: 'boom',
+      stackTrace: 'stack-a',
+    });
+    recorder.record({
+      appSlug: 'myapp',
+      runtimeMode: 'draft',
+      sourceType: 'http_function',
+      sourceDetail: 'GET /draft/apps/myapp/fn/broken',
+      errorCode: 'FUNCTION_ERROR',
+      errorMessage: 'boom',
+      stackTrace: 'stack-b',
+    });
+
+    const rows = repo.appErrorLogs.listByAppAndMode('myapp', 'draft', { limit: 10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.occurrence_count).toBe(2);
+
+    db.close();
+  });
+
+  test('rate limits only new rows and keeps deduplicated updates flowing', () => {
+    const db = createMigratedDb();
+    const repo = new PlatformRepository(db);
+    repo.apps.create({ slug: 'myapp' });
+    const recorder = new AppErrorRecorder(repo, {
+      limitPerMinute: 2,
+      now: () => new Date('2026-03-06T12:00:00.000Z'),
+    });
+
+    expect(recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail: 'stable-publish',
+      errorCode: 'ERR_A',
+      errorMessage: 'first',
+    }).status).toBe('inserted');
+    expect(recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail: 'stable-publish',
+      errorCode: 'ERR_B',
+      errorMessage: 'second',
+    }).status).toBe('inserted');
+    expect(recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail: 'stable-publish',
+      errorCode: 'ERR_C',
+      errorMessage: 'third',
+    }).status).toBe('rate_limited');
+    expect(recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail: 'stable-publish',
+      errorCode: 'ERR_A',
+      errorMessage: 'first',
+    }).status).toBe('deduplicated');
+
+    const rows = repo.appErrorLogs.listByAppAndMode('myapp', 'stable', { limit: 10 });
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.error_message === 'first')?.occurrence_count).toBe(2);
+
+    db.close();
+  });
+
+  test('prunes older rows and clears draft logs independently', () => {
+    const db = createMigratedDb();
+    const repo = new PlatformRepository(db);
+    repo.apps.create({ slug: 'myapp' });
+    const recorder = new AppErrorRecorder(repo, {
+      keepPerAppMode: 2,
+      now: () => new Date('2026-03-06T12:00:00.000Z'),
+    });
+
+    recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'draft',
+      sourceType: 'build',
+      sourceDetail: 'draft-reconcile',
+      errorCode: 'ONE',
+      errorMessage: 'one',
+    });
+    recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'draft',
+      sourceType: 'build',
+      sourceDetail: 'draft-reconcile',
+      errorCode: 'TWO',
+      errorMessage: 'two',
+    });
+    recorder.recordDetailed({
+      appSlug: 'myapp',
+      runtimeMode: 'draft',
+      sourceType: 'build',
+      sourceDetail: 'draft-reconcile',
+      errorCode: 'THREE',
+      errorMessage: 'three',
+    });
+    recorder.record({
+      appSlug: 'myapp',
+      runtimeMode: 'stable',
+      sourceType: 'build',
+      sourceDetail: 'stable-publish',
+      errorCode: 'STABLE',
+      errorMessage: 'stable-only',
+    });
+
+    expect(repo.appErrorLogs.listByAppAndMode('myapp', 'draft', { limit: 10 })).toHaveLength(2);
+    recorder.clearDraftErrors('myapp');
+    expect(repo.appErrorLogs.listByAppAndMode('myapp', 'draft', { limit: 10 })).toHaveLength(0);
+    expect(repo.appErrorLogs.listByAppAndMode('myapp', 'stable', { limit: 10 })).toHaveLength(1);
 
     db.close();
   });

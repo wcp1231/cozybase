@@ -11,7 +11,7 @@ import {
 
 export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type AppStatus } from './registry';
 export { type PlatformClient, type PlatformHandler, createInProcessPlatformClient } from './platform-client';
-export { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
+export { HTTP_METHODS, type ErrorRecorder, type ErrorRecordEntry, type HttpMethod } from './modules/functions/types';
 export {
   executeFunctionReference,
   toFunctionResponse,
@@ -22,6 +22,7 @@ export { validateSql, type SqlMode, type SqlValidationResult } from './modules/d
 
 export interface RuntimeOptions {
   platformHandler?: PlatformHandler;
+  errorRecorder?: import('./modules/functions/types').ErrorRecorder;
 }
 
 /**
@@ -60,7 +61,7 @@ export function createRuntime(options: RuntimeOptions = {}): {
   // Stable mode routes
   const stableFn = new Hono();
   stableFn.use('*', appEntryResolver(registry, 'stable'));
-  stableFn.route('/', createFunctionRoutes(stablePlatformClient));
+  stableFn.route('/', createFunctionRoutes(stablePlatformClient, options.errorRecorder));
 
   const stableUi = new Hono();
   stableUi.use('*', appEntryResolver(registry, 'stable'));
@@ -69,7 +70,7 @@ export function createRuntime(options: RuntimeOptions = {}): {
   // Draft mode routes
   const draftFn = new Hono();
   draftFn.use('*', appEntryResolver(registry, 'draft'));
-  draftFn.route('/', createFunctionRoutes(draftPlatformClient));
+  draftFn.route('/', createFunctionRoutes(draftPlatformClient, options.errorRecorder));
 
   const draftUi = new Hono();
   draftUi.use('*', appEntryResolver(registry, 'draft'));

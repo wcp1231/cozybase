@@ -224,6 +224,72 @@ export class RemoteBackend implements CozybaseBackend {
     };
   }
 
+  async getAppConsole(slug: string, mode?: string) {
+    const search = new URLSearchParams();
+    if (mode === 'draft' || mode === 'stable') {
+      search.set('mode', mode);
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : '';
+    const res = await this.request('GET', `/api/v1/apps/${encodeURIComponent(slug)}/console${suffix}`);
+    return res.data;
+  }
+
+  async getAppErrors(
+    slug: string,
+    mode?: string,
+    limit?: number,
+    offset?: number,
+    sourceType?: string,
+  ) {
+    const search = new URLSearchParams();
+    if (mode === 'draft' || mode === 'stable') {
+      search.set('mode', mode);
+    }
+    if (typeof limit === 'number') {
+      search.set('limit', String(limit));
+    }
+    if (typeof offset === 'number') {
+      search.set('offset', String(offset));
+    }
+    if (sourceType) {
+      search.set('source_type', sourceType);
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : '';
+    const res = await this.request('GET', `/api/v1/apps/${encodeURIComponent(slug)}/errors${suffix}`);
+    return res.data;
+  }
+
+  async getAppSchedules(slug: string, mode?: string) {
+    const search = new URLSearchParams();
+    if (mode === 'draft' || mode === 'stable') {
+      search.set('mode', mode);
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : '';
+    const res = await this.request('GET', `/api/v1/apps/${encodeURIComponent(slug)}/schedules${suffix}`);
+    return res.data;
+  }
+
+  async getAppScheduleRuns(
+    slug: string,
+    scheduleName: string,
+    mode?: string,
+    limit?: number,
+  ) {
+    const search = new URLSearchParams();
+    if (mode === 'draft' || mode === 'stable') {
+      search.set('mode', mode);
+    }
+    if (typeof limit === 'number') {
+      search.set('limit', String(limit));
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : '';
+    const res = await this.request(
+      'GET',
+      `/api/v1/apps/${encodeURIComponent(slug)}/schedules/${encodeURIComponent(scheduleName)}/runs${suffix}`,
+    );
+    return res.data;
+  }
+
   // --- UI Inspection ---
 
   async inspectUi(appName: string, page?: string): Promise<unknown> {

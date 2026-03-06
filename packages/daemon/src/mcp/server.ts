@@ -23,6 +23,8 @@ import {
   handlePublishApp,
   handleExecuteSql,
   handleCallApi,
+  handleGetAppConsole,
+  handleGetAppErrors,
   handleInspectUi,
   handleUiOutline,
   handleUiGet,
@@ -215,6 +217,36 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
     },
     async (args) => {
       return jsonText(await handleCallApi(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'get_app_console',
+    {
+      description: TOOL_DESCRIPTIONS.get_app_console,
+      inputSchema: {
+        app_name: z.string(),
+        mode: z.enum(['draft', 'stable']).optional(),
+      },
+    },
+    async (args) => {
+      return jsonText(await handleGetAppConsole(ctx, args));
+    },
+  );
+
+  server.registerTool(
+    'get_app_errors',
+    {
+      description: TOOL_DESCRIPTIONS.get_app_errors,
+      inputSchema: {
+        app_name: z.string(),
+        mode: z.enum(['draft', 'stable']).optional(),
+        limit: z.number().int().positive().optional(),
+        source_type: z.enum(['http_function', 'schedule', 'build']).optional(),
+      },
+    },
+    async (args) => {
+      return jsonText(await handleGetAppErrors(ctx, args));
     },
   );
 
