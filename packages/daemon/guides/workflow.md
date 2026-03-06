@@ -39,7 +39,7 @@ Use your file tools (read/write) to edit files in the working directory:
 
 ### File Descriptions
 
-- **app.yaml** — Contains only the `description` field
+- **app.yaml** — APP metadata: `description` and optional `schedules` array (see `get_guide("scheduled-tasks")`)
 - **migrations/** — SQL files, named `NNN_name.sql` (e.g. `001_init.sql`), executed in filename sort order
 - **seeds/** — Seed data SQL, loaded into the Draft database during reconcile (never applied to Stable)
 - **functions/** — TypeScript files that provide API endpoints via HTTP method exports
@@ -58,7 +58,7 @@ Use `ui_batch` as the default UI editing tool:
 ui_batch(app_name: "my-app", operations: [
   { op: "page_add", ref: "$usersPage", id: "user-list", title: "User List" },
   { op: "insert", ref: "$title", parent_id: "$usersPage", node: { type: "heading", text: "Users" } },
-  { op: "insert", parent_id: "$usersPage", node: { type: "table", id: "tbl-users", api: { url: "/fn/_db/tables/users" }, columns: [
+  { op: "insert", parent_id: "$usersPage", node: { type: "table", api: { url: "/fn/_db/tables/users", method: "GET" }, columns: [
     { name: "id", label: "ID" },
     { name: "name", label: "Name" }
   ] } },
@@ -83,6 +83,7 @@ update_app_file(app_name: "my-app", path: "ui/pages.json")
 #### Why use UI tools instead of raw file editing?
 
 - **IDs are auto-generated** — You don't need to invent unique IDs; the system generates stable `{type}-{nanoid5}` IDs automatically
+- **Two-pass wiring when IDs matter** — `ui_batch` refs only work in operation fields, not inside nested `node` / `props` JSON; create components first, then update `reload.target` or expression references in a follow-up call if needed
 - **Validated before write** — Every edit is validated against the full schema before writing; invalid edits are rejected without corrupting the file
 - **Fewer round trips** — `ui_batch` can complete multiple related edits in one call, reducing repeated read/validate/write cycles
 - **Targeted changes** — Use `ui_get` to inspect a specific node, then `ui_update` with only the props you want to change

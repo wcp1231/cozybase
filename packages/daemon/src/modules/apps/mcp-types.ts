@@ -358,7 +358,9 @@ export const TOOL_DESCRIPTIONS = {
     '**Available topics:**\n' +
     '- `workflow` — Complete development lifecycle (get source → edit → upload → reconcile → test → verify → publish)\n' +
     '- `functions` — Writing TypeScript functions (FunctionContext API, exports, return values)\n' +
+    '- `scheduled-tasks` — Cron schedule config in `app.yaml`, runtime behavior, and trigger endpoints\n' +
     '- `ui` — UI system overview (pages, components, actions, expressions)\n' +
+    '  - `ui/batch` — Batch page/component editing patterns, refs, and examples\n' +
     '  - `ui/components` — Component quick-reference (26 built-in types)\n' +
     '  - `ui/components/<name>` — Individual component docs (e.g. `ui/components/table`)\n' +
     '  - `ui/actions` — Action system (api, reload, dialog, link, close, confirm)\n' +
@@ -429,7 +431,21 @@ export const TOOL_DESCRIPTIONS = {
     'Operations run in order and return per-operation statuses (`ok`, `error`, `skipped`).\n\n' +
     'Use `ref` (must start with `$`) to bind IDs from earlier operations, then reference them via `$ref` in later operations.\n' +
     'When an operation fails, unrelated operations continue; dependent `$ref` operations are marked `skipped`.\n' +
-    'A batch writes `ui/pages.json` once only if at least one write operation succeeds.',
+    'A batch writes `ui/pages.json` once only if at least one write operation succeeds.\n\n' +
+    'Operations:\n' +
+    '- get: { node_id }\n' +
+    '- insert: { parent_id, node, index? }\n' +
+    '- update: { node_id, props }\n' +
+    '- delete: { node_id }\n' +
+    '- move: { node_id, new_parent_id, index? }\n' +
+    '- page_add: { id, title, index? }\n' +
+    '- page_remove: { page_id }\n' +
+    '- page_update: { page_id, title }\n\n' +
+    'All ops accept optional `ref` (must start with `$`).\n' +
+    'Refs are only resolved in top-level operation fields such as `parent_id` or `node_id`; nested values inside `node` or `props` are not interpolated.\n' +
+    'Insert always generates a fresh component ID and ignores any caller-provided `id`.\n' +
+    'Cannot modify `id` or `type` via update (use delete + insert).\n' +
+    'Call `get_guide("ui/batch")` for examples.',
 
   pages_list:
     'List all pages in `ui/pages.json` with their id and title.\n\n' +

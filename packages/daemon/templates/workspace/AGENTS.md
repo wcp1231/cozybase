@@ -9,6 +9,7 @@ You are working in a Cozybase workspace. Cozybase is a local Backend-as-a-Servic
 - **Define UI** — Declarative JSON-based pages with 26 built-in components
 - **Manage Database** — SQLite schema via migrations, auto-generated CRUD API
 - **Publish** — Promote Draft changes to Stable with migration safety checks
+- **Schedule Tasks** — Cron-based scheduled function execution via app.yaml
 
 ## Development Workflow
 
@@ -36,7 +37,8 @@ For detailed workflow documentation, call `get_guide("workflow")`.
 |-------|---------|---------|
 | create-app | `/create-app` | Create a complete APP from scratch |
 | add-function | `/add-function` | Add a TypeScript API function to an existing APP |
-| add-page | `/add-page` | Add a UI page to an existing APP |
+| edit-ui | `/edit-ui` | Create or edit UI pages in an existing APP |
+| add-scheduled-task | `/add-scheduled-task` | Add a cron-scheduled task to an existing APP |
 | modify-schema | `/modify-schema` | Modify database schema with a new migration |
 
 ## UI Editing Rules
@@ -69,3 +71,4 @@ After any UI edit, call `update_app_file` with path `ui/pages.json` to sync to C
 - **Expressions** use `${...}` syntax: `${row.title}`, `${form.name}`, `${status-tabs.value}`
 - **Seeds** only load into Draft (not Stable) — use for dev/test data
 - Published migrations become **immutable** — always create new migrations for changes
+- **Scheduled Tasks** are configured in `app.yaml` under `schedules` — see `get_guide("scheduled-tasks")`
