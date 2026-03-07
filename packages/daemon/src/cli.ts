@@ -103,11 +103,20 @@ switch (command) {
       console.log('Created:');
       for (const f of result.created) console.log(`  + ${f}`);
     }
+    if (result.updated.length > 0) {
+      console.log('Updated:');
+      for (const f of result.updated) console.log(`  ~ ${f}`);
+    }
+    if (result.removed.length > 0) {
+      console.log('Removed:');
+      for (const f of result.removed) console.log(`  x ${f}`);
+    }
     if (result.skipped.length > 0) {
-      console.log('Skipped (already exist):');
+      console.log('Skipped (unchanged):');
       for (const f of result.skipped) console.log(`  - ${f}`);
     }
-    if (result.created.length === 0 && result.skipped.length === 0) {
+    if (result.created.length === 0 && result.updated.length === 0 &&
+        result.removed.length === 0 && result.skipped.length === 0) {
       console.log('No template files to copy.');
     }
     break;

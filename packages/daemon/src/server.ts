@@ -322,9 +322,7 @@ export function createServer(config: Config) {
   const agentDir = join(config.workspaceDir, 'agent');
   mkdirSync(join(agentDir, 'apps'), { recursive: true });
 
-  if (!existsSync(join(agentDir, 'AGENTS.md'))) {
-    initWorkspace(agentDir);
-  }
+  initWorkspace(agentDir);
   const claudeDocPath = join(agentDir, 'CLAUDE.md');
   if (!pathExists(claudeDocPath)) {
     symlinkSync('AGENTS.md', claudeDocPath);
