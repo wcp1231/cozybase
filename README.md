@@ -41,8 +41,12 @@ Start Cozybase:
 
 ```bash
 bun install
+bun run build:web
 bun run dev
 ```
+
+The built-in web UI is only served after `packages/web/dist` has been built.
+If you run `bun run dev` without running `bun run build:web` first, visiting `/` on port 3000 will return `404 Not Found`.
 
 Then open:
 
@@ -54,7 +58,7 @@ On first run, Cozybase initializes `~/.cozybase` and auto-publishes a sample `we
 
 ## Shortest Path To Build An App With AI Agent
 
-1. Start Cozybase and open the web UI.
+1. Build the web UI with `bun run build:web`, then start Cozybase with `bun run dev` and open the web UI.
 2. Open the built-in AI chat panel.
 3. Describe the app you want in natural language.
 4. Let the agent iterate in Draft.

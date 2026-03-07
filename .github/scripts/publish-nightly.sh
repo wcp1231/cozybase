@@ -10,10 +10,10 @@ set -euo pipefail
 : "${NIGHTLY_TAG:?NIGHTLY_TAG is required}"
 : "${NIGHTLY_TITLE:?NIGHTLY_TITLE is required}"
 : "${NIGHTLY_ASSET:?NIGHTLY_ASSET is required}"
-: "${DMG_PATH:?DMG_PATH is required}"
+: "${ASSET_PATH:?ASSET_PATH is required}"
 
-if [ ! -f "${DMG_PATH}" ]; then
-  echo "Nightly asset not found: ${DMG_PATH}" >&2
+if [ ! -f "${ASSET_PATH}" ]; then
+  echo "Nightly asset not found: ${ASSET_PATH}" >&2
   exit 1
 fi
 
@@ -31,6 +31,7 @@ Nightly build for \`main\`.
 - Built at (UTC): \`${built_at}\`
 - Workflow run: ${run_url}
 - Asset: \`${NIGHTLY_ASSET}\`
+- Packaging: \`ad-hoc signed .app.tar.gz\`
 EOF
 
 if gh release view "${NIGHTLY_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
@@ -40,11 +41,11 @@ if gh release view "${NIGHTLY_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&
     --notes-file "${notes_file}" \
     --target "${GITHUB_SHA}"
 
-  gh release upload "${NIGHTLY_TAG}" "${DMG_PATH}#${NIGHTLY_ASSET}" \
+  gh release upload "${NIGHTLY_TAG}" "${ASSET_PATH}#${NIGHTLY_ASSET}" \
     --repo "${GITHUB_REPOSITORY}" \
     --clobber
 else
-  gh release create "${NIGHTLY_TAG}" "${DMG_PATH}#${NIGHTLY_ASSET}" \
+  gh release create "${NIGHTLY_TAG}" "${ASSET_PATH}#${NIGHTLY_ASSET}" \
     --repo "${GITHUB_REPOSITORY}" \
     --title "${NIGHTLY_TITLE}" \
     --notes-file "${notes_file}" \

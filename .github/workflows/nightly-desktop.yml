@@ -17,11 +17,11 @@ env:
   BUN_VERSION: 1.3.3
   NIGHTLY_TAG: nightly
   NIGHTLY_TITLE: CozyBase Nightly
-  NIGHTLY_ASSET: CozyBase_nightly_aarch64.dmg
+  NIGHTLY_ASSET: CozyBase_nightly_aarch64.app.tar.gz
 
 jobs:
-  build-nightly-dmg:
-    name: Build Nightly DMG
+  build-nightly-app:
+    name: Build Nightly App Archive
     runs-on: macos-latest
 
     steps:
@@ -44,34 +44,34 @@ jobs:
       - name: Install workspace dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build nightly desktop bundle
-        run: bun run desktop:build
+      - name: Build ad-hoc signed nightly desktop bundle
+        run: bun run desktop:build:adhoc
 
-      - name: Normalize nightly DMG asset
+      - name: Normalize nightly app archive
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           shopt -s nullglob
-          dmg_files=(packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg)
+          archive_files=(packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz)
 
-          if [ "${#dmg_files[@]}" -ne 1 ]; then
-            echo "Expected exactly one DMG bundle, found ${#dmg_files[@]}."
-            printf '%s\n' "${dmg_files[@]}"
+          if [ "${#archive_files[@]}" -ne 1 ]; then
+            echo "Expected exactly one app archive, found ${#archive_files[@]}."
+            printf '%s\n' "${archive_files[@]}"
             exit 1
           fi
 
-          cp "${dmg_files[0]}" "dist/${NIGHTLY_ASSET}"
+          cp "${archive_files[0]}" "dist/${NIGHTLY_ASSET}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cozybase-nightly-dmg-aarch64
+          name: cozybase-nightly-app-aarch64
           path: dist/${{ env.NIGHTLY_ASSET }}
           if-no-files-found: error
 
       - name: Publish nightly release
         env:
           GH_TOKEN: ${{ github.token }}
-          DMG_PATH: dist/${{ env.NIGHTLY_ASSET }}
+          ASSET_PATH: dist/${{ env.NIGHTLY_ASSET }}
         run: bash .github/scripts/publish-nightly.sh

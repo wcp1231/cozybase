@@ -10,6 +10,9 @@
     "build:all": "bun run build:web",
     "build:daemon": "cd packages/desktop && bun run prepare:resources && bun run prepare:sidecar",
     "desktop:dev": "bun run build:web && bun run build:daemon && cd packages/desktop && bunx tauri dev",
-    "desktop:build": "bun run build:web && bun run build:daemon && cd packages/desktop && bunx tauri build"
+    "desktop:build": "bun run build:web && bun run build:daemon && cd packages/desktop && bunx tauri build",
+    "desktop:sign:adhoc": "cd packages/desktop && bun run sign:adhoc",
+    "desktop:package:nightly": "cd packages/desktop && bun run package:nightly",
+    "desktop:build:adhoc": "bun run desktop:build && bun run desktop:package:nightly"
   }
 }
