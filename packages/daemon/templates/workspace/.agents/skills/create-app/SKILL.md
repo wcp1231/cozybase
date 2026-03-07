@@ -70,3 +70,4 @@ Upload, reconcile, test, verify, and publish following the standard development 
 - In UI, use `${row.xxx}` in table columns and row actions to reference current row data
 - Use `{ "type": "reload", "target": "<table-id>" }` after mutations to refresh data
 - Use `{ "type": "close" }` in form `onSuccess` to close dialogs
+- **Split complex apps into multiple pages** — Design one page per logical concern (e.g., list page, detail page, settings page). Use navigation actions to link between them

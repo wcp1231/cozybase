@@ -176,6 +176,13 @@ If testing reveals issues:
 
 Repeat until all behavior is correct.
 
+### Draft Data Isolation
+
+Draft and Stable environments use **completely separate databases**. Any data created during testing (via `execute_sql`, `call_api`, seed data, etc.) only exists in Draft and will never affect Stable data.
+
+- **No cleanup needed** — Do not manually delete test data from Draft
+- **Hand off directly** — Once you have verified behavior, ask the user to confirm. The user can also test in the Draft environment without worrying about data contamination
+
 ### Human Confirmation Gate
 
 Once all tests pass, **ask the user for confirmation** before proceeding to verify/publish. Do NOT proceed to publish automatically.

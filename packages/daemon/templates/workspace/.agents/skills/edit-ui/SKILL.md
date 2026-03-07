@@ -152,3 +152,4 @@ When one batch operation needs to reference a component created by an earlier ba
 - Chain actions on existing, already-known component IDs: `onSuccess: [{ "type": "reload", "target": "existing-table-id" }, { "type": "close" }]`
 - Use `index` parameter to control insertion position within a parent
 - Use `$ref` to chain operations: insert a container, then insert children into it
+- **Split complex requirements into multiple pages** — When the user's requirements involve many distinct concerns (e.g., listing + detail + settings), create separate pages for each logical unit rather than cramming everything into one page. Use navigation actions to link between pages

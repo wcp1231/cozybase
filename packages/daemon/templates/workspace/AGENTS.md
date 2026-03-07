@@ -72,3 +72,5 @@ After any UI edit, call `update_app_file` with path `ui/pages.json` to sync to C
 - **Seeds** only load into Draft (not Stable) — use for dev/test data
 - Published migrations become **immutable** — always create new migrations for changes
 - **Scheduled Tasks** are configured in `app.yaml` under `schedules` — see `get_guide("scheduled-tasks")`
+- **Draft / Stable data isolation** — Draft and Stable use separate databases. Test data created in Draft never affects Stable, so there is no need to clean up test data. Once you finish editing and testing, hand off directly to the user for confirmation
+- **Split pages by logical concern** — When requirements are complex, create separate pages for each logical unit (e.g., listing, detail, settings) instead of putting everything on a single page
