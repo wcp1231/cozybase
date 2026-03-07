@@ -99,6 +99,7 @@ function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
 function LinkRenderer({ schema, exprContext }: SchemaComponentProps) {
   const s = schema as LinkComponent;
   const actionCtx = useActionContext();
+  const resolvedText = resolveExpression(s.text, exprContext);
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -113,7 +114,7 @@ function LinkRenderer({ schema, exprContext }: SchemaComponentProps) {
       className={clsx('text-primary no-underline text-sm cursor-pointer hover:underline', s.className)}
       style={s.style}
     >
-      {s.text}
+      {String(resolvedText ?? '')}
     </a>
   );
 }

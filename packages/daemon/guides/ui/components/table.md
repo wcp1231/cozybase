@@ -88,6 +88,23 @@ Use the `render` property to render column values as other components. Access cu
 }
 ```
 
+The same row-scoped expressions also work inside interactive render components such as `link`:
+
+```json
+{
+  "name": "title",
+  "label": "Title",
+  "render": {
+    "type": "link",
+    "text": "${row.title}",
+    "action": {
+      "type": "link",
+      "url": "/todo-list/detail?id=${row.id}"
+    }
+  }
+}
+```
+
 ## Row Actions (RowActionSchema)
 
 Display action buttons at the end of each row:

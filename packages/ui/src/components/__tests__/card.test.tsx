@@ -14,6 +14,7 @@ import type {
   ButtonComponent,
   LinkComponent,
   ListComponent,
+  TableComponent,
 } from '../../schema/types';
 
 // Enable React act() environment
@@ -340,5 +341,55 @@ describe('CardRenderer', () => {
 
     expect(card).not.toBeNull();
     expect(card!.style.backgroundColor).toBe('#ff4d4f');
+  });
+
+  test('link text resolves row-scoped expressions inside table column render', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ id: 7, title: 'Buy milk' }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'table',
+          api: {
+            url: '/fn/todos',
+          },
+          columns: [
+            {
+              name: 'title',
+              label: 'Title',
+              render: {
+                type: 'link',
+                text: '${row.title}',
+                action: {
+                  type: 'link',
+                  url: '/todo-list/detail?id=${row.id}',
+                },
+              } as unknown as LinkComponent,
+            },
+          ],
+          pagination: false,
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const link = container.querySelector(
+      '[data-schema-type="link"] a',
+    ) as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe('Buy milk');
   });
 });

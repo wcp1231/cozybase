@@ -7,7 +7,7 @@ Text link that triggers an action on click.
 <!-- AUTO-GENERATED-PROPS:START -->
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `text` | `string` | Yes | Link text |
+| `text` | `string` | Yes | Link text (supports expressions) |
 | `action` | `Action \| Action[]` | Yes | Action(s) triggered on click |
 <!-- AUTO-GENERATED-PROPS:END -->
 
@@ -20,6 +20,16 @@ Navigation link:
   "type": "link",
   "text": "View details",
   "action": { "type": "link", "url": "/apps/my-app/detail" }
+}
+```
+
+Dynamic link text inside table/list row render:
+
+```json
+{
+  "type": "link",
+  "text": "${row.title}",
+  "action": { "type": "link", "url": "/todo-list/detail?id=${row.id}" }
 }
 ```
 

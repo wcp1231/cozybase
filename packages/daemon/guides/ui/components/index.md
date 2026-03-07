@@ -89,7 +89,7 @@ Date picker. Props: `value` (string), `format` (string), `onChange` (Action[]).
 Button that triggers an action on click. Props: `label` (string), `action` (Action/Action[]), `variant` (`primary`|`secondary`|`danger`|`ghost`), `disabled` (string/boolean, supports expressions), `loading` (string/boolean). → `get_guide("ui/components/button")`
 
 ### link
-Text link that triggers an action on click. Props: `text` (string), `action` (Action/Action[]).
+Text link that triggers an action on click. Props: `text` (string, supports expressions), `action` (Action/Action[]).
 
 ## Feedback Components
 
