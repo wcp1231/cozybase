@@ -48,9 +48,18 @@ CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 
 If needed, update `seeds/` with sample data for the new schema.
 
-### Step 6: Follow the Standard Workflow
+### Step 6: Sync, Rebuild, Test, Verify, Publish
 
-Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
+Follow the standard development workflow (see `get_guide("workflow")` Steps 3-7):
+
+- Upload changes with `update_app(app_name: "<app-name>")`
+- Inspect `needs_rebuild` in the response
+- Run `rebuild_app(app_name: "<app-name>")` when `needs_rebuild` is `true`
+- Test the Draft database and APIs
+- Run `verify_app` before publishing
+- Ask for explicit user confirmation before `publish_app`
+
+Schema changes in `migrations/` always require a rebuild before testing.
 
 ## Important Rules
 

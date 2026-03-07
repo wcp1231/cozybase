@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { DraftReconciler } from '../../src/core/draft-reconciler';
+import { DraftRebuilder } from '../../src/core/draft-rebuilder';
 import {
   createTestWorkspace,
   createTestApp,
@@ -14,7 +14,7 @@ import {
 } from '../helpers/test-workspace';
 import type { TestWorkspaceHandle } from '../helpers/test-workspace';
 
-describe('DraftReconciler', () => {
+describe('DraftRebuilder', () => {
   let handle: TestWorkspaceHandle;
 
   afterEach(() => {
@@ -29,8 +29,8 @@ describe('DraftReconciler', () => {
     });
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp');
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp');
 
     expect(result.success).toBe(true);
     expect(result.migrations).toContain('001_init.sql');
@@ -44,7 +44,7 @@ describe('DraftReconciler', () => {
     db.close();
   });
 
-  test('re-reconcile after migration change rebuilds DB from scratch', async () => {
+  test('re-rebuild after migration change rebuilds DB from scratch', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -52,10 +52,10 @@ describe('DraftReconciler', () => {
     });
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
+    const rebuilder = new DraftRebuilder(handle.workspace);
 
-    // First reconcile
-    await reconciler.reconcile('myapp');
+    // First rebuild
+    await rebuilder.rebuild('myapp');
 
     // Insert an extra row directly into draft DB
     const appContext = handle.workspace.getOrCreateApp('myapp')!;
@@ -66,8 +66,8 @@ describe('DraftReconciler', () => {
     // Add a new migration (via DB)
     addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
 
-    // Second reconcile — should rebuild from scratch
-    const result2 = await reconciler.reconcile('myapp');
+    // Second rebuild — should rebuild from scratch
+    const result2 = await rebuilder.rebuild('myapp');
 
     expect(result2.success).toBe(true);
     expect(result2.migrations).toContain('001_init.sql');
@@ -88,7 +88,7 @@ describe('DraftReconciler', () => {
     db.close();
   });
 
-  test('re-reconcile without migration changes preserves draft DB contents', async () => {
+  test('re-rebuild without migration changes preserves draft DB contents', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -96,9 +96,9 @@ describe('DraftReconciler', () => {
     });
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
+    const rebuilder = new DraftRebuilder(handle.workspace);
 
-    const result1 = await reconciler.reconcile('myapp');
+    const result1 = await rebuilder.rebuild('myapp');
     expect(result1.success).toBe(true);
     expect(result1.migrations).toContain('001_init.sql');
     expect(result1.seeds).toContain('01_seed.sql');
@@ -113,7 +113,7 @@ describe('DraftReconciler', () => {
       "export default function hello() { return new Response('ok'); }",
     );
 
-    const result2 = await reconciler.reconcile('myapp');
+    const result2 = await rebuilder.rebuild('myapp');
     expect(result2.success).toBe(true);
     expect(result2.migrations).toEqual([]);
     expect(result2.seeds).toEqual([]);
@@ -143,8 +143,8 @@ describe('DraftReconciler', () => {
       hasDraft: true,
     });
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp');
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp');
 
     expect(result.success).toBe(true);
     expect(result.migrations).toContain('001_init.sql');
@@ -163,8 +163,8 @@ describe('DraftReconciler', () => {
     addMigration(handle, 'myapp', '002_add_col.sql', MIGRATION_ADD_PRIORITY);
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp');
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp');
     expect(result.success).toBe(true);
   });
 
@@ -180,8 +180,8 @@ describe('DraftReconciler', () => {
       hasDraft: false,
     });
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    expect(reconciler.reconcile('myapp')).rejects.toThrow(/no draft changes/);
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    expect(rebuilder.rebuild('myapp')).rejects.toThrow(/no draft changes/);
   });
 
   test('allows stable app without draft changes when force option is enabled', async () => {
@@ -196,8 +196,8 @@ describe('DraftReconciler', () => {
       hasDraft: false,
     });
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp', { force: true });
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp', { force: true });
     expect(result.success).toBe(true);
     expect(result.migrations).toContain('001_init.sql');
   });
@@ -209,8 +209,8 @@ describe('DraftReconciler', () => {
     });
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp');
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp');
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('001_bad.sql');
@@ -224,8 +224,8 @@ describe('DraftReconciler', () => {
     });
     handle.workspace.refreshAppState('myapp');
 
-    const reconciler = new DraftReconciler(handle.workspace);
-    const result = await reconciler.reconcile('myapp');
+    const rebuilder = new DraftRebuilder(handle.workspace);
+    const result = await rebuilder.rebuild('myapp');
 
     expect(result.success).toBe(false);
     expect(result.migrations).toContain('001_init.sql');

@@ -236,8 +236,8 @@ export async function run() {
 
       const { app, startup } = createServer(createTestConfig(handle.root));
       await startup;
-      const reconcileRes = await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
-      expect((await jsonBody(reconcileRes)).data.success).toBe(true);
+      const rebuildRes = await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
+      expect((await jsonBody(rebuildRes)).data.success).toBe(true);
       const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
       expect((await jsonBody(publishRes)).data.success).toBe(true);
 
@@ -436,6 +436,43 @@ export async function run() {
       const body = await jsonBody(res);
       expect(body.data.current_version).toBe(2);
     });
+
+    test('PUT /apps/:name reports needs_rebuild based on changed file paths', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        functions: {
+          'hello.ts': 'export async function GET() { return { v: 1 }; }',
+        },
+      });
+      handle.workspace.refreshAppState('myapp');
+
+      const { app } = createServer(createTestConfig(handle.root));
+      const appSnapshot = await jsonBody(await app.request('/api/v1/apps/myapp'));
+      const appYaml = appSnapshot.data.files.find((file: { path: string; content: string }) => file.path === 'app.yaml')?.content;
+      if (typeof appYaml !== 'string') {
+        throw new Error('Expected app.yaml to exist in test app snapshot');
+      }
+
+      const hotOnlyRes = await app.request(jsonReq('/api/v1/apps/myapp', 'PUT', {
+        base_version: 1,
+        files: [
+          { path: 'app.yaml', content: appYaml },
+          { path: 'functions/hello.ts', content: 'export async function GET() { return { v: 2 }; }' },
+        ],
+      }));
+      expect(hotOnlyRes.status).toBe(200);
+      expect((await jsonBody(hotOnlyRes)).data.needs_rebuild).toBe(false);
+
+      const rebuildRes = await app.request(jsonReq('/api/v1/apps/myapp', 'PUT', {
+        base_version: 2,
+        files: [
+          { path: 'app.yaml', content: 'description: changed\n' },
+          { path: 'functions/hello.ts', content: 'export async function GET() { return { v: 3 }; }' },
+        ],
+      }));
+      expect(rebuildRes.status).toBe(200);
+      expect((await jsonBody(rebuildRes)).data.needs_rebuild).toBe(true);
+    });
   });
 
   // --- Immutability ---
@@ -449,7 +486,7 @@ export async function run() {
 
       // Publish to make migrations immutable
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
       const pubRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
       expect((await jsonBody(pubRes)).data.success).toBe(true);
 
@@ -478,7 +515,7 @@ export async function run() {
       });
 
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
       await app.request('/draft/apps/myapp/publish', { method: 'POST' });
 
       const res = await app.request(jsonReq(
@@ -735,7 +772,7 @@ export async function run() { return { ok: true }; }
       });
 
       const { app, scheduleManager } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
       const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
       expect((await jsonBody(publishRes)).data.success).toBe(true);
       expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual(['daily']);
@@ -756,7 +793,7 @@ export async function run() { return { ok: true }; }
         ],
       });
 
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
       const publishRes2 = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
       expect((await jsonBody(publishRes2)).data.success).toBe(true);
       expect(scheduleManager.getLoadedScheduleNames('myapp')).toEqual(['weekly']);
@@ -782,7 +819,7 @@ export async function run(ctx) {
       });
 
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
       const triggerRes = await app.request('/draft/apps/myapp/schedule/daily/trigger', {
         method: 'POST',
@@ -815,7 +852,7 @@ export async function run(ctx) {
       });
 
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
       const publishRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
       expect((await jsonBody(publishRes)).data.success).toBe(true);
 
@@ -837,7 +874,7 @@ export async function run(ctx) {
       });
 
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
       const triggerRes = await app.request('/draft/apps/myapp/schedule/not-exists/trigger', {
         method: 'POST',
@@ -868,7 +905,7 @@ export async function existing() {
       });
 
       const { app } = createServer(createTestConfig(handle.root));
-      await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+      await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
       const triggerRes = await app.request('/draft/apps/myapp/schedule/daily/trigger', {
         method: 'POST',
@@ -926,6 +963,7 @@ export async function existing() {
       expect(fileRes.status).toBe(200);
       const fileData = (await jsonBody(fileRes)).data;
       expect(fileData.content).toContain('v: 3');
+      expect(fileData.needs_rebuild).toBe(false);
 
       // Version should have incremented again
       const getRes2 = await app.request('/api/v1/apps/lifecycle');
@@ -938,6 +976,43 @@ export async function existing() {
 
       const getRes3 = await app.request('/api/v1/apps/lifecycle');
       expect(getRes3.status).toBe(404);
+    });
+  });
+
+  describe('draft rebuild route', () => {
+    test('POST /draft/apps/:appSlug/rebuild materializes the draft environment', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+      handle.workspace.refreshAppState('myapp');
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
+      expect(res.status).toBe(200);
+
+      const body = await jsonBody(res);
+      expect(body.data.success).toBe(true);
+    });
+
+    test('PUT /apps/:name/files/* reports needs_rebuild for migration edits', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+      const res = await app.request(jsonReq(
+        '/api/v1/apps/myapp/files/migrations/001_init.sql',
+        'PUT',
+        { content: `${MIGRATION_CREATE_TODOS}\n-- comment` },
+      ));
+
+      expect(res.status).toBe(200);
+      const body = await jsonBody(res);
+      expect(body.data.status).toBe('updated');
+      expect(body.data.needs_rebuild).toBe(true);
     });
   });
 });

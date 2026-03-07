@@ -10,9 +10,10 @@ import type {
   AppInfo,
   FileEntry,
   PushResult,
+  PushFileResult,
   SqlResult,
   ApiResponse,
-  DraftReconcileResult,
+  DraftRebuildResult,
   VerifyResult,
   PublishResult,
 } from './types';
@@ -132,24 +133,28 @@ export class RemoteBackend implements CozybaseBackend {
         modified: res.data?.modified ?? [],
         deleted: res.data?.deleted ?? [],
       },
+      needs_rebuild: res.data?.needs_rebuild ?? false,
     };
   }
 
-  async pushFile(name: string, path: string, content: string): Promise<'created' | 'updated'> {
+  async pushFile(name: string, path: string, content: string): Promise<PushFileResult> {
     const res = await this.request(
       'PUT',
       `/api/v1/apps/${encodeURIComponent(name)}/files/${path}`,
       { content },
     );
-    return res.data?.status === 'created' ? 'created' : 'updated';
+    return {
+      status: res.data?.status === 'created' ? 'created' : 'updated',
+      needs_rebuild: res.data?.needs_rebuild ?? false,
+    };
   }
 
   // --- Dev Workflow ---
 
-  async reconcile(name: string): Promise<DraftReconcileResult> {
+  async rebuild(name: string): Promise<DraftRebuildResult> {
     const res = await this.request(
       'POST',
-      `/draft/apps/${encodeURIComponent(name)}/reconcile`,
+      `/draft/apps/${encodeURIComponent(name)}/rebuild`,
     );
     return res.data;
   }

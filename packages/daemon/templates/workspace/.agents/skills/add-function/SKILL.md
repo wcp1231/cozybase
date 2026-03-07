@@ -28,9 +28,17 @@ Key points:
 - Return objects/arrays for auto JSON serialization
 - Return `Response` for custom status codes
 
-### Step 3: Follow the Standard Workflow
+### Step 3: Sync and Test with the Current Workflow
 
-Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
+Follow the standard development workflow (see `get_guide("workflow")` Steps 3-7):
+
+- Upload the function with `update_app_file(app_name: "<app-name>", path: "functions/<file>.ts")` or `update_app(app_name: "<app-name>")`
+- Inspect `needs_rebuild` in the response
+- Function source changes normally hot-export into Draft, so rebuild is usually not required
+- Only run `rebuild_app(app_name: "<app-name>")` if the upload result says `needs_rebuild: true`
+- Test the function via `call_api`
+- Run `verify_app` before publishing
+- Ask for explicit user confirmation before `publish_app`
 
 ## Tips
 

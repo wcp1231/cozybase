@@ -74,6 +74,7 @@ export interface UpdateAppOutput {
     modified: string[];
     deleted: string[];
   };
+  needs_rebuild: boolean;
 }
 
 // -- update_app_file --
@@ -86,6 +87,7 @@ export interface UpdateAppFileInput {
 export interface UpdateAppFileOutput {
   path: string;
   status: 'created' | 'updated';
+  needs_rebuild: boolean;
 }
 
 // -- delete_app --
@@ -128,9 +130,9 @@ export interface StopAppOutput {
   published_version: number;
 }
 
-// -- reconcile_app --
+// -- rebuild_app --
 
-export interface ReconcileAppInput {
+export interface RebuildAppInput {
   app_name: string;
 }
 
@@ -310,12 +312,14 @@ export const TOOL_DESCRIPTIONS = {
     '- New files are added\n' +
     '- Modified files are updated\n' +
     '- Missing files are deleted (except immutable migrations)\n\n' +
-    'After syncing, run `reconcile_app` to rebuild the Draft environment.\n' +
-    '**Important**: Always call this after editing files, before reconcile/verify/publish.',
+    'The result includes `needs_rebuild`.\n' +
+    'Call `rebuild_app` only when `needs_rebuild` is `true` ' +
+    '(for example after changing migrations, seeds, `package.json`, or `app.yaml`).',
 
   update_app_file:
     'Sync a single file from the Agent working directory to cozybase.\n\n' +
-    'Use this for quick single-file updates instead of full `update_app`.\n\n' +
+    'Use this for quick single-file updates instead of full `update_app`.\n' +
+    'The result includes `needs_rebuild` so you know whether `rebuild_app` is still required.\n\n' +
     'For UI component reference, call `get_guide("ui/components")`.',
 
   delete_app:
@@ -331,12 +335,13 @@ export const TOOL_DESCRIPTIONS = {
     'Stop an APP\'s Stable runtime.\n\n' +
     'The APP must already have a Stable version, and a running Stable version will transition to `stopped`.',
 
-  reconcile_app:
+  rebuild_app:
     'Rebuild the Draft environment for an APP.\n\n' +
     'This destroys and recreates the Draft database by executing all migrations, ' +
-    'loading seed data, and exporting functions to the runtime directory.\n\n' +
-    'Call this after `update_app` or `update_app_file` when you\'ve changed ' +
-    'migrations, seeds, or functions.\n\n' +
+    'loading seed data, installing dependencies when `package.json` exists, ' +
+    'reloading Draft config, and refreshing exported runtime files.\n\n' +
+    'Call this after `update_app` or `update_app_file` only when you\'ve changed ' +
+    'migrations, seeds, `package.json`, or `app.yaml`, or when `needs_rebuild` is `true`.\n\n' +
     'For migration patterns, call `get_guide("db/migrations")`.',
 
   verify_app:
@@ -385,7 +390,7 @@ export const TOOL_DESCRIPTIONS = {
     'Use this tool when you need in-depth information about a specific topic ' +
     'beyond what tool descriptions provide.\n\n' +
     '**Available topics:**\n' +
-    '- `workflow` — Complete development lifecycle (get source → edit → upload → reconcile → test → verify → publish)\n' +
+    '- `workflow` — Complete development lifecycle (get source → edit → upload → rebuild as needed → test → verify → publish)\n' +
     '- `functions` — Writing TypeScript functions (FunctionContext API, exports, return values)\n' +
     '- `scheduled-tasks` — Cron schedule config in `app.yaml`, runtime behavior, and trigger endpoints\n' +
     '- `ui` — UI system overview (pages, components, actions, expressions)\n' +
@@ -407,8 +412,8 @@ export const TOOL_DESCRIPTIONS = {
     '**Requirements:**\n' +
     '- Web UI must be open in a browser with the target APP loaded\n' +
     '- The APP must have a Draft with UI pages\n' +
-    '- Run `reconcile_app` after file changes before inspecting\n\n' +
-    'Use this after updating UI files and reconciling to verify the UI renders correctly.\n' +
+    '- Run `rebuild_app` first only if the preceding file update returned `needs_rebuild: true`\n\n' +
+    'Use this after updating UI files and, when necessary, rebuilding to verify the UI renders correctly.\n' +
     'If no browser is connected, an error message will explain what to do.',
 
   ui_outline:
@@ -574,7 +579,7 @@ export const INPUT_SCHEMAS = {
     required: ['app_name'],
   },
 
-  reconcile_app: {
+  rebuild_app: {
     type: 'object' as const,
     properties: {
       app_name: { type: 'string', description: 'APP slug' },

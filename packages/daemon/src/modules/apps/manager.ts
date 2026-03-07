@@ -3,6 +3,7 @@ import { rmSync, existsSync, renameSync } from 'fs';
 import { join } from 'path';
 import type { Workspace, AppStateInfo, StableStatus } from '../../core/workspace';
 import { hashApiKey } from '../../core/auth';
+import type { EventBus } from '../../core/event-bus';
 import {
   AppError,
   NotFoundError,
@@ -13,7 +14,14 @@ import {
   BadRequestError,
 } from '../../core/errors';
 import type { AppRegistry, AppMode } from '@cozybase/runtime';
-import type { DraftReconciler } from '../../core/draft-reconciler';
+import type { DraftRebuilder } from '../../core/draft-rebuilder';
+import {
+  classifyAppFileUpdate,
+  exportFunctionsFromDb,
+  exportSingleFunction,
+  exportUiFile,
+  exportUiFromDb,
+} from '../../core/file-export';
 
 // --- Types ---
 
@@ -65,7 +73,17 @@ export interface AppWithFiles {
 export interface CreateAppResult {
   app: AppWithFiles;
   apiKey: string; // plain text, shown only once
-  reconcileError?: string; // non-fatal: app created but draft env failed
+  rebuildError?: string; // non-fatal: app created but draft env failed
+  reconcileError?: string; // legacy alias
+}
+
+export interface AppUpdateResult {
+  app: AppWithFiles;
+  needsRebuild: boolean;
+}
+
+export interface AppFileUpdateResult extends AppFile {
+  needsRebuild: boolean;
 }
 
 // Template function file content
@@ -109,8 +127,9 @@ export class AppManager {
   constructor(
     private workspace: Workspace,
     private registry?: AppRegistry,
-    private draftReconciler?: DraftReconciler,
+    private draftRebuilder?: DraftRebuilder,
     private lifecycleHooks?: StableLifecycleHooks,
+    private eventBus?: EventBus,
   ) {}
 
   /** Set the session cleanup handler (called by server.ts after ChatSessionManager is created) */
@@ -240,25 +259,25 @@ export class AppManager {
       this.workspace.refreshAppState(slug);
 
       // Auto-reconcile to initialize Draft environment (creates draft DB, functions, UI)
-      let reconcileError: string | undefined;
-      if (this.draftReconciler) {
+      let rebuildError: string | undefined;
+      if (this.draftRebuilder) {
         try {
-          const reconcileResult = await this.draftReconciler.reconcile(slug);
-          if (!reconcileResult.success) {
-            reconcileError = reconcileResult.error ?? 'Draft reconcile failed';
-            console.error(`Auto-reconcile failed for '${slug}': ${reconcileError}`);
+          const rebuildResult = await this.draftRebuilder.rebuild(slug);
+          if (!rebuildResult.success) {
+            rebuildError = rebuildResult.error ?? 'Draft rebuild failed';
+            console.error(`Auto-rebuild failed for '${slug}': ${rebuildError}`);
           }
         } catch (err) {
-          reconcileError = err instanceof Error ? err.message : String(err);
-          console.error(`Auto-reconcile failed for '${slug}':`, err);
+          rebuildError = err instanceof Error ? err.message : String(err);
+          console.error(`Auto-rebuild failed for '${slug}':`, err);
         }
       }
 
-      // Start draft runtime (now with reconciled state)
+      // Start draft runtime (now with rebuilt state)
       this.ensureDraftRuntime(slug);
 
       const appWithFiles = this.getAppWithFiles(slug);
-      return { app: appWithFiles, apiKey: rawKey, reconcileError };
+      return { app: appWithFiles, apiKey: rawKey, rebuildError, reconcileError: rebuildError };
     } catch (err) {
       throw err;
     }
@@ -269,7 +288,7 @@ export class AppManager {
     slug: string,
     files: { path: string; content: string }[],
     baseVersion: number,
-  ): AppWithFiles {
+  ): AppUpdateResult {
     const repo = this.workspace.getPlatformRepo();
 
     // Validate all file entries before any DB work
@@ -297,6 +316,7 @@ export class AppManager {
     const currentFiles = repo.appFiles.findByApp(slug);
     const currentFileMap = new Map(currentFiles.map((f) => [f.path, f]));
     const requestedPaths = new Set(files.map((f) => f.path));
+    const changedPaths: string[] = [];
 
     // Validate immutable files: cannot modify content
     for (const file of files) {
@@ -314,6 +334,7 @@ export class AppManager {
       for (const current of currentFiles) {
         if (!requestedPaths.has(current.path) && current.immutable !== 1) {
           repo.appFiles.delete(slug, current.path);
+          changedPaths.push(current.path);
         }
       }
 
@@ -323,9 +344,11 @@ export class AppManager {
         if (!current) {
           // New file
           repo.appFiles.create(slug, file.path, file.content);
+          changedPaths.push(file.path);
         } else if (current.content !== file.content && current.immutable !== 1) {
           // Modified non-immutable file
           repo.appFiles.update(slug, file.path, file.content);
+          changedPaths.push(file.path);
         }
         // Immutable files with same content: skip
       }
@@ -335,12 +358,20 @@ export class AppManager {
     });
 
     this.workspace.refreshAppState(slug);
-    this.ensureDraftRuntime(slug);
-    return this.getAppWithFiles(slug);
+    const hotExported = this.hotExportBatchUpdate(slug, changedPaths);
+    const runtimeReady = this.ensureDraftRuntime(slug);
+    if (hotExported && this.shouldEmitReconciled(runtimeReady)) {
+      this.emitReconciled(slug);
+    }
+
+    return {
+      app: this.getAppWithFiles(slug),
+      needsRebuild: changedPaths.some((path) => classifyAppFileUpdate(path).needsRebuild),
+    };
   }
 
   /** Single file update (no version lock needed) */
-  updateFile(slug: string, path: string, content: string): AppFile {
+  updateFile(slug: string, path: string, content: string): AppFileUpdateResult {
     assertSafeFilePath(path);
     const repo = this.workspace.getPlatformRepo();
 
@@ -364,10 +395,15 @@ export class AppManager {
     repo.apps.incrementVersion(slug);
 
     this.workspace.refreshAppState(slug);
-    this.ensureDraftRuntime(slug);
+    const updatePlan = classifyAppFileUpdate(path);
+    const hotExported = this.hotExportSingleFile(slug, path, content);
+    const runtimeReady = this.ensureDraftRuntime(slug);
+    if (hotExported && this.shouldEmitReconciled(runtimeReady)) {
+      this.emitReconciled(slug);
+    }
 
     const immutable = existing?.immutable === 1;
-    return { path, content, immutable };
+    return { path, content, immutable, needsRebuild: updatePlan.needsRebuild };
   }
 
   /** Delete an app entirely */
@@ -633,7 +669,7 @@ export class AppManager {
     slug: string,
     options?: { force?: boolean },
   ): Promise<PrepareDraftRuntimeResult> {
-    if (!this.draftReconciler || !this.registry) {
+    if (!this.draftRebuilder || !this.registry) {
       return {
         status: 'error',
         error: {
@@ -645,7 +681,7 @@ export class AppManager {
     }
 
     try {
-      const result = await this.draftReconciler.reconcile(slug, options);
+      const result = await this.draftRebuilder.rebuild(slug, options);
       if (!result.success) {
         return {
           status: 'error',
@@ -658,7 +694,7 @@ export class AppManager {
       }
 
       const appContext = this.workspace.getOrCreateApp(slug);
-      if (!appContext?.hasDraftReconcileState()) {
+      if (!appContext?.hasDraftRebuildState()) {
         return {
           status: 'error',
           error: {
@@ -710,7 +746,7 @@ export class AppManager {
     if (!state?.hasDraft) return false;
 
     const appContext = this.workspace.getOrCreateApp(slug);
-    if (!appContext?.hasDraftReconcileState()) return false;
+    if (!appContext?.hasDraftRebuildState()) return false;
 
     const existing = this.registry.get(slug, 'draft');
     if (existing?.status === 'running') return true;
@@ -780,6 +816,59 @@ export class AppManager {
     } catch (err) {
       console.error(`[app-manager] lifecycle hook failed for '${appSlug}'`, err);
     }
+  }
+
+  private hotExportSingleFile(slug: string, path: string, content: string): boolean {
+    const appContext = this.workspace.getOrCreateApp(slug);
+    if (!appContext) {
+      return false;
+    }
+
+    const updatePlan = classifyAppFileUpdate(path);
+    if (updatePlan.kind === 'ui') {
+      exportUiFile(appContext.draftDataDir, content);
+      return true;
+    }
+    if (updatePlan.kind === 'function') {
+      exportSingleFunction(appContext.draftDataDir, path, content);
+      return true;
+    }
+    return false;
+  }
+
+  private hotExportBatchUpdate(
+    slug: string,
+    changedPaths: string[],
+  ): boolean {
+    const appContext = this.workspace.getOrCreateApp(slug);
+    if (!appContext) {
+      return false;
+    }
+
+    const repo = this.workspace.getPlatformRepo();
+    let exported = false;
+    const touchedUiFile = changedPaths.includes('ui/pages.json');
+    const touchedFunctionFiles = changedPaths.some((path) => path.startsWith('functions/'));
+
+    if (touchedUiFile) {
+      exportUiFromDb(repo, slug, appContext.draftDataDir);
+      exported = true;
+    }
+
+    if (touchedFunctionFiles) {
+      exportFunctionsFromDb(repo, slug, join(appContext.draftDataDir, 'functions'));
+      exported = true;
+    }
+
+    return exported;
+  }
+
+  private emitReconciled(slug: string): void {
+    this.eventBus?.emit('app:reconciled', { appSlug: slug });
+  }
+
+  private shouldEmitReconciled(runtimeReady: boolean): boolean {
+    return this.registry === undefined || runtimeReady;
   }
 }
 

@@ -122,7 +122,7 @@ describe('Function Runtime (HTTP integration)', () => {
     if (handle) handle.cleanup();
   });
 
-  test('draft reconcile validates functions', async () => {
+  test('draft rebuild validates functions', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -131,7 +131,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app } = createServer(createTestConfig(handle.root));
 
-    const res = await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    const res = await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     expect(res.status).toBe(200);
 
     const body = await jsonBody(res);
@@ -150,8 +150,8 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app } = createServer(createTestConfig(handle.root));
 
-    // Must reconcile first to create draft DB
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Must rebuild first to create draft DB
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/health');
     expect(res.status).toBe(200);
@@ -171,8 +171,8 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app } = createServer(createTestConfig(handle.root));
 
-    // Reconcile + publish
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Rebuild + publish
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     const pubRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
     expect((await jsonBody(pubRes)).data.success).toBe(true);
 
@@ -186,7 +186,7 @@ describe('Function Runtime (HTTP integration)', () => {
     expect(body.mode).toBe('stable');
   });
 
-  test('draft function requires reconcile to pick up file changes', async () => {
+  test('draft function requires rebuild to pick up DB-only file changes', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -194,7 +194,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     // First call — original version
     const res1 = await app.request('/draft/apps/myapp/fn/health');
@@ -209,8 +209,8 @@ describe('Function Runtime (HTTP integration)', () => {
     const body2 = await jsonBody(res2);
     expect(body2.version).toBeUndefined();
 
-    // Reconcile to copy updated function to draft dir
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Rebuild to copy the updated DB content into the draft dir
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     // Third call — now sees updated code
     const res3 = await app.request('/draft/apps/myapp/fn/health');
@@ -226,7 +226,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/nonexistent');
     expect(res.status).toBe(404);
@@ -243,7 +243,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     // health.ts only exports GET, so POST should be 405
     const res = await app.request('/draft/apps/myapp/fn/health', { method: 'POST' });
@@ -261,7 +261,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/broken');
     expect(res.status).toBe(500);
@@ -291,7 +291,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/submit', { method: 'POST' });
     expect(res.status).toBe(400);
@@ -315,7 +315,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/_utils');
     expect(res.status).toBe(404);
@@ -324,7 +324,7 @@ describe('Function Runtime (HTTP integration)', () => {
     expect(body.error.code).toBe('NOT_FOUND');
   });
 
-  test('reconcile reports warnings for function with no valid exports', async () => {
+  test('rebuild reports warnings for function with no valid exports', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
@@ -333,7 +333,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app } = createServer(createTestConfig(handle.root));
 
-    const res = await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    const res = await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     const body = await jsonBody(res);
 
     expect(body.data.success).toBe(true);
@@ -352,7 +352,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     // GET
     const getRes = await app.request('/draft/apps/myapp/fn/items');
@@ -378,8 +378,8 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app } = createServer(createTestConfig(handle.root));
 
-    // Reconcile + publish v1
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Rebuild + publish v1
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     const pubRes = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
     expect((await jsonBody(pubRes)).data.success).toBe(true);
 
@@ -398,8 +398,8 @@ describe('Function Runtime (HTTP integration)', () => {
     const body2 = await jsonBody(res2);
     expect(body2.version).toBeUndefined();
 
-    // Draft sees v2 after reconcile
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Draft sees v2 after rebuild
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     const draftRes = await app.request('/draft/apps/myapp/fn/health');
     expect(draftRes.status).toBe(200);
     const draftBody = await jsonBody(draftRes);
@@ -416,7 +416,7 @@ describe('Function Runtime (HTTP integration)', () => {
     const { app } = createServer(createTestConfig(handle.root));
 
     // Publish v1
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     await app.request('/draft/apps/myapp/publish', { method: 'POST' });
 
     // Stable returns v1
@@ -426,7 +426,7 @@ describe('Function Runtime (HTTP integration)', () => {
 
     // Update function in DB and publish again
     addFunction(handle, 'myapp', 'health.ts', FN_HEALTH_V2);
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     const pubRes2 = await app.request('/draft/apps/myapp/publish', { method: 'POST' });
     expect((await jsonBody(pubRes2)).data.success).toBe(true);
 
@@ -451,7 +451,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/schedule/nightly/trigger', { method: 'POST' });
     expect(res.status).toBe(200);
@@ -472,7 +472,7 @@ describe('Function Runtime (HTTP integration)', () => {
     });
 
     const { app } = createServer(createTestConfig(handle.root));
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
 
     const res = await app.request('/draft/apps/myapp/fn/bad');
     expect(res.status).toBe(500);
@@ -500,8 +500,8 @@ describe('Function Runtime (HTTP integration)', () => {
 
     const { app, registry } = createServer(createTestConfig(handle.root));
 
-    // Reconcile + publish to populate stable cache
-    await app.request('/draft/apps/myapp/reconcile', { method: 'POST' });
+    // Rebuild + publish to populate stable cache
+    await app.request('/draft/apps/myapp/rebuild', { method: 'POST' });
     await app.request('/draft/apps/myapp/publish', { method: 'POST' });
     await app.request('/stable/apps/myapp/fn/health');
 
@@ -623,7 +623,7 @@ describe('createServer() draft runtime startup for materialized draft state', ()
       'utf-8',
     );
     writeFileSync(
-      join(handle.root, 'draft', 'myapp', '.reconcile-state.json'),
+      join(handle.root, 'draft', 'myapp', '.rebuild-state.json'),
       JSON.stringify({ migrationSignature: 'test-signature' }),
       'utf-8',
     );
@@ -640,7 +640,7 @@ describe('createServer() draft runtime startup for materialized draft state', ()
     registry.shutdownAll();
   });
 
-  test('does not start draft runtime when reconcile-state is missing for hasDraft false app', async () => {
+  test('does not start draft runtime when rebuild-state is missing for hasDraft false app', async () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {
       migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },

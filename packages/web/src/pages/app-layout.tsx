@@ -262,7 +262,7 @@ export function AppLayout() {
     };
   }, [selectedMode, appName]);
 
-  // Auto-refresh UI when the agent finishes reconcile_app
+  // Auto-refresh UI when the agent finishes rebuild_app or a hot export
   useEffect(() => {
     if (selectedMode !== 'draft' || !appName) return;
     useChatStore.getState().setOnReconciled(() => {

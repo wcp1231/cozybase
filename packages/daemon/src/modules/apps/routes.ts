@@ -44,8 +44,8 @@ export function createAppRoutes(
     const displayName = typeof body.display_name === 'string' ? body.display_name : '';
     const result = await manager.create(slug, description, displayName);
     const data: Record<string, unknown> = { ...result.app, api_key: result.apiKey };
-    if (result.reconcileError) {
-      data.reconcileError = result.reconcileError;
+    if (result.rebuildError) {
+      data.rebuildError = result.rebuildError;
     }
     return c.json({ data }, 201);
   });
@@ -106,12 +106,45 @@ export function createAppRoutes(
       throw new BadRequestError('Request body must include "base_version" (number) and "files" (array)');
     }
 
+    const current = manager.getAppWithFiles(slug);
     const result = manager.updateApp(
       slug,
       body.files as { path: string; content: string }[],
       body.base_version,
     );
-    return c.json({ data: result });
+    const updatedApp = result.app;
+    const oldPaths = new Set(current.files.map((f) => f.path));
+    const newPaths = new Set(updatedApp.files.map((f) => f.path));
+    const oldContentMap = new Map(current.files.map((f) => [f.path, f.content]));
+
+    const added: string[] = [];
+    const modified: string[] = [];
+    const deleted: string[] = [];
+
+    for (const file of body.files as { path: string; content: string }[]) {
+      if (!oldPaths.has(file.path)) {
+        added.push(file.path);
+      } else if (oldContentMap.get(file.path) !== file.content) {
+        modified.push(file.path);
+      }
+    }
+
+    for (const path of oldPaths) {
+      if (!newPaths.has(path)) {
+        deleted.push(path);
+      }
+    }
+
+    return c.json({
+      data: {
+        ...updatedApp,
+        added,
+        modified,
+        deleted,
+        changes: { added, modified, deleted },
+        needs_rebuild: result.needsRebuild,
+      },
+    });
   });
 
   // PUT /apps/:slug/files/* - Single file update
@@ -138,7 +171,13 @@ export function createAppRoutes(
 
     const result = manager.updateFile(slug, filePath, body.content);
     const status = existing ? 'updated' : 'created';
-    return c.json({ data: { ...result, status } });
+    return c.json({
+      data: {
+        ...result,
+        status,
+        needs_rebuild: result.needsRebuild,
+      },
+    });
   });
 
   // DELETE /apps/:slug - Delete an app

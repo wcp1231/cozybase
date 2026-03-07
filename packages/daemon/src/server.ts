@@ -7,7 +7,7 @@ import type { Config } from './config';
 import { Workspace } from './core/workspace';
 import { AppErrorRecorder } from './core/app-error-recorder';
 import { AppConsoleService } from './core/app-console-service';
-import { DraftReconciler } from './core/draft-reconciler';
+import { DraftRebuilder } from './core/draft-rebuilder';
 import { Verifier } from './core/verifier';
 import { Publisher } from './core/publisher';
 import { AppError, BadRequestError } from './core/errors';
@@ -63,7 +63,7 @@ export function createServer(config: Config) {
 
   // --- Core services ---
   const appErrorRecorder = new AppErrorRecorder(workspace.getPlatformRepo());
-  const draftReconciler = new DraftReconciler(workspace, appErrorRecorder);
+  const draftRebuilder = new DraftRebuilder(workspace, appErrorRecorder);
   const verifier = new Verifier(workspace);
   const publisher = new Publisher(workspace, appErrorRecorder);
 
@@ -120,7 +120,7 @@ export function createServer(config: Config) {
   const appManager = new AppManager(
     workspace,
     registry,
-    draftReconciler,
+    draftRebuilder,
     {
       onStableStarted: (appSlug) => {
         void scheduleManager.loadApp(appSlug).catch((err) => {
@@ -134,6 +134,7 @@ export function createServer(config: Config) {
         scheduleManager.unloadApp(appSlug);
       },
     },
+    eventBus,
   );
 
   // --- Global middleware ---
@@ -190,7 +191,7 @@ export function createServer(config: Config) {
     }
   });
 
-  // --- Draft management routes: /draft/apps/:appSlug/(reconcile|verify|publish) ---
+  // --- Draft management routes: /draft/apps/:appSlug/(rebuild|verify|publish) ---
   // These MUST be registered BEFORE the runtime catch-all at /draft/apps/:name
   // to prevent the runtime's appEntryResolver from hijacking management requests.
 
@@ -207,23 +208,26 @@ export function createServer(config: Config) {
     await next();
   };
 
-  app.post('/draft/apps/:appSlug/reconcile', draftMgmtMiddleware, async (c) => {
+  const handleDraftRebuild = async (c: any) => {
     const appSlug = c.req.param('appSlug')!;
-    const result = await draftReconciler.reconcile(appSlug);
+    const result = await draftRebuilder.rebuild(appSlug);
 
-    // Restart draft in Runtime after reconcile
+    // Restart draft in Runtime after rebuild
     const appContext = workspace.getOrCreateApp(appSlug);
-    if (result.success && appContext?.hasDraftReconcileState()) {
+    if (result.success && appContext?.hasDraftRebuildState()) {
       registry.restart(appSlug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,
         functionsDir: join(appContext.draftDataDir, 'functions'),
         uiDir: join(appContext.draftDataDir, 'ui'),
       });
+      eventBus.emit('app:reconciled', { appSlug });
     }
 
     return c.json({ data: result });
-  });
+  };
+
+  app.post('/draft/apps/:appSlug/rebuild', draftMgmtMiddleware, handleDraftRebuild);
 
   app.post('/draft/apps/:appSlug/verify', draftMgmtMiddleware, (c) => {
     const appSlug = c.req.param('appSlug')!;
@@ -334,7 +338,7 @@ export function createServer(config: Config) {
   const localBackend = new LocalBackend({
     workspace,
     appManager,
-    draftReconciler,
+    draftRebuilder,
     verifier,
     publisher,
     registry,
@@ -500,7 +504,7 @@ export function createServer(config: Config) {
     // 2. Deduplicate slug against existing apps
     const slug = deduplicateSlug(info.slug, (s) => appManager.exists(s));
 
-    // 3. Create app (includes auto-reconcile)
+    // 3. Create app (includes auto-rebuild)
     const result = await appManager.create(slug, info.description, info.displayName);
 
     // 4. Start Agent with the original idea text (fire-and-forget)
@@ -515,8 +519,8 @@ export function createServer(config: Config) {
       displayName: result.app.displayName,
       description: result.app.description,
     };
-    if (result.reconcileError) {
-      data.reconcileError = result.reconcileError;
+    if (result.rebuildError) {
+      data.rebuildError = result.rebuildError;
     }
     return c.json({ data }, 201);
   });
@@ -549,7 +553,7 @@ export function createServer(config: Config) {
     uiBridge,
     chatSessionManager,
     appManager,
-    draftReconciler,
+    draftRebuilder,
     verifier,
     publisher,
     startup,
@@ -634,7 +638,7 @@ async function initializeRuntime(
       }
     }
 
-    const hasMaterializedDraft = appContext.hasDraftReconcileState();
+    const hasMaterializedDraft = appContext.hasDraftRebuildState();
     const shouldStartDraft = hasMaterializedDraft && state.hasDraft;
 
     if (shouldStartDraft) {

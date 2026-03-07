@@ -59,9 +59,18 @@ ui_batch(app_name: "<app-name>", operations: [
 ])
 ```
 
-### Step 7: Follow the Standard Workflow
+### Step 7: Sync, Rebuild if Needed, Test, Verify, Publish
 
-Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
+Follow the standard development workflow (see `get_guide("workflow")` Steps 3-7):
+
+- Upload the working copy with `update_app(app_name: "<app-name>")`
+- Inspect the response for `needs_rebuild`
+- Run `rebuild_app(app_name: "<app-name>")` only if `needs_rebuild` is `true`
+- Test Draft behavior with `call_api`, `execute_sql`, and `inspect_ui`
+- Run `verify_app` before publishing
+- Ask for explicit user confirmation before `publish_app`
+
+For new apps, a rebuild is usually required because the initial upload commonly includes `migrations/`, `app.yaml`, or `package.json`.
 
 ## Tips
 

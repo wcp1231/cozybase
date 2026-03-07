@@ -33,7 +33,7 @@ import type {
   StartAppOutput,
   StopAppInput,
   StopAppOutput,
-  ReconcileAppInput,
+  RebuildAppInput,
   VerifyAppInput,
   PublishAppInput,
   ExecuteSqlInput,
@@ -73,7 +73,7 @@ import {
   PageEditorError,
 } from '../modules/apps/page-editor';
 
-import type { DraftReconcileResult } from '../core/draft-reconciler';
+import type { DraftRebuildResult } from '../core/draft-rebuilder';
 import type { VerifyResult } from '../core/verifier';
 import type { PublishResult } from '../core/publisher';
 
@@ -212,17 +212,17 @@ export async function handleUpdateAppFile(
     );
   }
 
-  const status = await ctx.backend.pushFile(input.app_name, input.path, content);
-  return { path: input.path, status };
+  const result = await ctx.backend.pushFile(input.app_name, input.path, content);
+  return { path: input.path, status: result.status, needs_rebuild: result.needs_rebuild };
 }
 
 // --- Dev Workflow ---
 
-export async function handleReconcileApp(
+export async function handleRebuildApp(
   ctx: HandlerContext,
-  input: ReconcileAppInput,
-): Promise<DraftReconcileResult> {
-  return ctx.backend.reconcile(input.app_name);
+  input: RebuildAppInput,
+): Promise<DraftRebuildResult> {
+  return ctx.backend.rebuild(input.app_name);
 }
 
 export async function handleVerifyApp(

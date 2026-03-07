@@ -1,6 +1,6 @@
 # Development Workflow
 
-Cozybase APP development follows an iterative **get source → edit → upload → reconcile → test → verify → publish** lifecycle, where testing loops back to editing and publishing requires explicit human confirmation.
+Cozybase APP development follows an iterative **get source → edit → upload → rebuild-if-needed → test → verify → publish** lifecycle, where testing loops back to editing and publishing requires explicit human confirmation.
 
 ## 1. Get APP Source Code
 
@@ -41,10 +41,10 @@ Use your file tools (read/write) to edit files in the working directory:
 
 - **app.yaml** — APP metadata: `description` and optional `schedules` array (see `get_guide("scheduled-tasks")`)
 - **migrations/** — SQL files, named `NNN_name.sql` (e.g. `001_init.sql`), executed in filename sort order
-- **seeds/** — Seed data SQL, loaded into the Draft database during reconcile (never applied to Stable)
+- **seeds/** — Seed data SQL, loaded into the Draft database during rebuild (never applied to Stable)
 - **functions/** — TypeScript files that provide API endpoints via HTTP method exports
 - **ui/pages.json** — Declarative UI page definitions
-- **package.json** — npm dependencies; `bun install` runs automatically during reconcile
+- **package.json** — npm dependencies; `bun install` runs automatically during rebuild
 
 ### Editing UI Pages
 
@@ -108,7 +108,9 @@ ui_move / ui_delete
         │
 update_app_file(path: "ui/pages.json") # sync working copy to cozybase
         │
-reconcile_app(app_name: "my-app")      # rebuild Draft with new UI
+inspect \`needs_rebuild\` from update result
+        │
+rebuild_app(app_name: "my-app")        # only when the update said rebuild is required
         │
 inspect_ui(app_name: "my-app")         # verify UI renders correctly
 ```
@@ -134,25 +136,26 @@ update_app_file(app_name: "my-app", path: "functions/hello.ts")
 
 `update_app` scans the entire APP directory and automatically detects added, modified, and deleted files. Published migration files cannot be modified or deleted.
 
-## 4. Reconcile (Rebuild Draft Environment)
+## 4. Rebuild Draft Environment (When Needed)
 
 ```
-reconcile_app(app_name: "my-app")
+rebuild_app(app_name: "my-app")
 ```
 
-Reconcile performs the following steps:
+Rebuild performs the following steps:
 1. Destroys the Draft database
 2. Executes all migration files in order
 3. Loads seed data
-4. Exports functions to the runtime directory
-5. Exports UI definitions
-6. Installs npm dependencies
+4. Exports runtime files
+5. Installs npm dependencies
+6. Reloads Draft runtime configuration
 
-Run reconcile after every change to migrations, seeds, or functions.
+Run rebuild only when `update_app` / `update_app_file` returns `needs_rebuild: true`.
+Typical triggers are changes to migrations, seeds, `package.json`, or `app.yaml`.
 
 ## 5. Test & Verify Behavior (Iterative)
 
-After reconcile, use these tools to test the Draft environment:
+After any required rebuild, use these tools to test the Draft environment:
 
 ```
 # Execute SQL queries
@@ -171,7 +174,7 @@ call_api(app_name: "my-app", method: "GET", path: "/fn/_db/tables/todo")
 If testing reveals issues:
 1. Go back to **Step 2** (Edit Files) and fix the problem
 2. Re-upload via `update_app` or `update_app_file` (Step 3)
-3. Re-reconcile via `reconcile_app` (Step 4)
+3. Rebuild via `rebuild_app` only if the last file sync returned `needs_rebuild: true` (Step 4)
 4. Test again
 
 Repeat until all behavior is correct.
@@ -199,7 +202,7 @@ Verify checks that migrations, functions, and UI can be safely applied to the St
 
 If verification fails:
 - Go back to **Step 2** to fix the issues
-- Re-upload, re-reconcile, and re-test before trying again
+- Re-upload, rebuild when needed, and re-test before trying again
 
 If verification passes, proceed to publish.
 
@@ -232,7 +235,7 @@ If publishing fails, the system automatically rolls back to the backup.
             │                    │
 3. update_app                    │
             │                    │
-4. reconcile_app                 │
+4. rebuild_app if needed         │
             │                    │
 5. test (execute_sql / call_api) │
             │                    │

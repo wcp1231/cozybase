@@ -45,8 +45,8 @@ async function createApp() {
   // Wait for startup to register apps in the registry
   await startup;
 
-  // Reconcile through HTTP to create draft DB and restart draft in registry
-  await app.request('/draft/apps/todo/reconcile', { method: 'POST' });
+  // Rebuild through HTTP to create draft DB and restart draft in registry
+  await app.request('/draft/apps/todo/rebuild', { method: 'POST' });
 
   return { app, registry };
 }

@@ -11,7 +11,7 @@ Cozybase uses SQLite as the APP database, providing two data access methods:
 
 Each APP has two independent database instances:
 
-- **Draft** — Development environment, rebuilt from scratch during `reconcile_app` (runs all migrations + seeds)
+- **Draft** — Development environment, rebuilt from scratch during `rebuild_app` when required (runs all migrations + seeds)
 - **Stable** — Production environment, `publish_app` only applies new pending migrations
 
 ### Migrations

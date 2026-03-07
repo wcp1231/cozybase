@@ -18,7 +18,7 @@ import {
   handleStopApp,
   handleUpdateApp,
   handleUpdateAppFile,
-  handleReconcileApp,
+  handleRebuildApp,
   handleVerifyApp,
   handlePublishApp,
   handleExecuteSql,
@@ -116,10 +116,10 @@ export function createCozybaseSdkMcpServer(ctx: HandlerContext) {
 
       // --- Dev Workflow ---
       tool(
-        'reconcile_app',
-        TOOL_DESCRIPTIONS.reconcile_app,
+        'rebuild_app',
+        TOOL_DESCRIPTIONS.rebuild_app,
         { app_name: z.string() },
-        async (args) => jsonResult(await handleReconcileApp(ctx, args)),
+        async (args) => jsonResult(await handleRebuildApp(ctx, args)),
       ),
 
       tool(

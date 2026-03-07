@@ -24,7 +24,7 @@ export interface FunctionValidationResult {
   error?: string;
 }
 
-export interface DraftReconcileResult {
+export interface DraftRebuildResult {
   success: boolean;
   migrations: string[];  // executed migration filenames
   seeds: string[];       // loaded seed filenames
@@ -37,13 +37,13 @@ export interface DraftReconcileResult {
   error?: string;
 }
 
-export interface DraftReconcileOptions {
+export interface DraftRebuildOptions {
   force?: boolean;
 }
 
-// --- DraftReconciler ---
+// --- DraftRebuilder ---
 
-export class DraftReconciler {
+export class DraftRebuilder {
   private migrationRunner = new MigrationRunner();
   private seedLoader = new SeedLoader();
 
@@ -52,11 +52,11 @@ export class DraftReconciler {
     private errorRecorder?: AppErrorRecorder,
   ) {}
 
-  /** Reconcile a draft app: rebuild draft DB only when migrations changed */
-  async reconcile(
+  /** Rebuild a draft app: rebuild draft DB only when migrations changed */
+  async rebuild(
     appName: string,
-    options?: DraftReconcileOptions,
-  ): Promise<DraftReconcileResult> {
+    options?: DraftRebuildOptions,
+  ): Promise<DraftRebuildResult> {
     // Validate app state
     const state = this.workspace.getAppState(appName);
     if (!state) {
@@ -138,9 +138,9 @@ export class DraftReconciler {
         };
       }
 
-      this.writeDraftReconcileState(appContext.draftDataDir, migrationSignature);
+      this.writeDraftRebuildState(appContext.draftDataDir, migrationSignature);
     } else {
-      this.writeDraftReconcileState(appContext.draftDataDir, migrationSignature);
+      this.writeDraftRebuildState(appContext.draftDataDir, migrationSignature);
     }
 
     // 5. Export functions from DB to draft directory
@@ -151,14 +151,14 @@ export class DraftReconciler {
     const functionsResult = await this.validateFunctions(appName);
 
     // 7. Export UI definition (non-blocking)
-    let uiResult: DraftReconcileResult['ui'];
+    let uiResult: DraftRebuildResult['ui'];
     try {
       const exported = exportUiFromDb(repo, appName, appContext.draftDataDir);
       if (exported) {
         uiResult = { exported: true };
       }
     } catch (err: unknown) {
-      console.warn(`[reconciler] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
+      console.warn(`[rebuilder] UI export failed for '${appName}':`, err instanceof Error ? err.message : err);
       this.recordBuildError(
         appName,
         'DRAFT_UI_EXPORT_ERROR',
@@ -199,7 +199,7 @@ export class DraftReconciler {
       return true;
     }
 
-    const previousState = this.readDraftReconcileState(draftDataDir);
+    const previousState = this.readDraftRebuildState(draftDataDir);
     if (!previousState) {
       return true;
     }
@@ -220,10 +220,10 @@ export class DraftReconciler {
     return hash.digest('hex');
   }
 
-  private readDraftReconcileState(
+  private readDraftRebuildState(
     draftDataDir: string,
   ): { migrationSignature: string } | null {
-    const statePath = join(draftDataDir, '.reconcile-state.json');
+    const statePath = join(draftDataDir, '.rebuild-state.json');
     if (!existsSync(statePath)) {
       return null;
     }
@@ -239,20 +239,20 @@ export class DraftReconciler {
     }
   }
 
-  private writeDraftReconcileState(
+  private writeDraftRebuildState(
     draftDataDir: string,
     migrationSignature: string,
   ): void {
     mkdirSync(draftDataDir, { recursive: true });
     writeFileSync(
-      join(draftDataDir, '.reconcile-state.json'),
+      join(draftDataDir, '.rebuild-state.json'),
       JSON.stringify({ migrationSignature }, null, 2),
       'utf-8',
     );
   }
 
   /** Validate all function files for an app (non-blocking, reads from draft dir) */
-  private async validateFunctions(appName: string): Promise<DraftReconcileResult['functions']> {
+  private async validateFunctions(appName: string): Promise<DraftRebuildResult['functions']> {
     const functionsDir = join(this.workspace.draftDir, appName, 'functions');
     if (!existsSync(functionsDir)) {
       return undefined;
@@ -318,7 +318,7 @@ export class DraftReconciler {
   private async exportPackageJsonAndInstall(
     appName: string,
     appDir: string,
-  ): Promise<DraftReconcileResult['npm']> {
+  ): Promise<DraftRebuildResult['npm']> {
     const repo = this.workspace.getPlatformRepo();
     const record = repo.appFiles.findByAppAndPath(appName, 'package.json');
 
@@ -359,7 +359,7 @@ export class DraftReconciler {
     errorCode: string,
     errorMessage: string,
     stackTrace?: string,
-    sourceDetail = 'draft-reconcile',
+    sourceDetail = 'draft-rebuild',
   ): void {
     this.errorRecorder?.record({
       appSlug,

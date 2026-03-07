@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { DraftReconciler } from '../../src/core/draft-reconciler';
+import { DraftRebuilder } from '../../src/core/draft-rebuilder';
 import { Verifier } from '../../src/core/verifier';
 import { Publisher } from '../../src/core/publisher';
 import {
@@ -28,7 +28,7 @@ const DRAFT_ONLY_STATE = { stableStatus: null, hasDraft: true } as const;
 const STABLE_RUNNING_STATE = { stableStatus: 'running', hasDraft: false } as const;
 const STABLE_RUNNING_WITH_DRAFT_STATE = { stableStatus: 'running', hasDraft: true } as const;
 
-describe('End-to-end Reconciler Scenarios', () => {
+describe('End-to-end Rebuilder Scenarios', () => {
   let handle: TestWorkspaceHandle;
 
   afterEach(() => {
@@ -36,7 +36,7 @@ describe('End-to-end Reconciler Scenarios', () => {
   });
 
   // --- Scenario 9.1 ---
-  describe('9.1: New App -> DraftReconcile -> query -> modify -> re-reconcile', () => {
+  describe('9.1: New App -> DraftRebuild -> query -> modify -> re-rebuild', () => {
     test('full draft development cycle', async () => {
       handle = createTestWorkspace();
 
@@ -50,9 +50,9 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle.workspace.refreshAppState('todos');
       expect(handle.workspace.getAppState('todos')).toEqual(DRAFT_ONLY_STATE);
 
-      // Step 3: Draft reconcile
-      const reconciler = new DraftReconciler(handle.workspace);
-      const result1 = await reconciler.reconcile('todos');
+      // Step 3: Draft rebuild
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const result1 = await rebuilder.rebuild('todos');
       expect(result1.success).toBe(true);
 
       // Step 4: Query draft DB — seed data present
@@ -66,8 +66,8 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 5: Add new migration
       addMigration(handle, 'todos', '002_add_priority.sql', MIGRATION_ADD_PRIORITY);
 
-      // Step 6: Re-reconcile
-      const result2 = await reconciler.reconcile('todos');
+      // Step 6: Re-rebuild
+      const result2 = await rebuilder.rebuild('todos');
       expect(result2.success).toBe(true);
       expect(result2.migrations).toContain('001_init.sql');
       expect(result2.migrations).toContain('002_add_priority.sql');
@@ -135,7 +135,7 @@ describe('End-to-end Reconciler Scenarios', () => {
   });
 
   // --- Scenario 9.3 ---
-  describe('9.3: Stable + new migration -> DraftReconcile -> Verify -> Publish', () => {
+  describe('9.3: Stable + new migration -> DraftRebuild -> Verify -> Publish', () => {
     test('incremental development after initial publish', async () => {
       handle = createTestWorkspace();
 
@@ -154,11 +154,11 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle.workspace.refreshAppState('todos');
       expect(handle.workspace.getAppState('todos')).toEqual(STABLE_RUNNING_WITH_DRAFT_STATE);
 
-      // Step 4: Draft reconcile — draft DB has both migrations
-      const reconciler = new DraftReconciler(handle.workspace);
-      const reconcileResult = await reconciler.reconcile('todos');
-      expect(reconcileResult.success).toBe(true);
-      expect(reconcileResult.migrations).toContain('002_add_priority.sql');
+      // Step 4: Draft rebuild — draft DB has both migrations
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const rebuildResult = await rebuilder.rebuild('todos');
+      expect(rebuildResult.success).toBe(true);
+      expect(rebuildResult.migrations).toContain('002_add_priority.sql');
 
       // Step 5: Verify passes
       const verifier = new Verifier(handle.workspace);
@@ -318,9 +318,9 @@ describe('End-to-end Reconciler Scenarios', () => {
     });
   });
 
-  // --- Scenario 9.8: Reconcile copies functions to draft dir ---
-  describe('9.8: Draft Reconcile copies functions to draft directory', () => {
-    test('reconcile copies function files to draft/apps/{name}/functions/', async () => {
+  // --- Scenario 9.8: Rebuild copies functions to draft dir ---
+  describe('9.8: Draft Rebuild copies functions to draft directory', () => {
+    test('rebuild copies function files to draft/apps/{name}/functions/', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with migration + functions
@@ -334,13 +334,13 @@ describe('End-to-end Reconciler Scenarios', () => {
       handle.workspace.refreshAppState('myapp');
       expect(handle.workspace.getAppState('myapp')).toEqual(DRAFT_ONLY_STATE);
 
-      // Step 3: Before reconcile, draft functions dir does not exist
+      // Step 3: Before rebuild, draft functions dir does not exist
       const draftFnDir = join(handle.root, 'draft', 'myapp', 'functions');
       expect(existsSync(draftFnDir)).toBe(false);
 
-      // Step 4: Reconcile
-      const reconciler = new DraftReconciler(handle.workspace);
-      const result = await reconciler.reconcile('myapp');
+      // Step 4: Rebuild
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const result = await rebuilder.rebuild('myapp');
       expect(result.success).toBe(true);
 
       // Step 5: Draft functions dir now exists with both files
@@ -355,9 +355,9 @@ describe('End-to-end Reconciler Scenarios', () => {
     });
   });
 
-  // --- Scenario 9.9: Draft functions isolation — DB changes don't affect draft until reconcile ---
-  describe('9.9: Draft functions require reconcile after source modification', () => {
-    test('modifying source function does not update draft until reconcile', async () => {
+  // --- Scenario 9.9: Draft functions isolation — DB changes don't affect draft until rebuild ---
+  describe('9.9: Draft functions require rebuild after source modification', () => {
+    test('modifying source function does not update draft until rebuild', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with function
@@ -367,10 +367,10 @@ describe('End-to-end Reconciler Scenarios', () => {
         functions: { 'handler.ts': fnCodeV1 },
       });
 
-      // Step 2: First reconcile — exports v1 to draft
+      // Step 2: First rebuild — exports v1 to draft
       handle.workspace.refreshAppState('myapp');
-      const reconciler = new DraftReconciler(handle.workspace);
-      const result1 = await reconciler.reconcile('myapp');
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const result1 = await rebuilder.rebuild('myapp');
       expect(result1.success).toBe(true);
 
       const draftFnPath = join(handle.root, 'draft', 'myapp', 'functions', 'handler.ts');
@@ -380,23 +380,23 @@ describe('End-to-end Reconciler Scenarios', () => {
       const fnCodeV2 = 'export async function GET(ctx) { return { version: 2 }; }';
       addFunction(handle, 'myapp', 'handler.ts', fnCodeV2);
 
-      // Step 4: Draft still has v1 (no reconcile yet)
+      // Step 4: Draft still has v1 (no rebuild yet)
       expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 1');
 
       // Step 5: DB has v2
       const dbContent = readAppFile(handle, 'myapp', 'functions/handler.ts');
       expect(dbContent).toContain('version: 2');
 
-      // Step 6: Reconcile again — draft now has v2
-      const result2 = await reconciler.reconcile('myapp');
+      // Step 6: Rebuild again — draft now has v2
+      const result2 = await rebuilder.rebuild('myapp');
       expect(result2.success).toBe(true);
       expect(readFileSync(draftFnPath, 'utf-8')).toContain('version: 2');
     });
   });
 
-  // --- Scenario 9.10: Deleted function cleaned on re-reconcile ---
-  describe('9.10: Re-reconcile cleans up deleted function from draft directory', () => {
-    test('removing a function from DB then reconciling clears it from draft', async () => {
+  // --- Scenario 9.10: Deleted function cleaned on re-rebuild ---
+  describe('9.10: Re-rebuild cleans up deleted function from draft directory', () => {
+    test('removing a function from DB then rebuilding clears it from draft', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with two functions
@@ -406,10 +406,10 @@ describe('End-to-end Reconciler Scenarios', () => {
         functions: { 'orders.ts': fnCode, 'users.ts': fnCode },
       });
 
-      // Step 2: First reconcile — both exported to draft
+      // Step 2: First rebuild — both exported to draft
       handle.workspace.refreshAppState('myapp');
-      const reconciler = new DraftReconciler(handle.workspace);
-      const result1 = await reconciler.reconcile('myapp');
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const result1 = await rebuilder.rebuild('myapp');
       expect(result1.success).toBe(true);
 
       const draftFnDir = join(handle.root, 'draft', 'myapp', 'functions');
@@ -418,8 +418,8 @@ describe('End-to-end Reconciler Scenarios', () => {
       // Step 3: Delete orders.ts from app_files DB
       deleteAppFile(handle, 'myapp', 'functions/orders.ts');
 
-      // Step 4: Re-reconcile — draft should only have users.ts
-      const result2 = await reconciler.reconcile('myapp');
+      // Step 4: Re-rebuild — draft should only have users.ts
+      const result2 = await rebuilder.rebuild('myapp');
       expect(result2.success).toBe(true);
 
       expect(readdirSync(draftFnDir).sort()).toEqual(['users.ts']);
@@ -427,9 +427,9 @@ describe('End-to-end Reconciler Scenarios', () => {
     });
   });
 
-  // --- Scenario 9.11: Draft Reconcile exports UI definition ---
-  describe('9.11: Draft Reconcile exports ui/pages.json to draft directory', () => {
-    test('reconcile copies UI definition to draft/apps/{name}/ui/pages.json', async () => {
+  // --- Scenario 9.11: Draft Rebuild exports UI definition ---
+  describe('9.11: Draft Rebuild exports ui/pages.json to draft directory', () => {
+    test('rebuild copies UI definition to draft/apps/{name}/ui/pages.json', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app with migration + UI
@@ -438,10 +438,10 @@ describe('End-to-end Reconciler Scenarios', () => {
         ui: TEST_UI_PAGES_JSON,
       });
 
-      // Step 2: Reconcile
+      // Step 2: Rebuild
       handle.workspace.refreshAppState('myapp');
-      const reconciler = new DraftReconciler(handle.workspace);
-      const result = await reconciler.reconcile('myapp');
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const result = await rebuilder.rebuild('myapp');
       expect(result.success).toBe(true);
       expect(result.ui).toEqual({ exported: true });
 
@@ -487,9 +487,9 @@ describe('End-to-end Reconciler Scenarios', () => {
     });
   });
 
-  // --- Scenario 9.13: Reconcile/Publish without UI definition ---
-  describe('9.13: No UI definition — Reconcile and Publish succeed without ui field', () => {
-    test('reconcile and publish work fine without ui/pages.json', async () => {
+  // --- Scenario 9.13: Rebuild/Publish without UI definition ---
+  describe('9.13: No UI definition — Rebuild and Publish succeed without ui field', () => {
+    test('rebuild and publish work fine without ui/pages.json', async () => {
       handle = createTestWorkspace();
 
       // Step 1: Create app without UI
@@ -497,12 +497,12 @@ describe('End-to-end Reconciler Scenarios', () => {
         migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
       });
 
-      // Step 2: Reconcile — no ui field in result
+      // Step 2: Rebuild — no ui field in result
       handle.workspace.refreshAppState('myapp');
-      const reconciler = new DraftReconciler(handle.workspace);
-      const reconcileResult = await reconciler.reconcile('myapp');
-      expect(reconcileResult.success).toBe(true);
-      expect(reconcileResult.ui).toBeUndefined();
+      const rebuilder = new DraftRebuilder(handle.workspace);
+      const rebuildResult = await rebuilder.rebuild('myapp');
+      expect(rebuildResult.success).toBe(true);
+      expect(rebuildResult.ui).toBeUndefined();
 
       // Step 3: Publish — no ui field in result
       const publisher = new Publisher(handle.workspace);

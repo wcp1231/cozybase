@@ -98,7 +98,7 @@ This ensures the Stable database schema evolution history cannot be tampered wit
 
 | Operation | Behavior |
 |-----------|----------|
-| `reconcile_app` | Destroys Draft database, executes **all** migrations from scratch, then loads seeds |
+| `rebuild_app` | Destroys Draft database, executes **all** migrations from scratch, then loads seeds |
 | `verify_app` | Dry-runs **pending** migrations on a copy of the Stable database |
 | `publish_app` | Executes **pending** migrations on the Stable database, marks them as immutable |
 
@@ -115,6 +115,6 @@ INSERT INTO todo (title, completed) VALUES ('Build my first app', 0);
 ```
 
 Seeds characteristics:
-- Only loaded into the Draft database during `reconcile_app`
+- Only loaded into the Draft database during `rebuild_app`
 - **Not** applied to the Stable database
 - Suitable for development and test data

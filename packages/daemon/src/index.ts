@@ -95,7 +95,7 @@ console.log(`
     *    /stable/apps/:appName/fn/_db/*
     *    /draft/apps/:appName/fn/:fnName
     *    /draft/apps/:appName/fn/_db/*
-    POST /draft/apps/:appName/reconcile
+    POST /draft/apps/:appName/rebuild
     POST /draft/apps/:appName/verify
     POST /draft/apps/:appName/publish
 `);

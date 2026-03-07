@@ -12,12 +12,12 @@ import type {
   AppConsoleScheduleRunsResult,
   AppConsoleSchedulesResult,
 } from '../core/app-console-service';
-import type { DraftReconcileResult } from '../core/draft-reconciler';
+import type { DraftRebuildResult } from '../core/draft-rebuilder';
 import type { VerifyResult } from '../core/verifier';
 import type { PublishResult } from '../core/publisher';
 
 // Re-export core result types for convenience
-export type { DraftReconcileResult, VerifyResult, PublishResult };
+export type { DraftRebuildResult, VerifyResult, PublishResult };
 
 // --- Shared Types ---
 
@@ -58,6 +58,12 @@ export interface PushResult {
     modified: string[];
     deleted: string[];
   };
+  needs_rebuild: boolean;
+}
+
+export interface PushFileResult {
+  status: 'created' | 'updated';
+  needs_rebuild: boolean;
 }
 
 /** Result of a SQL query execution */
@@ -95,10 +101,10 @@ export interface CozybaseBackend {
 
   // File sync
   pushFiles(slug: string, files: FileEntry[]): Promise<PushResult>;
-  pushFile(slug: string, path: string, content: string): Promise<'created' | 'updated'>;
+  pushFile(slug: string, path: string, content: string): Promise<PushFileResult>;
 
   // Dev workflow
-  reconcile(slug: string): Promise<DraftReconcileResult>;
+  rebuild(slug: string): Promise<DraftRebuildResult>;
   verify(slug: string): Promise<VerifyResult>;
   publish(slug: string): Promise<PublishResult>;
 

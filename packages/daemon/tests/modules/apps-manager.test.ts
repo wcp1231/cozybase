@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { EventBus } from '../../src/core/event-bus';
 import { AppManager } from '../../src/modules/apps/manager';
 import {
   MIGRATION_CREATE_TODOS,
@@ -120,5 +121,152 @@ describe('AppManager', () => {
     manager.delete('myapp');
 
     expect(events).toEqual(['start:myapp', 'stop:myapp', 'delete:myapp']);
+  });
+
+  test('updateFile hot-exports functions and reports no rebuild needed', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      functions: {
+        'hello.ts': 'export async function GET() { return { v: 1 }; }',
+      },
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const eventBus = new EventBus();
+    const events: string[] = [];
+    eventBus.on('app:reconciled', ({ appSlug }) => events.push(appSlug));
+
+    const manager = new AppManager(handle.workspace, undefined, undefined, undefined, eventBus);
+    const result = manager.updateFile(
+      'myapp',
+      'functions/hello.ts',
+      'export async function GET() { return { v: 2 }; }',
+    );
+
+    expect(result.needsRebuild).toBe(false);
+    expect(events).toEqual(['myapp']);
+    const draftPath = join(handle.root, 'draft', 'myapp', 'functions', 'hello.ts');
+    expect(existsSync(draftPath)).toBe(true);
+    expect(readFileSync(draftPath, 'utf-8')).toContain('v: 2');
+  });
+
+  test('updateApp re-exports functions, removes deleted files, and flags rebuild when app.yaml changes', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      functions: {
+        'hello.ts': 'export async function GET() { return { v: 1 }; }',
+        'legacy.ts': 'export async function GET() { return { legacy: true }; }',
+      },
+      ui: '{"pages":[{"path":"home","title":"Home","body":{"type":"page","id":"root","children":[]}}]}',
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const eventBus = new EventBus();
+    const events: string[] = [];
+    eventBus.on('app:reconciled', ({ appSlug }) => events.push(appSlug));
+
+    const manager = new AppManager(handle.workspace, undefined, undefined, undefined, eventBus);
+    const current = manager.getAppWithFiles('myapp');
+
+    const result = manager.updateApp(
+      'myapp',
+      [
+        { path: 'app.yaml', content: 'description: Test app: myapp\n' },
+        { path: 'functions/hello.ts', content: 'export async function GET() { return { v: 2 }; }' },
+        { path: 'ui/pages.json', content: '{"pages":[]}' },
+      ],
+      current.current_version,
+    );
+
+    expect(result.needsRebuild).toBe(true);
+    expect(events).toEqual(['myapp']);
+    const helloPath = join(handle.root, 'draft', 'myapp', 'functions', 'hello.ts');
+    const uiPath = join(handle.root, 'draft', 'myapp', 'ui', 'pages.json');
+    expect(existsSync(helloPath)).toBe(true);
+    expect(readFileSync(helloPath, 'utf-8')).toContain('v: 2');
+    expect(existsSync(join(handle.root, 'draft', 'myapp', 'functions', 'legacy.ts'))).toBe(false);
+    expect(readFileSync(uiPath, 'utf-8')).toBe('{"pages":[]}');
+  });
+
+  test('updateApp returns no rebuild when only hot-exportable files change', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      functions: {
+        'hello.ts': 'export async function GET() { return { v: 1 }; }',
+      },
+      ui: '{"pages":[{"path":"home","title":"Home","body":{"type":"page","id":"root","children":[]}}]}',
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const manager = new AppManager(handle.workspace);
+    const current = manager.getAppWithFiles('myapp');
+    const appYaml = current.files.find((file) => file.path === 'app.yaml')?.content;
+    if (typeof appYaml !== 'string') {
+      throw new Error('Expected app.yaml to exist in test app snapshot');
+    }
+
+    const result = manager.updateApp(
+      'myapp',
+      [
+        { path: 'app.yaml', content: appYaml },
+        { path: 'functions/hello.ts', content: 'export async function GET() { return { v: 2 }; }' },
+        { path: 'ui/pages.json', content: '{"pages":[]}' },
+      ],
+      current.current_version,
+    );
+
+    expect(result.needsRebuild).toBe(false);
+  });
+
+  test('updateFile marks migration edits as requiring rebuild without emitting hot-export event', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const eventBus = new EventBus();
+    let emitted = false;
+    eventBus.on('app:reconciled', () => {
+      emitted = true;
+    });
+
+    const manager = new AppManager(handle.workspace, undefined, undefined, undefined, eventBus);
+    const result = manager.updateFile('myapp', 'migrations/001_init.sql', `${MIGRATION_CREATE_TODOS}\n-- comment`);
+
+    expect(result.needsRebuild).toBe(true);
+    expect(emitted).toBe(false);
+  });
+
+  test('updateFile does not emit reconciled when draft runtime is unavailable', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      functions: {
+        'hello.ts': 'export async function GET() { return { v: 1 }; }',
+      },
+    });
+    handle.workspace.refreshAppState('myapp');
+
+    const eventBus = new EventBus();
+    let emitted = false;
+    eventBus.on('app:reconciled', () => {
+      emitted = true;
+    });
+
+    const fakeRegistry = {
+      get: () => undefined,
+      start: () => undefined,
+      restart: () => undefined,
+    } as any;
+
+    const manager = new AppManager(handle.workspace, fakeRegistry, undefined, undefined, eventBus);
+    const result = manager.updateFile(
+      'myapp',
+      'functions/hello.ts',
+      'export async function GET() { return { v: 2 }; }',
+    );
+
+    expect(result.needsRebuild).toBe(false);
+    expect(emitted).toBe(false);
   });
 });

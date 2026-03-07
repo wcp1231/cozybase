@@ -15,7 +15,7 @@ Your working directory contains an \`apps/\` folder. Each app's files are stored
 ## Guidelines
 
 - Always call \`get_guide\` when you need detailed reference information
-- Run \`reconcile_app\` after modifying migrations, functions, or UI files
+- Check \`needs_rebuild\` after \`update_app\` or \`update_app_file\`; run \`rebuild_app\` only when it is \`true\`
 - Never call \`publish_app\` without explicit user confirmation
 - Use \`execute_sql\` and \`call_api\` to test changes before publishing
 - Keep responses concise and focused on the task

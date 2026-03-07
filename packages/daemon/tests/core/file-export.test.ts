@@ -1,7 +1,12 @@
 import { describe, test, expect, afterEach } from 'bun:test';
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { exportUiFromDb } from '../../src/core/file-export';
+import {
+  classifyAppFileUpdate,
+  exportFunctionsFromDb,
+  exportSingleFunction,
+  exportUiFromDb,
+} from '../../src/core/file-export';
 import {
   createTestWorkspace,
   createTestApp,
@@ -106,5 +111,57 @@ describe('exportUiFromDb', () => {
     const result = exportUiFromDb(platformRepo, 'myapp', targetDir);
     expect(result).toBe(false);
     expect(existsSync(uiPath)).toBe(false);
+  });
+});
+
+describe('file export helpers', () => {
+  let handle: TestWorkspaceHandle;
+
+  afterEach(() => {
+    if (handle) handle.cleanup();
+  });
+
+  test('classifies hot-export and rebuild-triggering paths correctly', () => {
+    expect(classifyAppFileUpdate('ui/pages.json')).toEqual({ kind: 'ui', needsRebuild: false });
+    expect(classifyAppFileUpdate('functions/hello.ts')).toEqual({ kind: 'function', needsRebuild: false });
+    expect(classifyAppFileUpdate('migrations/001_init.sql')).toEqual({ kind: 'rebuild', needsRebuild: true });
+    expect(classifyAppFileUpdate('package.json')).toEqual({ kind: 'rebuild', needsRebuild: true });
+    expect(classifyAppFileUpdate('README.md')).toEqual({ kind: 'other', needsRebuild: false });
+  });
+
+  test('exports a single function file to the draft directory', () => {
+    handle = createTestWorkspace();
+    const targetDir = join(handle.root, 'draft', 'apps', 'myapp');
+
+    const dest = exportSingleFunction(
+      targetDir,
+      'functions/api/hello.ts',
+      'export async function GET() { return { ok: true }; }',
+    );
+
+    expect(dest).toBe(join(targetDir, 'functions', 'api', 'hello.ts'));
+    expect(readFileSync(dest, 'utf-8')).toContain('ok: true');
+  });
+
+  test('full function export removes deleted files on subsequent export', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      functions: {
+        'hello.ts': 'export async function GET() { return { v: 1 }; }',
+        'legacy.ts': 'export async function GET() { return { legacy: true }; }',
+      },
+    });
+
+    const targetDir = join(handle.root, 'draft', 'apps', 'myapp', 'functions');
+    const platformRepo = handle.workspace.getPlatformRepo();
+
+    exportFunctionsFromDb(platformRepo, 'myapp', targetDir);
+    expect(existsSync(join(targetDir, 'legacy.ts'))).toBe(true);
+
+    deleteAppFile(handle, 'myapp', 'functions/legacy.ts');
+    exportFunctionsFromDb(platformRepo, 'myapp', targetDir);
+
+    expect(existsSync(join(targetDir, 'legacy.ts'))).toBe(false);
+    expect(existsSync(join(targetDir, 'hello.ts'))).toBe(true);
   });
 });

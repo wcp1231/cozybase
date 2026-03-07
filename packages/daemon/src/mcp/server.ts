@@ -18,7 +18,7 @@ import {
   handleStopApp,
   handleUpdateApp,
   handleUpdateAppFile,
-  handleReconcileApp,
+  handleRebuildApp,
   handleVerifyApp,
   handlePublishApp,
   handleExecuteSql,
@@ -154,13 +154,13 @@ export function createMcpServer(ctx: HandlerContext): McpServer {
   // --- Dev Workflow ---
 
   server.registerTool(
-    'reconcile_app',
+    'rebuild_app',
     {
-      description: TOOL_DESCRIPTIONS.reconcile_app,
+      description: TOOL_DESCRIPTIONS.rebuild_app,
       inputSchema: { app_name: z.string() },
     },
     async (args) => {
-      return jsonText(await handleReconcileApp(ctx, args));
+      return jsonText(await handleRebuildApp(ctx, args));
     },
   );
 

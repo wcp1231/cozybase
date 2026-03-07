@@ -1,7 +1,7 @@
 /**
  * LocalBackend — In-process CozybaseBackend implementation.
  *
- * Directly calls Workspace, AppManager, DraftReconciler, Verifier, Publisher,
+ * Directly calls Workspace, AppManager, DraftRebuilder, Verifier, Publisher,
  * and UiBridge without HTTP roundtrips. Used by the SDK MCP Server running
  * inside the daemon process.
  */
@@ -10,7 +10,7 @@ import { join } from 'path';
 import type { Hono } from 'hono';
 import { AppConsoleService } from '../core/app-console-service';
 import type { Workspace } from '../core/workspace';
-import type { DraftReconciler } from '../core/draft-reconciler';
+import type { DraftRebuilder } from '../core/draft-rebuilder';
 import type { Verifier } from '../core/verifier';
 import type { Publisher } from '../core/publisher';
 import type { ScheduleManager } from '../core/schedule-manager';
@@ -24,9 +24,10 @@ import type {
   AppInfo,
   FileEntry,
   PushResult,
+  PushFileResult,
   SqlResult,
   ApiResponse,
-  DraftReconcileResult,
+  DraftRebuildResult,
   VerifyResult,
   PublishResult,
 } from '../mcp/types';
@@ -34,7 +35,7 @@ import type {
 export interface LocalBackendDeps {
   workspace: Workspace;
   appManager: AppManager;
-  draftReconciler: DraftReconciler;
+  draftRebuilder: DraftRebuilder;
   verifier: Verifier;
   publisher: Publisher;
   registry: AppRegistry;
@@ -47,7 +48,7 @@ export interface LocalBackendDeps {
 export class LocalBackend implements CozybaseBackend {
   private workspace: Workspace;
   private appManager: AppManager;
-  private draftReconciler: DraftReconciler;
+  private draftRebuilder: DraftRebuilder;
   private verifier: Verifier;
   private publisher: Publisher;
   private registry: AppRegistry;
@@ -60,7 +61,7 @@ export class LocalBackend implements CozybaseBackend {
   constructor(deps: LocalBackendDeps) {
     this.workspace = deps.workspace;
     this.appManager = deps.appManager;
-    this.draftReconciler = deps.draftReconciler;
+    this.draftRebuilder = deps.draftRebuilder;
     this.verifier = deps.verifier;
     this.publisher = deps.publisher;
     this.registry = deps.registry;
@@ -150,11 +151,12 @@ export class LocalBackend implements CozybaseBackend {
   async pushFiles(slug: string, files: FileEntry[]): Promise<PushResult> {
     // Fetch current version for optimistic lock
     const current = this.appManager.getAppWithFiles(slug);
-    const updatedApp = this.appManager.updateApp(
+    const updateResult = this.appManager.updateApp(
       slug,
       files.map((f) => ({ path: f.path, content: f.content })),
       current.current_version,
     );
+    const updatedApp = updateResult.app;
 
     // Compute changes by comparing old and new file sets
     const oldPaths = new Set(current.files.map((f) => f.path));
@@ -182,25 +184,29 @@ export class LocalBackend implements CozybaseBackend {
     return {
       files: files.map((f) => f.path),
       changes: { added, modified, deleted },
+      needs_rebuild: updateResult.needsRebuild,
     };
   }
 
-  async pushFile(slug: string, path: string, content: string): Promise<'created' | 'updated'> {
+  async pushFile(slug: string, path: string, content: string): Promise<PushFileResult> {
     const current = this.appManager.getAppWithFiles(slug);
     const existed = current.files.some((f) => f.path === path);
-    this.appManager.updateFile(slug, path, content);
-    return existed ? 'updated' : 'created';
+    const result = this.appManager.updateFile(slug, path, content);
+    return {
+      status: existed ? 'updated' : 'created',
+      needs_rebuild: result.needsRebuild,
+    };
   }
 
   // --- Dev Workflow ---
 
-  async reconcile(slug: string): Promise<DraftReconcileResult> {
+  async rebuild(slug: string): Promise<DraftRebuildResult> {
     this.workspace.refreshAppState(slug);
-    const result = await this.draftReconciler.reconcile(slug);
+    const result = await this.draftRebuilder.rebuild(slug);
 
-    // Restart draft runtime after reconcile
+    // Restart draft runtime after rebuild
     const appContext = this.workspace.getOrCreateApp(slug);
-    if (result.success && appContext?.hasDraftReconcileState()) {
+    if (result.success && appContext?.hasDraftRebuildState()) {
       this.registry.restart(slug, {
         mode: 'draft',
         dbPath: appContext.draftDbPath,
@@ -209,7 +215,7 @@ export class LocalBackend implements CozybaseBackend {
       });
     }
 
-    // Notify listeners (e.g., ChatSession → browser) that reconcile completed
+    // Notify listeners (e.g., ChatSession → browser) that rebuild completed
     if (result.success) {
       this.eventBus?.emit('app:reconciled', { appSlug: slug });
     }

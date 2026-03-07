@@ -41,7 +41,7 @@ describe('Auto CRUD routes (/fn/_db/*)', () => {
     registry = runtimeRegistry;
     await startup;
 
-    await app.request('/draft/apps/todo/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/todo/rebuild', { method: 'POST' });
 
     const createRes = await app.request('http://localhost/draft/apps/todo/fn/_db/tables/todos', {
       method: 'POST',

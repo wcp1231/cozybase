@@ -113,11 +113,22 @@ ui_batch(app_name: "my-app", operations: [
 ])
 ```
 
-### Step 4: Follow the Standard Workflow
+### Step 4: Sync and Test with the Current Workflow
 
-Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
+Follow the standard development workflow (see `get_guide("workflow")` Steps 3-7).
 
-After any UI edit, sync with: `update_app_file(app_name: "my-app", path: "ui/pages.json")`
+After any UI edit, sync with:
+
+`update_app_file(app_name: "my-app", path: "ui/pages.json")`
+
+Then:
+
+- Inspect `needs_rebuild` in the response
+- UI edits normally hot-export into Draft, so rebuild is usually not required
+- Only run `rebuild_app(app_name: "my-app")` if the upload result says `needs_rebuild: true`
+- Use `inspect_ui(app_name: "my-app")` and Draft page/API checks to verify behavior
+- Run `verify_app` before publishing
+- Ask for explicit user confirmation before `publish_app`
 
 When nested payload JSON must point at the inserted component itself, use `"$self"`:
 - Example: `{ "type": "reload", "target": "$self" }`

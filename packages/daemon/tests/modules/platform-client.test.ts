@@ -73,8 +73,8 @@ describe('PlatformClient integration', () => {
     const { app, registry: runtimeRegistry, startup } = createServer(createTestConfig(handle.root));
     registry = runtimeRegistry;
     await startup;
-    await app.request('/draft/apps/caller/reconcile', { method: 'POST' });
-    await app.request('/draft/apps/peer/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/caller/rebuild', { method: 'POST' });
+    await app.request('/draft/apps/peer/rebuild', { method: 'POST' });
 
     const res = await app.request('http://localhost/draft/apps/caller/fn/call-peer');
     expect(res.status).toBe(200);
@@ -93,7 +93,7 @@ describe('PlatformClient integration', () => {
     const { app, registry: runtimeRegistry, startup } = createServer(createTestConfig(handle.root));
     registry = runtimeRegistry;
     await startup;
-    await app.request('/draft/apps/caller/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/caller/rebuild', { method: 'POST' });
 
     const res = await app.request('http://localhost/draft/apps/caller/fn/theme');
     expect(res.status).toBe(200);
@@ -112,7 +112,7 @@ describe('PlatformClient integration', () => {
     const { app, registry: runtimeRegistry, startup } = createServer(createTestConfig(handle.root));
     registry = runtimeRegistry;
     await startup;
-    await app.request('/draft/apps/loop/reconcile', { method: 'POST' });
+    await app.request('/draft/apps/loop/rebuild', { method: 'POST' });
 
     const res = await app.request('http://localhost/draft/apps/loop/fn/recurse');
     expect(res.status).toBe(508);

@@ -108,7 +108,7 @@ export interface SessionHistoryEvent {
   messages: StoredMessage[];
 }
 
-/** Sent after reconcile_app completes to trigger UI refresh. */
+/** Sent after draft content is refreshed to trigger UI reload. */
 export interface SessionReconciledEvent {
   type: 'session.reconciled';
   appSlug: string;

@@ -46,12 +46,17 @@ export class AppContext {
     return this._draftDb;
   }
 
-  /** Return whether the draft environment has been materialized by reconcile */
-  hasDraftReconcileState(): boolean {
-    return existsSync(join(this.draftDataDir, '.reconcile-state.json'));
+  /** Return whether the draft environment has been materialized by rebuild */
+  hasDraftRebuildState(): boolean {
+    return existsSync(join(this.draftDataDir, '.rebuild-state.json'));
   }
 
-  /** Destroy and reset the draft database (for draft reconcile) */
+  /** Backward-compatible alias for older call sites. */
+  hasDraftReconcileState(): boolean {
+    return this.hasDraftRebuildState();
+  }
+
+  /** Destroy and reset the draft database (for draft rebuild) */
   resetDraft(): void {
     // Close existing connection
     if (this._draftDb) {

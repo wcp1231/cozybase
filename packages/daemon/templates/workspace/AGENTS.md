@@ -14,17 +14,17 @@ You are working in a Cozybase workspace. Cozybase is a local Backend-as-a-Servic
 ## Development Workflow
 
 ```
-get source → edit → upload → reconcile → test ←─(iterate if issues)
-                                           │
-                                     human confirmation
-                                           │
-                                      verify_app → publish (FINAL)
+get source → edit → upload → rebuild if needed → test ←─(iterate if issues)
+                                                    │
+                                              human confirmation
+                                                    │
+                                               verify_app → publish (FINAL)
 ```
 
 1. **Get APP source** — `create_app` (new) or `fetch_app` (existing)
 2. **Edit files** — Modify the APP directory
 3. **Upload** — `update_app` or `update_app_file`
-4. **Reconcile** — `reconcile_app`
+4. **Rebuild if needed** — `rebuild_app` when `needs_rebuild` is `true`
 5. **Test** — `execute_sql` and `call_api` (iterate back to 2 if issues; get **human confirmation** when done)
 6. **Verify** — `verify_app` (required before publish; iterate back to 2 if fails)
 7. **Publish** — `publish_app` (**FINAL step**, only after human confirms and verify passes)

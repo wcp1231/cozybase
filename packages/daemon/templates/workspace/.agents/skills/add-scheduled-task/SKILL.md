@@ -40,9 +40,16 @@ schedules:
     function: cleanup
 ```
 
-### Step 4: Follow the Standard Workflow
+### Step 4: Sync, Rebuild, Test, Verify, Publish
 
-Upload, reconcile, test, verify, and publish following the standard development workflow (see `get_guide("workflow")` Steps 3-7).
+Follow the standard development workflow (see `get_guide("workflow")` Steps 3-7):
+
+- Upload changes with `update_app(app_name: "<app-name>")`
+- Inspect `needs_rebuild` in the response
+- Run `rebuild_app(app_name: "<app-name>")` when `needs_rebuild` is `true`
+- Test the scheduled function in Draft before publishing
+- Run `verify_app` before publishing
+- Ask for explicit user confirmation before `publish_app`
 
 Schedules only activate in the Stable environment after publishing.
 
