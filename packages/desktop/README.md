@@ -81,3 +81,18 @@ Tauri 壳启动 Daemon bundle 时会注入：
 - 当前没有做自动更新
 - 当前没有做 macOS 签名与公证
 - 在受限沙箱环境里，`Bun.serve` 可能无法完成端口监听，因此桌面 runtime 验收最好在真实 macOS 开发环境中执行
+
+## Nightly 发布
+
+仓库配置了一个 GitHub Actions nightly workflow：
+
+- 每次 `main` 分支更新时自动执行
+- 复用 `bun run desktop:build` 构建桌面 bundle
+- 将 DMG 发布到固定的 GitHub prerelease：`nightly`
+- 每次都覆盖同一个 asset：`CozyBase_nightly_aarch64.dmg`
+
+当前 nightly 约束：
+
+- 仅产出 macOS Apple Silicon (`arm64`) 的 DMG
+- nightly 版本仍沿用应用当前内部版本号，nightly 身份由 release/tag 表达
+- 仍然没有签名、公证和自动更新能力

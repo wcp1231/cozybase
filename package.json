@@ -6,8 +6,8 @@
     "dev": "bun run build:ui && bun packages/daemon/src/cli.ts daemon",
     "mcp": "bun packages/daemon/src/cli.ts mcp",
     "build:ui": "cd packages/ui && bun run build",
-    "build:web": "cd packages/web && bun run build",
-    "build:all": "bun run build:ui && bun run build:web",
+    "build:web": "bun run build:ui && cd packages/web && bun run build",
+    "build:all": "bun run build:web",
     "build:daemon": "cd packages/desktop && bun run prepare:resources && bun run prepare:sidecar",
     "desktop:dev": "bun run build:web && bun run build:daemon && cd packages/desktop && bunx tauri dev",
     "desktop:build": "bun run build:web && bun run build:daemon && cd packages/desktop && bunx tauri build"
