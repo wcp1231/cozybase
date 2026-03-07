@@ -77,5 +77,29 @@ describe('App console UI shell', () => {
     expect(html).toContain('错误日志');
     expect(html).toContain('定时任务');
     expect(html).toContain('数据库');
+    expect(html).toContain('源码');
+  });
+
+  test('source tab is available in draft mode only', () => {
+    const draftHtml = renderWithAppContext(
+      <AppConsolePage />,
+      {
+        mode: 'draft',
+      },
+      '/draft/apps/myapp/console?tab=source',
+    );
+    const stableHtml = renderWithAppContext(
+      <AppConsolePage />,
+      {
+        mode: 'stable',
+      },
+      '/stable/apps/myapp/console?tab=source',
+    );
+
+    expect(draftHtml).toContain('文件目录');
+    expect(draftHtml).toContain('Draft APP 源码');
+    expect(draftHtml).toContain('源码');
+    expect(stableHtml).not.toContain('文件目录');
+    expect(stableHtml).not.toContain('Draft APP 源码');
   });
 });

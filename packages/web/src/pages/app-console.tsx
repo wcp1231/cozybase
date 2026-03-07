@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Database, History, Loader2, Play } from 'lucide-react';
+import { Database, FileCode2, FolderTree, History, Loader2, Pencil, Play, RefreshCw, Save, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
 import { getDefaultPagePath, toAppPagePath, type AppMode } from './content-slot';
 import { AppSectionHeader } from '../features/apps/app-section-header';
 
-type ConsoleTab = 'errors' | 'schedules' | 'database';
+type ConsoleTab = 'errors' | 'schedules' | 'database' | 'source';
 type ErrorSourceType = 'http_function' | 'schedule' | 'build';
 
 interface AppConsoleOverview {
@@ -75,6 +75,17 @@ type DbSchemaMap = Record<
   }
 >;
 
+interface AppSourceFile {
+  path: string;
+  content: string;
+  immutable: boolean;
+}
+
+interface SourceFeedback {
+  tone: 'success' | 'error';
+  message: string;
+}
+
 export function AppConsolePage() {
   const {
     mode,
@@ -83,6 +94,7 @@ export function AppConsolePage() {
     appLoading,
     appError,
     pagesJson,
+    refreshApp,
     toggleSidebar,
     sidebarVisible,
   } = useAppContext();
@@ -91,7 +103,9 @@ export function AppConsolePage() {
     ? toAppPagePath(appName, getDefaultPagePath(pagesJson?.pages ?? []), mode)
     : undefined;
 
-  const activeTab = parseConsoleTab(searchParams.get('tab'));
+  const sourceTabEnabled = mode === 'draft';
+  const requestedTab = parseConsoleTab(searchParams.get('tab'));
+  const activeTab = requestedTab === 'source' && !sourceTabEnabled ? 'errors' : requestedTab;
   const errorFilter = parseErrorSource(searchParams.get('source'));
   const errorPage = parsePositiveInteger(searchParams.get('page'), 1);
   const errorLimit = 20;
@@ -117,8 +131,19 @@ export function AppConsolePage() {
   const [sqlRunning, setSqlRunning] = useState(false);
   const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: unknown[][]; rowCount: number } | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [sourceFiles, setSourceFiles] = useState<AppSourceFile[]>([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [selectedSourcePath, setSelectedSourcePath] = useState<string | null>(null);
+  const [sourceEditMode, setSourceEditMode] = useState(false);
+  const [sourceDraftContent, setSourceDraftContent] = useState('');
+  const [sourceSaving, setSourceSaving] = useState(false);
+  const [sourceFeedback, setSourceFeedback] = useState<SourceFeedback | null>(null);
 
   const tableNames = getVisibleDatabaseTables(dbSchema);
+  const selectedSourceFile = sourceFiles.find((file) => file.path === selectedSourcePath) ?? null;
+  const sourceTree = buildSourceTree(sourceFiles);
+  const hasSourceChanges = !!selectedSourceFile && sourceDraftContent !== selectedSourceFile.content;
 
   useEffect(() => {
     if (!appName) return;
@@ -149,6 +174,16 @@ export function AppConsolePage() {
     if (!appName || activeTab !== 'database' || !selectedTable) return;
     void loadTableRows(appName, mode, selectedTable, setTableRows, setTableMeta, setDatabaseLoading, setDatabaseError);
   }, [activeTab, appName, mode, selectedTable]);
+
+  useEffect(() => {
+    if (!appName || activeTab !== 'source' || !sourceTabEnabled) return;
+    void loadSourceFiles(appName, setSourceFiles, setSelectedSourcePath, setSourceLoading, setSourceError);
+  }, [activeTab, appName, sourceTabEnabled]);
+
+  useEffect(() => {
+    if (!selectedSourceFile || sourceEditMode) return;
+    setSourceDraftContent(selectedSourceFile.content);
+  }, [selectedSourceFile, sourceEditMode]);
 
   if (!appName) {
     return <ConsoleEmptyState message="缺少 APP 名称。" />;
@@ -191,6 +226,13 @@ export function AppConsolePage() {
           onClick={() => setSearchParams({ tab: 'database' })}
           label="数据库"
         />
+        {sourceTabEnabled ? (
+          <ConsoleUnderlineTab
+            active={activeTab === 'source'}
+            onClick={() => setSearchParams({ tab: 'source' })}
+            label="源码"
+          />
+        ) : null}
       </div>
 
       <main className="min-h-0 flex-1 overflow-auto bg-white">
@@ -618,6 +660,218 @@ export function AppConsolePage() {
                 </section>
               </div>
             ) : null}
+
+            {activeTab === 'source' && sourceTabEnabled ? (
+              <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+                <aside className="overflow-hidden rounded-[10px] border border-[#E7EBF2] bg-white">
+                  <div className="flex items-center justify-between border-b border-[#E7EBF2] px-3 py-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[#0F172A]">
+                      <FolderTree className="h-4 w-4 text-[#64748B]" />
+                      文件目录
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!appName) return;
+                        setSourceFeedback(null);
+                        void loadSourceFiles(appName, setSourceFiles, setSelectedSourcePath, setSourceLoading, setSourceError);
+                      }}
+                      disabled={sourceLoading || sourceSaving}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#E2E8F0] px-2 text-xs font-semibold text-[#475569] transition-colors hover:bg-[#F8FAFC] disabled:opacity-50"
+                    >
+                      <RefreshCw className={clsx('h-3.5 w-3.5', sourceLoading && 'animate-spin')} />
+                      刷新
+                    </button>
+                  </div>
+
+                  <div className="max-h-[calc(100vh-240px)] overflow-auto px-2 py-2">
+                    {sourceLoading && sourceFiles.length === 0 ? (
+                      <PanelPlaceholder label="加载源码中..." compact />
+                    ) : sourceError ? (
+                      <div className="rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs leading-5 text-[#B91C1C]">
+                        {sourceError}
+                      </div>
+                    ) : sourceTree.length === 0 ? (
+                      <PanelPlaceholder label="暂无源码文件。" compact />
+                    ) : (
+                      <div className="space-y-0.5">
+                        {sourceTree.map((node) => (
+                          <SourceTreeItem
+                            key={node.path}
+                            node={node}
+                            level={0}
+                            selectedPath={selectedSourcePath}
+                            onSelect={(nextPath) => {
+                              if (nextPath === selectedSourcePath) return;
+                              if (sourceEditMode && hasSourceChanges && !window.confirm('当前文件有未保存修改，确定切换文件吗？')) {
+                                return;
+                              }
+                              setSelectedSourcePath(nextPath);
+                              setSourceEditMode(false);
+                              setSourceFeedback(null);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </aside>
+
+                <section className="overflow-hidden rounded-[10px] border border-[#E7EBF2] bg-white">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E7EBF2] px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-[#0F172A]">
+                        <FileCode2 className="h-4 w-4 text-[#64748B]" />
+                        <span className="truncate">{selectedSourceFile?.path ?? 'Draft APP 源码'}</span>
+                        {selectedSourceFile ? (
+                          <span className="rounded bg-[#EEF2FF] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#4F46E5]">
+                            {inferSourceLanguage(selectedSourceFile.path)}
+                          </span>
+                        ) : null}
+                        {selectedSourceFile?.immutable ? (
+                          <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-semibold text-[#C2410C]">
+                            只读
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs text-[#94A3B8]">
+                        {sourceEditMode
+                          ? '编辑完成后保存，必要时会自动 rebuild 并重新加载 Draft APP。'
+                          : '左侧选择文件查看源码，支持在 Draft 模式下直接编辑。'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {sourceEditMode ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSourceDraftContent(selectedSourceFile?.content ?? '');
+                              setSourceEditMode(false);
+                              setSourceFeedback(null);
+                            }}
+                            disabled={sourceSaving}
+                            className="inline-flex h-8 items-center gap-2 rounded-md border border-[#E2E8F0] px-3 text-xs font-semibold text-[#475569] transition-colors hover:bg-[#F8FAFC] disabled:opacity-50"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            disabled={sourceSaving || !selectedSourceFile || !hasSourceChanges}
+                            onClick={async () => {
+                              if (!appName || !selectedSourceFile) return;
+                              setSourceSaving(true);
+                              setSourceFeedback(null);
+                              try {
+                                const saveResponse = await fetch(
+                                  `/api/v1/apps/${encodeURIComponent(appName)}/files/${encodeRouteFilePath(selectedSourceFile.path)}`,
+                                  {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ content: sourceDraftContent }),
+                                  },
+                                );
+                                const savePayload = await saveResponse.json();
+                                if (!saveResponse.ok) {
+                                  throw new Error(savePayload.error?.message ?? `HTTP ${saveResponse.status}`);
+                                }
+
+                                if (savePayload.data?.needs_rebuild) {
+                                  const rebuildResponse = await fetch(`/${mode}/apps/${encodeURIComponent(appName)}/rebuild`, {
+                                    method: 'POST',
+                                  });
+                                  const rebuildPayload = await rebuildResponse.json();
+                                  if (!rebuildResponse.ok) {
+                                    throw new Error(rebuildPayload.error?.message ?? `HTTP ${rebuildResponse.status}`);
+                                  }
+                                  if (!rebuildPayload.data?.success) {
+                                    throw new Error(rebuildPayload.data?.error ?? 'Draft rebuild failed');
+                                  }
+                                }
+
+                                await Promise.all([
+                                  loadSourceFiles(appName, setSourceFiles, setSelectedSourcePath, setSourceLoading, setSourceError),
+                                  refreshApp(),
+                                ]);
+                                setSourceEditMode(false);
+                                setSourceFeedback({
+                                  tone: 'success',
+                                  message: savePayload.data?.needs_rebuild
+                                    ? '源码已保存，Draft APP 已重新加载。'
+                                    : '源码已保存，修改已应用到 Draft APP。',
+                                });
+                              } catch (error) {
+                                setSourceFeedback({
+                                  tone: 'error',
+                                  message: error instanceof Error ? error.message : String(error),
+                                });
+                              } finally {
+                                setSourceSaving(false);
+                              }
+                            }}
+                            className="inline-flex h-8 items-center gap-2 rounded-md bg-[#4F46E5] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:opacity-60"
+                          >
+                            {sourceSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                            保存
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!selectedSourceFile || !!selectedSourceFile.immutable}
+                          onClick={() => {
+                            if (!selectedSourceFile) return;
+                            setSourceDraftContent(selectedSourceFile.content);
+                            setSourceEditMode(true);
+                            setSourceFeedback(null);
+                          }}
+                          className="inline-flex h-8 items-center gap-2 rounded-md border border-[#E2E8F0] px-3 text-xs font-semibold text-[#475569] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          编辑源码
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {sourceFeedback ? (
+                    <div
+                      className={clsx(
+                        'mx-4 mt-4 rounded-[10px] border px-4 py-3 text-sm',
+                        sourceFeedback.tone === 'success'
+                          ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]'
+                          : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]',
+                      )}
+                    >
+                      {sourceFeedback.message}
+                    </div>
+                  ) : null}
+
+                  {sourceError && !sourceFeedback ? (
+                    <div className="mx-4 mt-4 rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#B91C1C]">
+                      {sourceError}
+                    </div>
+                  ) : null}
+
+                  <div className="p-4">
+                    {!selectedSourceFile ? (
+                      <PanelPlaceholder label="左侧选择一个源码文件。" />
+                    ) : sourceEditMode ? (
+                      <textarea
+                        value={sourceDraftContent}
+                        onChange={(event) => setSourceDraftContent(event.target.value)}
+                        spellCheck={false}
+                        className="h-[calc(100vh-300px)] min-h-[420px] w-full rounded-[10px] border border-[#D7DEEA] bg-[#F8FAFC] p-4 font-mono text-[13px] leading-6 text-[#0F172A] outline-none focus:border-[#A5B4FC]"
+                      />
+                    ) : (
+                      <SourceCodeViewer file={selectedSourceFile} />
+                    )}
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </div>
         </div>
       </main>
@@ -990,8 +1244,43 @@ async function loadTableRows(
   }
 }
 
+async function loadSourceFiles(
+  appName: string,
+  setFiles: (value: AppSourceFile[]) => void,
+  setSelectedPath: (value: string | null | ((prev: string | null) => string | null)) => void,
+  setLoading: (value: boolean) => void,
+  setError: (value: string | null) => void,
+) {
+  setLoading(true);
+  setError(null);
+  try {
+    const response = await fetch(`/api/v1/apps/${encodeURIComponent(appName)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+    }
+
+    const nextFiles = Array.isArray(payload.data?.files)
+      ? (payload.data.files as AppSourceFile[]).slice().sort((a, b) => a.path.localeCompare(b.path))
+      : [];
+
+    setFiles(nextFiles);
+    setSelectedPath((current) => (
+      current && nextFiles.some((file) => file.path === current)
+        ? current
+        : nextFiles[0]?.path ?? null
+    ));
+  } catch (error) {
+    setFiles([]);
+    setSelectedPath(null);
+    setError(error instanceof Error ? error.message : String(error));
+  } finally {
+    setLoading(false);
+  }
+}
+
 function parseConsoleTab(value: string | null): ConsoleTab {
-  return value === 'schedules' || value === 'database' ? value : 'errors';
+  return value === 'schedules' || value === 'database' || value === 'source' ? value : 'errors';
 }
 
 function parseErrorSource(value: string | null): ErrorSourceType | null {
@@ -1051,4 +1340,201 @@ function formatCell(value: unknown) {
   if (value === null || value === undefined) return 'NULL';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+type SourceTreeNode = {
+  kind: 'directory' | 'file';
+  name: string;
+  path: string;
+  immutable?: boolean;
+  children?: SourceTreeNode[];
+};
+
+function SourceTreeItem({
+  node,
+  level,
+  selectedPath,
+  onSelect,
+}: {
+  node: SourceTreeNode;
+  level: number;
+  selectedPath: string | null;
+  onSelect: (path: string) => void;
+}) {
+  if (node.kind === 'directory') {
+    return (
+      <div>
+        <div
+          className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#94A3B8]"
+          style={{ paddingLeft: `${level * 14 + 8}px` }}
+        >
+          <FolderTree className="h-3.5 w-3.5" />
+          {node.name}
+        </div>
+        <div>
+          {node.children?.map((child) => (
+            <SourceTreeItem
+              key={child.path}
+              node={child}
+              level={level + 1}
+              selectedPath={selectedPath}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(node.path)}
+      className={clsx(
+        'flex w-full items-center justify-between rounded-md py-2 pr-2 text-left text-sm transition-colors',
+        selectedPath === node.path
+          ? 'bg-[#EEF2FF] font-semibold text-[#4F46E5]'
+          : 'text-[#475569] hover:bg-[#F8FAFC]',
+      )}
+      style={{ paddingLeft: `${level * 14 + 12}px` }}
+    >
+      <span className="truncate">{node.name}</span>
+      {node.immutable ? <span className="text-[10px] font-semibold text-[#C2410C]">只读</span> : null}
+    </button>
+  );
+}
+
+function SourceCodeViewer({ file }: { file: AppSourceFile }) {
+  const lines = file.content.split('\n');
+  const language = inferSourceLanguage(file.path);
+
+  return (
+    <div className="h-[calc(100vh-300px)] min-h-[420px] overflow-auto rounded-[10px] border border-[#0F172A] bg-[#0B1220] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <table className="min-w-full border-collapse font-mono text-[12px] leading-6">
+        <tbody>
+          {lines.map((line, index) => (
+            <tr key={`${file.path}:${index}`}>
+              <td className="select-none border-r border-[#1E293B] bg-[#020617] px-3 text-right align-top text-[#475569]">
+                {index + 1}
+              </td>
+              <td className="w-full px-4 align-top text-[#E2E8F0]">
+                <code
+                  className="block min-h-6 whitespace-pre"
+                  dangerouslySetInnerHTML={{ __html: highlightCodeLine(line, language) || '&nbsp;' }}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function buildSourceTree(files: AppSourceFile[]): SourceTreeNode[] {
+  const root: SourceTreeNode[] = [];
+
+  for (const file of files) {
+    const parts = file.path.split('/');
+    let currentLevel = root;
+    let currentPath = '';
+
+    for (const [index, part] of parts.entries()) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isFile = index === parts.length - 1;
+      const existing = currentLevel.find((node) => node.name === part);
+
+      if (existing) {
+        if (!isFile && existing.children) {
+          currentLevel = existing.children;
+        }
+        continue;
+      }
+
+      const node: SourceTreeNode = isFile
+        ? { kind: 'file', name: part, path: currentPath, immutable: file.immutable }
+        : { kind: 'directory', name: part, path: currentPath, children: [] };
+      currentLevel.push(node);
+
+      if (!isFile && node.children) {
+        currentLevel = node.children;
+      }
+    }
+  }
+
+  return sortSourceTreeNodes(root);
+}
+
+function sortSourceTreeNodes(nodes: SourceTreeNode[]): SourceTreeNode[] {
+  return nodes
+    .map((node) => (
+      node.kind === 'directory' && node.children
+        ? { ...node, children: sortSourceTreeNodes(node.children) }
+        : node
+    ))
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return left.kind === 'directory' ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function inferSourceLanguage(path: string) {
+  if (path.endsWith('.ts') || path.endsWith('.tsx') || path.endsWith('.js') || path.endsWith('.jsx')) {
+    return 'ts';
+  }
+  if (path.endsWith('.json')) {
+    return 'json';
+  }
+  if (path.endsWith('.sql')) {
+    return 'sql';
+  }
+  if (path.endsWith('.yaml') || path.endsWith('.yml')) {
+    return 'yaml';
+  }
+  if (path.endsWith('.md')) {
+    return 'md';
+  }
+  return 'text';
+}
+
+function highlightCodeLine(line: string, language: string) {
+  const tokenPattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\/.*$|--.*$|#.*$|\b(?:true|false|null|undefined|async|await|export|import|from|return|const|let|var|function|if|else|switch|case|break|for|while|try|catch|throw|new|class|extends|implements|type|interface)\b|\b\d+(?:\.\d+)?\b)/gm;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(line)) !== null) {
+    result += escapeHtml(line.slice(lastIndex, match.index));
+    result += `<span class="${highlightClass(match[0], language)}">${escapeHtml(match[0])}</span>`;
+    lastIndex = match.index + match[0].length;
+  }
+
+  result += escapeHtml(line.slice(lastIndex));
+  return result;
+}
+
+function highlightClass(token: string, language: string) {
+  if (token.startsWith('//') || token.startsWith('--') || (language !== 'json' && token.startsWith('#'))) {
+    return 'text-[#64748B]';
+  }
+  if (token.startsWith('"') || token.startsWith('\'') || token.startsWith('`')) {
+    return 'text-[#86EFAC]';
+  }
+  if (/^\d/.test(token)) {
+    return 'text-[#F9A8D4]';
+  }
+  return 'text-[#7DD3FC]';
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function encodeRouteFilePath(path: string) {
+  return path.split('/').map(encodeURIComponent).join('/');
 }
