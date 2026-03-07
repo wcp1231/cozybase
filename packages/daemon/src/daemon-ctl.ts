@@ -1,26 +1,12 @@
-import { resolve, join } from 'path';
-import { homedir } from 'os';
+import { join } from 'path';
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
-import { parseArgs } from 'util';
+import { resolveWorkspaceDir } from './runtime-paths';
 
 /**
  * Resolve workspace dir from CLI args or env, matching config.ts logic.
  */
 export function getWorkspaceDir(): string {
-  const { values } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: {
-      workspace: { type: 'string', short: 'w' },
-    },
-    strict: false,
-    allowPositionals: true,
-  });
-
-  return resolve(
-    values.workspace as string
-    ?? process.env.COZYBASE_WORKSPACE
-    ?? join(homedir(), '.cozybase'),
-  );
+  return resolveWorkspaceDir({ args: Bun.argv.slice(2) });
 }
 
 function pidFilePath(workspaceDir: string): string {

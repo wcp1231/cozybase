@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CozyBase</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef2e2;
+        --surface: rgba(255, 255, 255, 0.72);
+        --border: rgba(27, 41, 24, 0.14);
+        --text: #173018;
+        --muted: #51624d;
+        --accent: #2f8f55;
+        --accent-soft: rgba(47, 143, 85, 0.18);
+        font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.85), transparent 32%),
+          radial-gradient(circle at bottom right, rgba(111, 163, 102, 0.24), transparent 28%),
+          linear-gradient(135deg, #eff5df 0%, #d9ebd0 48%, #eef3e8 100%);
+        color: var(--text);
+      }
+
+      .panel {
+        width: min(560px, calc(100vw - 48px));
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: var(--surface);
+        backdrop-filter: blur(28px);
+        box-shadow: 0 30px 70px rgba(39, 62, 44, 0.18);
+        padding: 36px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.68);
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 8px var(--accent-soft);
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+
+      h1 {
+        margin: 22px 0 12px;
+        font-size: clamp(32px, 5vw, 52px);
+        line-height: 0.96;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .status {
+        margin-top: 24px;
+        padding: 18px 20px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(27, 41, 24, 0.09);
+        font-size: 15px;
+        color: var(--text);
+      }
+
+      .status.error {
+        color: #8a2f2f;
+        border-color: rgba(138, 47, 47, 0.18);
+        background: rgba(255, 245, 245, 0.86);
+      }
+
+      .meta {
+        margin-top: 28px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(0.88); opacity: 0.68; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <div class="eyebrow">
+        <span class="dot"></span>
+        Desktop Preview
+      </div>
+      <h1>CozyBase 正在启动</h1>
+      <p>
+        桌面壳正在准备 workspace、检查或启动 Daemon，并等待 WebView
+        切换到本地服务。
+      </p>
+      <section id="status" class="status">正在初始化桌面运行环境…</section>
+      <div class="meta">
+        <span>workspace: <code>~/.cozybase</code></span>
+        <span>platform: macOS MVP</span>
+      </div>
+    </main>
+    <script>
+      const statusNode = document.getElementById('status');
+      window.__COZYBASE_DESKTOP_STATUS__ = (message) => {
+        statusNode.classList.remove('error');
+        statusNode.textContent = message;
+      };
+      window.__COZYBASE_DESKTOP_ERROR__ = (message) => {
+        statusNode.classList.add('error');
+        statusNode.textContent = message;
+      };
+    </script>
+  </body>
+</html>

@@ -35,6 +35,7 @@ import {
   resolveEffectiveAgentConfig,
   type AgentProviderKind,
 } from './modules/settings/agent-config';
+import { resolveDaemonEntryPath, resolveWebDistDir } from './runtime-paths';
 
 type CodexMcpMode = 'http' | 'stdio';
 
@@ -521,7 +522,7 @@ export function createServer(config: Config) {
   });
 
   // --- Web UI static files ---
-  const webDistDir = resolve(import.meta.dir, '..', '..', 'web', 'dist');
+  const webDistDir = resolveWebDistDir();
 
   if (existsSync(webDistDir)) {
     app.use('/assets/*', serveStatic({ root: webDistDir }));
@@ -663,7 +664,7 @@ function buildCodexMcpServerConfig(params: {
   workspaceDir: string;
   agentDir: string;
 }) {
-  const cliPath = resolve(import.meta.dir, 'cli.ts');
+  const cliPath = resolveDaemonEntryPath();
   const stdioConfig = {
     type: 'stdio',
     command: 'bun',

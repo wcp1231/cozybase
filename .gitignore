@@ -6,3 +6,8 @@ data/
 *.sqlite-shm
 .env
 .DS_Store
+packages/desktop/src-tauri/resources/daemon.js
+packages/desktop/src-tauri/resources/guides/
+packages/desktop/src-tauri/resources/templates/
+packages/desktop/src-tauri/resources/web/
+packages/desktop/src-tauri/resources/binaries/

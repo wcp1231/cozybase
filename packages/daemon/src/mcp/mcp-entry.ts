@@ -14,7 +14,6 @@
  */
 
 import { resolve } from 'path';
-import { homedir } from 'os';
 import { mkdirSync } from 'fs';
 import { parseArgs } from 'util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -22,6 +21,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer } from './server';
 import { readPidFile, isProcessAlive } from '../daemon-ctl';
 import type { CozybaseBackend } from './types';
+import { resolveWorkspaceDir } from '../runtime-paths';
 
 function loadMcpConfig() {
   const { values } = parseArgs({
@@ -45,11 +45,7 @@ function loadMcpConfig() {
     ?? process.env.COZYBASE_URL
     ?? undefined;
 
-  const workspaceDir = resolve(
-    (values.workspace as string | undefined)
-    ?? process.env.COZYBASE_WORKSPACE
-    ?? resolve(homedir(), '.cozybase'),
-  );
+  const workspaceDir = resolveWorkspaceDir({ args: Bun.argv.slice(2) });
 
   return { appsDir, url, workspaceDir };
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 type CodexInitArgs = Record<string, unknown> | undefined;
 type ThreadStartArgs = Record<string, unknown> | undefined;
@@ -18,6 +18,7 @@ const sdkState = {
     usage: null,
   } as any,
 };
+const originalBunWhich = globalThis.Bun.which;
 
 mock.module('@openai/codex-sdk', () => ({
   Codex: class {
@@ -75,6 +76,11 @@ beforeEach(() => {
     finalResponse: 'hello from codex',
     usage: null,
   };
+  globalThis.Bun.which = mock(() => null);
+});
+
+afterAll(() => {
+  globalThis.Bun.which = originalBunWhich;
 });
 
 describe('CodexProvider', () => {
@@ -116,6 +122,21 @@ describe('CodexProvider', () => {
       },
       { type: 'conversation.run.completed', sessionId: 'thread-new' },
     ]);
+  });
+
+  test('prefers the user-installed codex CLI when available on PATH', async () => {
+    globalThis.Bun.which = mock(() => '/opt/homebrew/bin/codex');
+
+    const provider = new CodexProvider();
+    await collectEvents(provider.createQuery({
+      prompt: 'build app',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(sdkState.codexInitCalls).toEqual([{
+      codexPathOverride: '/opt/homebrew/bin/codex',
+      config: {},
+    }]);
   });
 
   test('resumes an existing thread when resumeSessionId is provided', async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 type QueryArgs = { prompt: string; options: Record<string, unknown> };
 type FakeSdkQuery = {
@@ -11,6 +11,7 @@ const sdkState = {
   calls: [] as QueryArgs[],
   queryImpl: ((_args: QueryArgs) => makeSdkQuery([])) as (args: QueryArgs) => FakeSdkQuery,
 };
+const originalBunWhich = globalThis.Bun.which;
 
 mock.module('@anthropic-ai/claude-agent-sdk', () => ({
   query(args: QueryArgs) {
@@ -47,6 +48,11 @@ async function collectEvents(iterable: AsyncIterable<unknown>) {
 beforeEach(() => {
   sdkState.calls = [];
   sdkState.queryImpl = (_args) => makeSdkQuery([]);
+  globalThis.Bun.which = mock(() => null);
+});
+
+afterAll(() => {
+  globalThis.Bun.which = originalBunWhich;
 });
 
 describe('ClaudeCodeProvider', () => {
@@ -107,6 +113,18 @@ describe('ClaudeCodeProvider', () => {
     expect(sdkState.calls).toHaveLength(2);
     expect(sdkState.calls[0]?.options.resume).toBeUndefined();
     expect(sdkState.calls[1]?.options.resume).toBe('sess-old');
+  });
+
+  test('prefers the user-installed claude CLI when available on PATH', async () => {
+    globalThis.Bun.which = mock(() => '/opt/homebrew/bin/claude');
+
+    const provider = new ClaudeCodeProvider();
+    await collectEvents(provider.createQuery({
+      prompt: 'hello',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBe('/opt/homebrew/bin/claude');
   });
 
   test('completes tool call when tool_use_summary has empty preceding_tool_use_ids', async () => {

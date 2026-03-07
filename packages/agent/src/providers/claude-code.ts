@@ -16,6 +16,7 @@ import type {
   AgentQueryConfig,
   AgentEvent,
 } from '../types.js';
+import { resolveCliExecutablePath } from './cli-paths.js';
 
 /** Shape of ClaudeCodeProvider-specific options passed via AgentQueryConfig.providerOptions */
 export interface ClaudeCodeProviderOptions {
@@ -42,6 +43,11 @@ export class ClaudeCodeProvider implements AgentProvider {
       permissionMode: (providerOptions.permissionMode as Options['permissionMode']) ?? 'acceptEdits',
       settingSources: (providerOptions.settingSources as Options['settingSources']) ?? ['project'],
     };
+    const claudePathOverride = resolveCliExecutablePath('claude', [
+      'COZYBASE_CLAUDE_PATH',
+      'CLAUDE_CODE_PATH',
+      'CLAUDE_PATH',
+    ]);
 
     if (config.systemPrompt) {
       options.systemPrompt = config.systemPrompt;
@@ -57,6 +63,9 @@ export class ClaudeCodeProvider implements AgentProvider {
     }
     if (config.resumeSessionId) {
       options.resume = config.resumeSessionId;
+    }
+    if (claudePathOverride) {
+      options.pathToClaudeCodeExecutable = claudePathOverride;
     }
 
     const sdkQuery = query({ prompt: config.prompt, options });

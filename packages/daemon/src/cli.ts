@@ -4,9 +4,18 @@ import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
 function getVersion(): string {
-  const pkgPath = resolve(import.meta.dir, '../package.json');
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  return pkg.version ?? '0.0.0';
+  const configured = process.env.COZYBASE_VERSION?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  try {
+    const pkgPath = resolve(import.meta.dir, '../package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.1.0';
+  }
 }
 
 function printHelp() {
@@ -32,7 +41,10 @@ function printHelp() {
 `);
 }
 
-async function handleDaemon(subcommand: string | undefined) {
+const DAEMON_SUBCOMMANDS = new Set(['start', 'stop', 'restart', 'status']);
+
+async function handleDaemon(args: string[]) {
+  const subcommand = args[0] && DAEMON_SUBCOMMANDS.has(args[0]) ? args[0] : undefined;
   switch (subcommand) {
     case 'stop': {
       const { stopDaemon } = await import('./daemon-ctl');
@@ -58,10 +70,6 @@ async function handleDaemon(subcommand: string | undefined) {
     case undefined:
       await import('./index');
       break;
-    default:
-      console.error(`Unknown daemon command: ${subcommand}\n`);
-      printHelp();
-      process.exit(1);
   }
 }
 
@@ -70,7 +78,7 @@ const command = args[0];
 
 switch (command) {
   case 'daemon':
-    await handleDaemon(args[1]);
+    await handleDaemon(args.slice(1));
     break;
 
   case 'mcp':

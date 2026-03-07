@@ -1,0 +1,20 @@
+[package]
+name = "cozybase-desktop"
+version = "0.1.0"
+description = "CozyBase desktop shell"
+edition = "2021"
+
+[lib]
+name = "cozybase_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"

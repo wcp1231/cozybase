@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppContext } from './app-context';
 import { runPlatformMigrations } from './platform-migrations';
 import { PlatformRepository } from './platform-repository';
+import { resolveAppTemplatesDir } from '../runtime-paths';
 
 // --- YAML Schema Definitions ---
 
@@ -51,7 +52,7 @@ export interface AppDefinition {
 // --- Constants ---
 
 const SUPPORTED_VERSION = 1;
-const TEMPLATES_DIR = join(import.meta.dir, '..', '..', 'templates', 'apps');
+const TEMPLATES_DIR = resolveAppTemplatesDir();
 
 // --- Workspace ---
 

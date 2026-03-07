@@ -5,6 +5,7 @@ import { MigrationRunner } from './migration-runner';
 import { exportFunctionsFromDb, exportUiFromDb } from './file-export';
 import { AppErrorRecorder } from './app-error-recorder';
 import { BadRequestError } from './errors';
+import { resolveBunExecutable } from '../runtime-paths';
 
 // --- Types ---
 
@@ -276,7 +277,7 @@ export class Publisher {
   /** Run bun install in the given directory; returns result without throwing on failure */
   private async runBunInstall(cwd: string): Promise<{ installed: boolean; warning?: string }> {
     try {
-      const proc = Bun.spawn(['bun', 'install'], {
+      const proc = Bun.spawn([resolveBunExecutable(), 'install'], {
         cwd,
         stdout: 'ignore',
         stderr: 'pipe',

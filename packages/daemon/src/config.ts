@@ -1,6 +1,5 @@
-import { resolve, join } from 'path';
-import { homedir } from 'os';
 import { parseArgs } from 'util';
+import { resolveWorkspaceDir } from './runtime-paths';
 
 export interface Config {
   port: number;
@@ -21,11 +20,7 @@ export function loadConfig(): Config {
     allowPositionals: true,
   });
 
-  const workspaceDir = resolve(
-    values.workspace as string
-    ?? process.env.COZYBASE_WORKSPACE
-    ?? join(homedir(), '.cozybase'),
-  );
+  const workspaceDir = resolveWorkspaceDir({ args: Bun.argv.slice(2) });
 
   return {
     port: Number(values.port ?? process.env.COZYBASE_PORT ?? 3000),

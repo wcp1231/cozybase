@@ -8,9 +8,10 @@
 
 import { resolve, join, relative } from 'path';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { resolveGuidesDir } from '../runtime-paths';
 
 /** Root directory for guide markdown files */
-const GUIDES_DIR = resolve(import.meta.dir, '../../guides');
+const GUIDES_DIR = resolveGuidesDir();
 
 /** Only allow safe characters in topic paths */
 const TOPIC_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9\-\/]*$/;

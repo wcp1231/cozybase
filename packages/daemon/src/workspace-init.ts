@@ -16,8 +16,9 @@ import {
   symlinkSync,
   lstatSync,
 } from 'fs';
+import { resolveWorkspaceTemplatesDir } from './runtime-paths';
 
-const TEMPLATES_DIR = resolve(import.meta.dir, '../templates/workspace');
+const TEMPLATES_DIR = resolveWorkspaceTemplatesDir();
 
 interface InitResult {
   created: string[];
