@@ -34,7 +34,7 @@ export function AppSectionHeader({
 
   return (
     <header className="border-b border-[#E7EBF2] bg-[#F3F5F9]">
-      <div className="flex min-h-[52px] items-center justify-between gap-4 px-4 pt-4 md:px-8">
+      <div className="flex min-h-[52px] items-center justify-between gap-4 px-4 pt-4 pb-2 md:px-8">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button
             type="button"
@@ -76,23 +76,23 @@ export function AppSectionHeader({
       </div>
 
       {breadcrumbs?.length ? (
-        <div className="flex h-8 items-center gap-2 px-4 pb-2 text-xs md:px-8">
+        <div className="flex min-h-10 items-center gap-2 px-4 pb-2 text-xs md:px-8">
           {appHomeTo ? (
-            <Link to={appHomeTo} className="font-medium text-[#94A3B8] no-underline hover:text-[#64748B]">
+            <Link to={appHomeTo} className="truncate font-medium text-[#94A3B8] no-underline hover:text-[#64748B]">
               {title}
             </Link>
           ) : (
-            <span className="font-medium text-[#94A3B8]">{title}</span>
+            <span className="truncate font-medium text-[#94A3B8]">{title}</span>
           )}
           {breadcrumbs.map((item, index) => (
             <div key={`${item.label}-${index}`} className="contents">
               <span className="text-[#CBD5E1]">/</span>
               {item.to ? (
-                <Link to={item.to} className="font-medium text-[#64748B] no-underline hover:text-[#334155]">
+                <Link to={item.to} className="truncate font-medium text-[#64748B] no-underline hover:text-[#334155]">
                   {item.label}
                 </Link>
               ) : (
-                <span className="font-semibold text-[#1E293B]">{item.label}</span>
+                <span className="truncate font-semibold text-[#1E293B]">{item.label}</span>
               )}
             </div>
           ))}

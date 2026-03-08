@@ -45,7 +45,7 @@
 
 ### Requirement: 系统提供结构化页面写操作
 
-系统 SHALL 提供 `ui_insert`、`ui_update`、`ui_move` 和 `ui_delete` 工具，对 `ui/pages.json` 执行局部结构化修改。所有写操作 SHALL 以节点 ID 作为定位依据，并在成功后将变更写回 Agent working copy 中的 `ui/pages.json`。这些单操作工具 MUST 维持既有对外语义，并与 `ui_batch` 中对应操作在节点定位、字段约束和错误语义上保持一致。
+系统 SHALL 提供 `ui_insert`、`ui_update`、`ui_move` 和 `ui_delete` 工具，对 `ui/pages.json` 执行局部结构化修改。所有写操作 SHALL 以节点 ID 作为定位依据，并在成功后将变更写回 Agent working copy 中的 `ui/pages.json`。这些单操作工具 MUST 维持既有对外语义，并与 `ui_batch` 中对应操作在节点定位、字段约束和错误语义上保持一致。单操作工具对节点树的查找、父级定位与子槽位解析语义 MUST 与 `ui-schema-tree-utils` capability 暴露的共享树工具保持一致。
 
 #### Scenario: 插入新节点到父容器
 
@@ -77,6 +77,12 @@
 - **WHEN** Agent 使用相同输入分别调用 `ui_update` 与包含单个 `update` 操作的 `ui_batch`
 - **THEN** 两次调用 SHALL 产生一致的字段更新结果
 - **AND** 当输入非法时两次调用 SHALL 返回一致的约束错误语义
+
+#### Scenario: 单操作工具沿用共享树遍历语义
+
+- **WHEN** Agent 对任意受支持子组件槽位中的节点调用 `ui_move` 或 `ui_delete`
+- **THEN** 系统 SHALL 使用与 `ui-schema-tree-utils` 相同的节点查找与父级定位语义解析目标
+- **AND** 未被本次操作修改的周边树结构 SHALL 保持不变
 
 ### Requirement: 页面写工具限制对结构关键字段的直接修改
 
@@ -110,4 +116,3 @@
 - **AND** 随后再次调用 `ui_outline` 或 `ui_get`
 - **THEN** 页面读取工具 SHALL 返回 working copy 中最新的页面结构
 - **AND** 返回结果 MUST NOT 回退到 backend 中的旧版本
-

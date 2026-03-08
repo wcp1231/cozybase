@@ -621,6 +621,67 @@ describe('batchOperations — nested refs', () => {
   });
 });
 
+describe('batchOperations — shared tree traversal semantics', () => {
+  test('updates a node in table.columns[].render with the same semantics as updateNode', () => {
+    const tagId = 'tag-status-batch';
+    writePagesJson({
+      pages: [{
+        id: 'page-home',
+        title: 'Home',
+        body: [{
+          type: 'table',
+          id: 'table-main',
+          api: { url: '/fn/_db/tables/items' },
+          columns: [
+            { name: 'status', label: 'Status', render: { type: 'tag', id: tagId, text: 'original' } },
+          ],
+        }],
+      }],
+    });
+
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'update',
+        node_id: tagId,
+        props: { text: 'updated-from-batch' },
+      },
+    ]);
+
+    expect(result.committed).toBe(true);
+    expect(result.results[0].status).toBe('ok');
+    expect((result.results[0].node as Record<string, unknown>).text).toBe('updated-from-batch');
+    expect((getNode(getCtx(), tagId) as Record<string, unknown>).text).toBe('updated-from-batch');
+  });
+
+  test('rejects deleting a required singleton slot with the same error semantics as deleteNode', () => {
+    const renderId = 'text-render-batch';
+    writePagesJson({
+      pages: [{
+        id: 'page-home',
+        title: 'Home',
+        body: [{
+          type: 'list',
+          id: 'list-main',
+          api: { url: '/fn/_db/tables/items' },
+          itemRender: { type: 'text', id: renderId, text: '${item.name}' },
+        }],
+      }],
+    });
+
+    const result = batchOperations(getCtx(), [
+      {
+        op: 'delete',
+        node_id: renderId,
+      },
+    ]);
+
+    expect(result.committed).toBe(false);
+    expect(result.results[0].status).toBe('error');
+    expect(result.results[0].error?.code).toBe('INVALID_PARENT');
+    expect(result.results[0].error?.message).toMatch(/required singleton slot/);
+  });
+});
+
 // ============================================================
 // page_insert into page body (parent_id = page id)
 // ============================================================

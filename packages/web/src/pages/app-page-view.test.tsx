@@ -1,52 +1,105 @@
 import { describe, expect, test } from 'bun:test';
+import type { PagesJson } from '@cozybase/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { AppPageView } from './app-page-view';
-import { AppContext, type AppContextValue } from './app-layout';
 
-function renderDraftPage() {
-  const context: AppContextValue = {
-    mode: 'draft',
-    apps: [],
-    appsLoading: false,
-    appsError: null,
-    appName: 'myapp',
-    app: {
-      slug: 'myapp',
-      displayName: 'My App',
-      description: 'Test app',
-      stableStatus: 'running',
-      hasDraft: true,
-      current_version: 2,
-      published_version: 1,
+import { EditorToolbar, PropertyPanel } from '../features/editor';
+
+const samplePages: PagesJson = {
+  pages: [
+    {
+      path: 'home',
+      title: 'Home',
+      body: [
+        { type: 'text', id: 'hero-title', text: 'Hello' },
+        {
+          type: 'form',
+          id: 'profile-form',
+          fields: [
+            { name: 'email', label: 'Email', type: 'text', required: true },
+          ],
+        },
+      ],
     },
-    pagesJson: null,
-    appLoading: true,
-    appError: null,
-    refreshApps: async () => {},
-    refreshApp: async () => {},
-    openSidebar: () => {},
-    toggleSidebar: () => {},
-    sidebarVisible: true,
-  };
+  ],
+};
 
-  return renderToStaticMarkup(
-    <AppContext.Provider value={context}>
-      <MemoryRouter initialEntries={['/draft/apps/myapp/home']}>
-        <Routes>
-          <Route path="/:mode/apps/:appName/*" element={<AppPageView />} />
-        </Routes>
-      </MemoryRouter>
-    </AppContext.Provider>,
-  );
-}
+describe('Editor chrome rendering', () => {
+  test('toolbar shows dirty state copy and save action', () => {
+    const html = renderToStaticMarkup(
+      <EditorToolbar
+        dirty
+        submitting={false}
+        canUndo
+        canRedo={false}
+        onUndo={() => {}}
+        onRedo={() => {}}
+        onSave={() => {}}
+        pagePanelOpen
+        onTogglePagePanel={() => {}}
+        propertyPanelOpen={false}
+        onTogglePropertyPanel={() => {}}
+      />,
+    );
 
-describe('AppPageView draft header actions', () => {
-  test('renders a console entry next to publish', () => {
-    const html = renderDraftPage();
+    expect(html).toContain('有未保存修改');
+    expect(html).toContain('保存');
+    expect(html).toContain('页面和组件');
+    expect(html).toContain('属性面板');
+  });
 
-    expect(html).toContain('控制台');
-    expect(html).toContain('/draft/apps/myapp/console');
-    expect(html).toContain('发布');
+  test('property panel renders selected node identity fields', () => {
+    const html = renderToStaticMarkup(
+      <PropertyPanel
+        draftJson={samplePages}
+        currentPagePath="home"
+        selectedNodeId="hero-title"
+        selectedColumnKey={null}
+        selectedFieldKey={null}
+        onChange={() => {}}
+        onColumnChange={() => {}}
+        onFieldChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain('当前节点:');
+    expect(html).toContain('text');
+    expect(html).toContain('hero-title');
+  });
+
+  test('property panel renders empty guidance without selection', () => {
+    const html = renderToStaticMarkup(
+      <PropertyPanel
+        draftJson={samplePages}
+        currentPagePath="home"
+        selectedNodeId={null}
+        selectedColumnKey={null}
+        selectedFieldKey={null}
+        onChange={() => {}}
+        onColumnChange={() => {}}
+        onFieldChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain('当前页面:');
+    expect(html).toContain('Home');
+  });
+
+  test('property panel renders selected form field editor', () => {
+    const html = renderToStaticMarkup(
+      <PropertyPanel
+        draftJson={samplePages}
+        currentPagePath="home"
+        selectedNodeId={null}
+        selectedColumnKey={null}
+        selectedFieldKey={{ formId: 'profile-form', fieldIndex: 0 }}
+        onChange={() => {}}
+        onColumnChange={() => {}}
+        onFieldChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain('当前字段:');
+    expect(html).toContain('Email');
+    expect(html).toContain('字段属性');
   });
 });
