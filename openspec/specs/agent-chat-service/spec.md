@@ -2,11 +2,11 @@
 
 ## Purpose
 
-定义 AI Agent 聊天后端的会话管理方式，确保会话按 APP 隔离，并以可控的串行语义处理浏览器请求。
+定义 AI Agent 聊天后端在 APP 维度上的会话管理、连接路由与执行语义，确保不同 APP 的上下文隔离，并支持无 WebSocket 的后端主动启动。
 ## Requirements
 ### Requirement: Agent chat 后端必须按 APP 管理会话实例
 
-Agent chat 后端 SHALL 提供按 APP 维度管理会话的 manager 抽象。manager SHALL 延迟创建、复用和移除单个 APP 的 chat session，而不是维护一个全局共享 session。
+Agent chat 后端 SHALL 提供按 APP 维度管理会话的 manager 抽象。manager SHALL 延迟创建、复用和移除单个 APP 的 chat session，而不是维护一个全局共享 session。不同 APP 的用户消息、assistant 回复、tool 执行状态和 SDK resume 状态 MUST NOT 互相复用。
 
 #### Scenario: 首次连接某个 APP 时创建会话实例
 
@@ -25,6 +25,41 @@ Agent chat 后端 SHALL 提供按 APP 维度管理会话的 manager 抽象。man
 - **WHEN** APP `orders` 被删除
 - **THEN** manager SHALL 移除 `orders` 对应的内存 chat session
 - **AND** 该 session 的活跃查询和 WebSocket 绑定 SHALL 被清理
+
+### Requirement: Chat WebSocket 连接必须显式绑定 APP
+
+Daemon chat WebSocket endpoint SHALL 只接受显式携带 `app` 参数的连接，并 SHALL 将连接路由到对应 APP 的 chat session。
+
+#### Scenario: 带 APP 参数的连接建立成功
+
+- **WHEN** 浏览器连接 `/api/v1/chat/ws?app=orders`
+- **THEN** 系统 SHALL 将该连接绑定到 APP `orders` 的 chat session
+- **AND** 该连接后续发送的消息 SHALL 只影响 `orders` 的会话
+
+#### Scenario: 缺少 APP 参数的连接被拒绝
+
+- **WHEN** 浏览器连接 `/api/v1/chat/ws` 且未提供 `app` query 参数
+- **THEN** 系统 SHALL 拒绝该连接
+- **AND** HTTP 响应状态 SHALL 为 `400`
+
+### Requirement: Session 生命周期支持 WebSocket 连接前启动
+
+Agent session 的生命周期 SHALL 不依赖浏览器 WebSocket 连接。后端 SHALL 能在 WebSocket 连接建立之前通过 `chatSessionManager` 创建 session 并注入 prompt 启动 Agent 工作。
+
+#### Scenario: APP 创建端点预先创建 session 并注入 prompt
+
+- **WHEN** AI 创建端点成功创建 APP `fitness-tracker`
+- **AND** 尚无浏览器 WebSocket 连接到该 APP
+- **THEN** 端点 SHALL 通过 `chatSessionManager.getOrCreate("fitness-tracker")` 获取或创建 session
+- **AND** 通过 `injectPrompt(idea)` 启动 Agent 工作
+- **AND** session SHALL 正常运行，消息持久化到 SessionStore
+
+#### Scenario: Session 在无 WebSocket 期间产生的消息不丢失
+
+- **WHEN** Agent 在无 WebSocket 连接期间完成一轮查询
+- **AND** 浏览器随后连接到该 APP 的 chat WebSocket
+- **THEN** 该 session 的所有已持久化消息 SHALL 通过 `session.history` 推送到浏览器
+- **AND** 消息内容和顺序 SHALL 与 Agent 实际产生的一致
 
 ### Requirement: ChatSession 必须通过 AgentProvider 驱动 Agent 查询
 

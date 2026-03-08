@@ -1,7 +1,8 @@
-# app-npm-dependencies Specification
+# App NPM Dependencies
 
 ## Purpose
-TBD - created by archiving change redesign-workspace-structure. Update Purpose after archive.
+
+定义每个 APP 如何通过自身的 `package.json` 声明、安装并解析 npm 依赖，保证不同 APP 间依赖隔离。
 ## Requirements
 ### Requirement: APP npm 依赖声明
 

@@ -1,7 +1,8 @@
-# app-scheduled-tasks Specification
+# App Scheduled Tasks
 
 ## Purpose
-TBD - created by archiving change app-scheduled-tasks. Update Purpose after archive.
+
+定义 APP 在 `app.yaml` 中声明和执行定时任务的运行模型，包括生命周期、并发策略、执行历史、手动触发与错误集成。
 ## Requirements
 ### Requirement: APP 定时任务声明式配置
 系统 SHALL 支持在 `app.yaml` 中通过 `schedules` 数组声明定时任务。每个 schedule MUST 包含 `name`、`cron`、`function` 字段，并可选配置 `enabled`、`concurrency`、`timezone`、`timeout`。系统 SHALL 使用 schema 校验配置；不合法的条目 MUST 被跳过且记录告警日志。

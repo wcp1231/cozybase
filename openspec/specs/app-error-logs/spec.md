@@ -1,7 +1,8 @@
-# app-error-logs Specification
+# App Error Logs
 
 ## Purpose
-TBD - created by archiving change app-console. Update Purpose after archive.
+
+定义 APP 运行时错误的统一采集、去重限流与保留策略，为 Console 与诊断接口提供稳定的数据来源。
 
 ## Requirements
 

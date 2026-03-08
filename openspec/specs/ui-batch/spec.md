@@ -1,7 +1,8 @@
-# ui-batch Specification
+# UI Batch
 
 ## Purpose
-TBD - created by archiving change ui-batch-operations. Update Purpose after archive.
+
+定义 `ui_batch` 批量操作协议，使 Agent 能在一次调用中组合页面与节点级编辑，并通过 `$ref` 在同批次内传递新建结果。
 ## Requirements
 ### Requirement: 系统提供批量 UI 操作入口
 
@@ -68,4 +69,3 @@ TBD - created by archiving change ui-batch-operations. Update Purpose after arch
 - **WHEN** Agent 调用 `ui_batch` 且至少一个写操作成功
 - **THEN** 系统 SHALL 将所有有效变更一次性写回 `ui/pages.json`
 - **AND** 返回结果 MUST 标记本次批次为已提交
-

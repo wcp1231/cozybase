@@ -1,7 +1,8 @@
-# app-console Specification
+# App Console
 
 ## Purpose
-TBD - created by archiving change app-console. Update Purpose after archive.
+
+定义 APP Console 的诊断视图与接口，包括运行状态、错误摘要、schedule 状态，以及对应的 MCP 与 Web 页面入口。
 
 ## Requirements
 

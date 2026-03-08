@@ -1,7 +1,8 @@
-# hot-file-export Specification
+# Hot File Export
 
 ## Purpose
-TBD - created by archiving change hot-file-export. Update Purpose after archive.
+
+定义 APP 文件更新后的 Draft 热导出语义，确保 `ui/pages.json` 与 `functions/*` 变更可即时生效，并沿用既有的前端刷新通知链路。
 ## Requirements
 ### Requirement: 单文件更新后自动热导出可即时生效的 Draft 文件
 
@@ -52,13 +53,12 @@ TBD - created by archiving change hot-file-export. Update Purpose after archive.
 - **WHEN** Agent 调用 `update_app_file` 更新 `migrations/001_add_posts.sql`
 - **THEN** 返回结果 SHALL 包含 `needs_rebuild: true`
 
-### Requirement: 热导出完成后复用现有 reconciled 事件通知浏览器刷新
+### Requirement: 热导出完成后复用现有 reconciled 通知链路
 
-当系统完成一次成功的热导出后，系统 SHALL 继续发送 `app:reconciled` 事件，而不是引入新的前端刷新事件名，以便现有浏览器刷新链路保持不变。
+当系统完成一次成功的热导出后，系统 SHALL 继续沿用现有的 `session.reconciled` 浏览器刷新通知语义，而不是引入新的前端刷新事件名，以便现有刷新链路保持不变。
 
 #### Scenario: 单文件热导出后触发浏览器刷新通知
 
 - **WHEN** `update_app_file` 成功导出 `ui/pages.json` 或任意 `functions/*` 文件
-- **THEN** 系统 SHALL 发送 `app:reconciled` 事件
+- **THEN** 系统 SHALL 触发当前 APP 的 `session.reconciled` 通知链路
 - **AND** 已订阅该事件的浏览器端 SHALL 能收到刷新通知
-
