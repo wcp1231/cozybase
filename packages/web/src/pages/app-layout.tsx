@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useState, type PointerEvent } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type PointerEvent } from 'react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import type { PagesJson } from '@cozybase/ui';
 import { MessageSquare } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AppSidebar } from '../features/shell/app-sidebar';
 import { ChatPanel } from '../features/shell/chat-panel';
-import { useChatStore } from '../stores/chat-store';
+import { useChatStore, type ChatSessionTarget } from '../stores/chat-store';
 import { isAppMode, type AppMode } from './content-slot';
 import type { AppInfo, AppSummary } from '../features/apps/types';
 
@@ -60,6 +60,19 @@ async function readErrorMessage(response: Response): Promise<string | null> {
 
 function clampChatPanelWidth(width: number): number {
   return Math.min(CHAT_PANEL_MAX_WIDTH, Math.max(CHAT_PANEL_MIN_WIDTH, width));
+}
+
+export function resolveChatTarget(
+  pathname: string,
+  mode: AppMode | null,
+  appName?: string,
+): ChatSessionTarget | null {
+  if (!mode || !appName) return null;
+  const segments = pathname.split('/').filter(Boolean);
+  if (segments.length < 3) return null;
+  if (segments[0] !== mode || segments[1] !== 'apps' || segments[2] !== appName) return null;
+  if (segments[3] === 'console') return null;
+  return { kind: mode === 'draft' ? 'builder' : 'operator', appName };
 }
 
 export function useAppContext(): AppContextValue {
@@ -132,6 +145,10 @@ export function AppLayout() {
   const [chatVisible, setChatVisible] = useState(false);
   const [chatPanelWidth, setChatPanelWidth] = useState(CHAT_PANEL_DEFAULT_WIDTH);
   const [chatResizing, setChatResizing] = useState(false);
+  const chatTarget = useMemo(
+    () => resolveChatTarget(location.pathname, selectedMode, appName),
+    [location.pathname, selectedMode, appName],
+  );
 
   useEffect(() => {
     try {
@@ -249,29 +266,32 @@ export function AppLayout() {
     }
   }, [sidebarVisible]);
 
-  // Drive per-app chat WebSocket connection based on mode + selected app
   useEffect(() => {
-    const { setActiveApp } = useChatStore.getState();
-    if (selectedMode === 'draft' && appName) {
-      setActiveApp(appName);
-    } else {
-      setActiveApp(null);
-    }
+    const { setActiveSession } = useChatStore.getState();
+    setActiveSession(chatTarget);
     return () => {
-      useChatStore.getState().setActiveApp(null);
+      useChatStore.getState().setActiveSession(null);
     };
-  }, [selectedMode, appName]);
+  }, [chatTarget]);
 
-  // Auto-refresh UI when the agent finishes rebuild_app or a hot export
   useEffect(() => {
-    if (selectedMode !== 'draft' || !appName) return;
+    if (chatTarget?.kind !== 'builder') {
+      useChatStore.getState().setOnReconciled(null);
+      return;
+    }
     useChatStore.getState().setOnReconciled(() => {
       void refreshApp();
     });
     return () => {
       useChatStore.getState().setOnReconciled(null);
     };
-  }, [selectedMode, appName]);
+  }, [chatTarget, appName]);
+
+  useEffect(() => {
+    if (!chatTarget) {
+      setChatVisible(false);
+    }
+  }, [chatTarget]);
 
   if (!selectedMode) {
     return <Navigate to="/stable" replace />;
@@ -319,7 +339,7 @@ export function AppLayout() {
             <Outlet />
           </section>
 
-          {chatVisible && (
+          {chatVisible && chatTarget && (
             <aside
               className="relative hidden h-full shrink-0 border-l border-[#E7EBF2] bg-white xl:flex"
               style={{ width: chatPanelWidth }}
@@ -335,7 +355,7 @@ export function AppLayout() {
                 )}
               />
               <ChatPanel
-                mode={selectedMode}
+                kind={chatTarget.kind}
                 appName={appName}
                 dismissible
                 onClose={() => setChatVisible(false)}
@@ -345,7 +365,7 @@ export function AppLayout() {
         </div>
       </div>
 
-      {!chatVisible && (
+      {!chatVisible && chatTarget && (
         <button
           type="button"
           aria-label="Open chat"
@@ -370,7 +390,7 @@ export function AppLayout() {
         </div>
       )}
 
-      {chatVisible && (
+      {chatVisible && chatTarget && (
         <div className="fixed inset-0 z-50 xl:hidden">
           <button
             type="button"
@@ -380,7 +400,7 @@ export function AppLayout() {
           />
           <aside className="absolute right-0 h-full w-[380px] max-w-[94vw] border-l border-[#E7EBF2] bg-white">
             <ChatPanel
-              mode={selectedMode}
+              kind={chatTarget.kind}
               appName={appName}
               dismissible
               onClose={() => setChatVisible(false)}

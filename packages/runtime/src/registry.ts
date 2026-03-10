@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'fs';
+import { mkdirSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
+import { HTTP_METHODS, type HttpMethod } from './modules/functions/types';
 
 export type AppMode = 'stable' | 'draft';
 export type AppStatus = 'running' | 'stopped';
@@ -23,6 +24,11 @@ export interface AppStartRequest {
   dbPath: string;
   functionsDir: string;
   uiDir: string;
+}
+
+export interface FunctionDefinition {
+  name: string;
+  methods: HttpMethod[];
 }
 
 function registryKey(name: string, mode: AppMode): string {
@@ -51,6 +57,26 @@ export class AppRegistry {
   /** Get all app entries */
   getAll(): AppEntry[] {
     return Array.from(this.apps.values());
+  }
+
+  getFunctionDefinitions(name: string, mode: AppMode): FunctionDefinition[] {
+    const entry = this.get(name, mode);
+    if (!entry || !existsSync(entry.functionsDir)) {
+      return [];
+    }
+
+    return readdirSync(entry.functionsDir)
+      .filter((fileName) => fileName.endsWith('.ts'))
+      .map((fileName) => {
+        const functionName = fileName.replace(/\.ts$/, '');
+        const source = readFileSync(`${entry.functionsDir}/${fileName}`, 'utf-8');
+        return {
+          name: functionName,
+          methods: detectFunctionMethods(source),
+        };
+      })
+      .filter((definition) => !definition.name.startsWith('_'))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Start an app — open DB, init module cache, set status to running */
@@ -133,6 +159,22 @@ export class AppRegistry {
     }
     entry.moduleCache.clear();
   }
+}
+
+function detectFunctionMethods(source: string): HttpMethod[] {
+  const methods = HTTP_METHODS.filter((method) => (
+    new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b|export\\s+const\\s+${method}\\b`).test(source)
+  ));
+
+  if (methods.length > 0) {
+    return methods;
+  }
+
+  if (/export\s+default\b/.test(source)) {
+    return [...HTTP_METHODS];
+  }
+
+  return ['GET'];
 }
 
 export class AppRegistryError extends Error {

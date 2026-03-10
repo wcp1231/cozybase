@@ -4,7 +4,12 @@ import { createTestWorkspace, type TestWorkspaceHandle } from '../helpers/test-w
 
 const capturedConfigs: Array<{ providerKind: 'claude' | 'codex'; config: any }> = [];
 
-mock.module('@cozybase/agent', () => {
+function projectHistoryFromSnapshot(snapshot: any) {
+  const history = snapshot?.state?.history;
+  return Array.isArray(history) ? history : [];
+}
+
+mock.module('@cozybase/ai-runtime', () => {
   class StubAgentQuery {
     constructor(private readonly events: any[]) {}
 
@@ -20,6 +25,17 @@ mock.module('@cozybase/agent', () => {
 
   class BaseStubProvider {
     constructor(private readonly providerKind: 'claude' | 'codex') {}
+
+    get kind() {
+      return this.providerKind;
+    }
+    capabilities = {
+      toolModes: ['mcp', 'none'],
+      supportsResume: true,
+      supportsWorkingDirectory: true,
+      supportsContextTransform: false,
+      supportsHistoryProjection: false,
+    };
 
     createQuery(config: any) {
       capturedConfigs.push({ providerKind: this.providerKind, config });
@@ -51,10 +67,79 @@ mock.module('@cozybase/agent', () => {
       return true;
     }
 
+    async createSession(spec: any) {
+      const providerKind = this.providerKind;
+      const createQuery = this.createQuery.bind(this);
+      let resumeSessionId: string | null = null;
+      const listeners = new Set<(event: any) => void>();
+
+      return {
+        async prompt(text: string) {
+          const query = createQuery({
+            prompt: text,
+            systemPrompt: spec.systemPrompt,
+            cwd: spec.cwd,
+            model: spec.model,
+            resumeSessionId,
+            providerOptions: spec.providerOptions ?? spec.mcpConfig,
+          });
+
+          for await (const event of query) {
+            if (event.type === 'conversation.run.completed' && event.sessionId) {
+              resumeSessionId = event.sessionId;
+            }
+            for (const listener of listeners) {
+              listener(event);
+            }
+          }
+        },
+        subscribe(listener: (event: any) => void) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        async interrupt() {},
+        close() {},
+        async exportSnapshot() {
+          return resumeSessionId
+            ? { providerKind, version: 1, state: { resumeSessionId } }
+            : null;
+        },
+        async restoreSnapshot(snapshot: any) {
+          const value = snapshot?.state?.resumeSessionId;
+          resumeSessionId = typeof value === 'string' ? value : null;
+        },
+        async getHistory() {
+          return [];
+        },
+      };
+    }
+
     dispose() {}
   }
 
+  class AgentProviderRegistry {
+    providers = new Map<string, any>();
+
+    register(provider: any) {
+      this.providers.set(provider.kind, provider);
+    }
+
+    require(kind: string) {
+      const provider = this.providers.get(kind);
+      if (!provider) {
+        throw new Error(`Unknown provider: ${kind}`);
+      }
+      return provider;
+    }
+
+    list() {
+      return [...this.providers.values()];
+    }
+  }
+
   return {
+    AgentProviderRegistry,
+    projectHistoryFromSnapshot,
     ClaudeCodeProvider: class extends BaseStubProvider {
       constructor() {
         super('claude');
@@ -64,6 +149,37 @@ mock.module('@cozybase/agent', () => {
       constructor() {
         super('codex');
       }
+    },
+    PiAgentCoreProvider: class {
+      kind = 'pi-agent-core';
+      capabilities = {
+        toolModes: ['native', 'none'],
+        supportsResume: true,
+        supportsWorkingDirectory: false,
+        supportsContextTransform: true,
+        supportsHistoryProjection: true,
+      };
+      async createSession() {
+        return {
+          async prompt() {},
+          subscribe() {
+            return () => {};
+          },
+          async interrupt() {},
+          close() {},
+          async exportSnapshot() {
+            return null;
+          },
+          async restoreSnapshot() {},
+          async getHistory() {
+            return [];
+          },
+        };
+      }
+      async isAvailable() {
+        return true;
+      }
+      dispose() {}
     },
   };
 });

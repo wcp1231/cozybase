@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AgentEvent, AgentProvider, AgentQuery, AgentQueryConfig } from '@cozybase/agent';
-import { extractAppInfo } from '../../src/agent/extract-app-info';
+import type { AgentEvent, AgentProvider, AgentQuery, AgentQueryConfig } from '@cozybase/ai-runtime';
+import { extractAppInfo } from '@cozybase/builder-agent';
 
 class StubAgentQuery implements AgentQuery {
   constructor(private readonly events: AgentEvent[]) {}
@@ -74,4 +74,3 @@ describe('extractAppInfo', () => {
     ).rejects.toThrow('LLM extraction failed: rate limited');
   });
 });
-

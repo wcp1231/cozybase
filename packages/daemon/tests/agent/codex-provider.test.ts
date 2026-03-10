@@ -40,7 +40,7 @@ mock.module('@openai/codex-sdk', () => ({
   },
 }));
 
-const { CodexProvider } = await import('../../../agent/src/providers/codex.ts');
+const { CodexProvider } = await import('../../../ai-runtime/src/providers/codex.ts');
 
 function makeThread(threadId: string) {
   if (sdkState.threadFactory) {

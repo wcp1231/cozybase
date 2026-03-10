@@ -9,7 +9,14 @@ import {
   type PlatformHandler,
 } from './platform-client';
 
-export { AppRegistry, type AppEntry, type AppStartRequest, type AppMode, type AppStatus } from './registry';
+export {
+  AppRegistry,
+  type AppEntry,
+  type AppStartRequest,
+  type AppMode,
+  type AppStatus,
+  type FunctionDefinition,
+} from './registry';
 export { type PlatformClient, type PlatformHandler, createInProcessPlatformClient } from './platform-client';
 export { HTTP_METHODS, type ErrorRecorder, type ErrorRecordEntry, type HttpMethod } from './modules/functions/types';
 export {

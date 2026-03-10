@@ -38,8 +38,11 @@ class MockChatClient {
 
 mock.module('../lib/chat-client', () => ({
   ChatClient: MockChatClient,
-  getChatWsUrl(appName: string) {
-    return `ws://chat/${appName}`;
+  getBuilderChatWsUrl(appName: string) {
+    return `ws://builder/${appName}`;
+  },
+  getOperatorChatWsUrl(appName: string) {
+    return `ws://operator/${appName}`;
   },
 }));
 
@@ -56,17 +59,17 @@ function latestClient(): MockChatClient {
 beforeEach(() => {
   chatClientState.instances = [];
   useChatStore.getState().setOnReconciled(null);
-  useChatStore.getState().setActiveApp(null);
+  useChatStore.getState().setActiveSession(null);
 });
 
 afterEach(() => {
   useChatStore.getState().setOnReconciled(null);
-  useChatStore.getState().setActiveApp(null);
+  useChatStore.getState().setActiveSession(null);
 });
 
 describe('useChatStore', () => {
   test('drops stale deltas after session.history resets the in-flight indexes', () => {
-    useChatStore.getState().setActiveApp('orders');
+    useChatStore.getState().setActiveSession({ kind: 'builder', appName: 'orders' });
     const client = latestClient();
 
     client.emitStatus(true);
@@ -99,7 +102,7 @@ describe('useChatStore', () => {
   });
 
   test('continues an in-flight assistant message after reconnect with buffer replay', () => {
-    useChatStore.getState().setActiveApp('orders');
+    useChatStore.getState().setActiveSession({ kind: 'builder', appName: 'orders' });
     const client = latestClient();
 
     // Initial connection: run starts, first delta arrives
@@ -152,7 +155,7 @@ describe('useChatStore', () => {
   });
 
   test('already-persisted messages do not duplicate when reconnecting mid-run', () => {
-    useChatStore.getState().setActiveApp('orders');
+    useChatStore.getState().setActiveSession({ kind: 'builder', appName: 'orders' });
     const client = latestClient();
 
     // First message in the run completes before disconnect
@@ -214,5 +217,28 @@ describe('useChatStore', () => {
       { role: 'assistant', content: 'first answer' },
       { role: 'assistant', content: 'second answer' },
     ]);
+  });
+
+  test('uses operator endpoint and shared chat payload for operator sessions', () => {
+    useChatStore.getState().setActiveSession({ kind: 'operator', appName: 'orders' });
+    const client = latestClient();
+
+    expect(client.url).toBe('ws://operator/orders');
+    expect(useChatStore.getState().canCancel).toBe(false);
+
+    client.emitStatus(true);
+    useChatStore.getState().send('列出所有记录');
+
+    expect(useChatStore.getState().messages.at(-1)).toEqual({ role: 'user', content: '列出所有记录' });
+    expect(client.sent).toEqual([{ type: 'chat:send', message: '列出所有记录' }]);
+  });
+
+  test('does not send cancel for operator sessions', () => {
+    useChatStore.getState().setActiveSession({ kind: 'operator', appName: 'orders' });
+    const client = latestClient();
+
+    useChatStore.getState().cancel();
+
+    expect(client.sent).toEqual([]);
   });
 });

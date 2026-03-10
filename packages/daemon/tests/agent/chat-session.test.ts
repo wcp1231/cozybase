@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { AgentEvent, AgentProvider, AgentQuery, AgentQueryConfig } from '@cozybase/agent';
-import { ChatSession } from '../../src/agent/chat-session';
-import { SessionStore } from '../../src/agent/session-store';
+import {
+  type AgentEvent,
+  type AgentProvider,
+  type AgentProviderCapabilities,
+  type AgentQuery,
+  type AgentQueryConfig,
+  type AgentRuntimeSession,
+  type AgentSessionSpec,
+} from '@cozybase/ai-runtime';
+import { ChatSession } from '../../src/ai/builder/session';
+import { RuntimeSessionStore } from '../../src/ai/runtime-session-store';
+import { SessionStore } from '../../src/ai/builder/session-store';
 import { createTestApp, createTestWorkspace, type TestWorkspaceHandle } from '../helpers/test-workspace';
 
 class StubAgentQuery implements AgentQuery {
@@ -40,6 +49,89 @@ class StubAgentProvider implements AgentProvider {
   dispose(): void {}
 }
 
+class StubRuntimeProvider extends StubAgentProvider {
+  constructor(
+    private readonly runtimeKind: 'claude' | 'codex',
+    queryFactory: () => AgentQuery,
+  ) {
+    super(queryFactory);
+  }
+
+  get kind() {
+    return this.runtimeKind;
+  }
+
+  readonly capabilities: AgentProviderCapabilities = {
+    toolModes: ['mcp', 'none'],
+    supportsResume: true,
+    supportsWorkingDirectory: true,
+    supportsContextTransform: false,
+    supportsHistoryProjection: false,
+  };
+
+  async createSession(spec: AgentSessionSpec): Promise<AgentRuntimeSession> {
+    return new StubRuntimeSession(this, this.runtimeKind, spec);
+  }
+}
+
+class StubRuntimeSession implements AgentRuntimeSession {
+  private resumeSessionId: string | null = null;
+  private readonly listeners = new Set<(event: AgentEvent) => void>();
+
+  constructor(
+    private readonly provider: StubAgentProvider,
+    private readonly providerKind: string,
+    private readonly spec: AgentSessionSpec,
+  ) {}
+
+  async prompt(text: string): Promise<void> {
+    const query = this.provider.createQuery({
+      prompt: text,
+      systemPrompt: this.spec.systemPrompt,
+      cwd: this.spec.cwd ?? process.cwd(),
+      model: typeof this.spec.model === 'string' ? this.spec.model : undefined,
+      resumeSessionId: this.resumeSessionId,
+      providerOptions: this.spec.providerOptions,
+    });
+
+    for await (const event of query) {
+      if (event.type === 'conversation.run.completed' && event.sessionId) {
+        this.resumeSessionId = event.sessionId;
+      }
+      for (const listener of this.listeners) {
+        listener(event);
+      }
+    }
+  }
+
+  subscribe(listener: (event: AgentEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async interrupt(): Promise<void> {}
+
+  close(): void {}
+
+  async exportSnapshot() {
+    return this.resumeSessionId
+      ? { providerKind: this.providerKind, version: 1, state: { resumeSessionId: this.resumeSessionId } }
+      : null;
+  }
+
+  async restoreSnapshot(snapshot: { state?: { resumeSessionId?: unknown } }) {
+    this.resumeSessionId = typeof snapshot.state?.resumeSessionId === 'string'
+      ? snapshot.state.resumeSessionId
+      : null;
+  }
+
+  async getHistory() {
+    return [];
+  }
+}
+
 class FakeWebSocket {
   readyState = 1;
   messages: unknown[] = [];
@@ -60,9 +152,14 @@ describe('ChatSession', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'orders');
     const store = new SessionStore(handle.workspace.getPlatformDb());
-    store.saveSessionId('orders', 'sess-existing');
+    const runtimeStore = new RuntimeSessionStore(handle.workspace.getPlatformDb());
+    runtimeStore.saveSession('builder', 'orders', 'claude', {
+      providerKind: 'claude',
+      version: 1,
+      state: { resumeSessionId: 'sess-existing' },
+    });
 
-    const provider = new StubAgentProvider(() => new StubAgentQuery([
+    const provider = new StubRuntimeProvider('claude', () => new StubAgentQuery([
       { type: 'conversation.run.started' },
       { type: 'conversation.run.completed', sessionId: '' },
     ]));
@@ -75,14 +172,18 @@ describe('ChatSession', () => {
         agentDir: handle.root,
       },
       store,
-      'sess-existing',
+      runtimeStore,
     );
     const ws = new FakeWebSocket();
     session.connect(ws);
 
     await session.handleMessage(ws, JSON.stringify({ type: 'chat:send', message: 'hello' }));
 
-    expect(store.getSessionId('orders')).toBe('sess-existing');
+    expect(runtimeStore.getSession('builder', 'orders')?.snapshot).toEqual({
+      providerKind: 'claude',
+      version: 1,
+      state: { resumeSessionId: 'sess-existing' },
+    });
     expect(provider.lastConfig?.resumeSessionId).toBe('sess-existing');
     expect(ws.messages).toContainEqual({ type: 'conversation.run.completed', sessionId: '' });
   });
@@ -91,8 +192,9 @@ describe('ChatSession', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'orders');
     const store = new SessionStore(handle.workspace.getPlatformDb());
+    const runtimeStore = new RuntimeSessionStore(handle.workspace.getPlatformDb());
 
-    const provider = new StubAgentProvider(() => new StubAgentQuery([
+    const provider = new StubRuntimeProvider('claude', () => new StubAgentQuery([
       { type: 'conversation.run.started' },
       { type: 'conversation.tool.started', toolUseId: 'tool-1', toolName: 'Read' },
       { type: 'conversation.message.started', messageId: 'm-1', role: 'assistant' },
@@ -109,6 +211,7 @@ describe('ChatSession', () => {
         agentDir: handle.root,
       },
       store,
+      runtimeStore,
     );
     const ws = new FakeWebSocket();
     session.connect(ws);
@@ -133,8 +236,9 @@ describe('ChatSession', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'orders');
     const store = new SessionStore(handle.workspace.getPlatformDb());
+    const runtimeStore = new RuntimeSessionStore(handle.workspace.getPlatformDb());
 
-    const provider = new StubAgentProvider(() => new StubAgentQuery([
+    const provider = new StubRuntimeProvider('claude', () => new StubAgentQuery([
       { type: 'conversation.run.started' },
       { type: 'conversation.run.completed', sessionId: 'sess-1' },
     ]));
@@ -150,6 +254,7 @@ describe('ChatSession', () => {
         }),
       },
       store,
+      runtimeStore,
     );
     const ws = new FakeWebSocket();
     session.connect(ws);
@@ -163,13 +268,18 @@ describe('ChatSession', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'orders');
     const store = new SessionStore(handle.workspace.getPlatformDb());
-    store.saveSessionId('orders', 'sess-claude', 'claude');
+    const runtimeStore = new RuntimeSessionStore(handle.workspace.getPlatformDb());
+    runtimeStore.saveSession('builder', 'orders', 'claude', {
+      providerKind: 'claude',
+      version: 1,
+      state: { resumeSessionId: 'sess-claude' },
+    });
 
-    const claudeProvider = new StubAgentProvider(() => new StubAgentQuery([
+    const claudeProvider = new StubRuntimeProvider('claude', () => new StubAgentQuery([
       { type: 'conversation.run.started' },
       { type: 'conversation.run.completed', sessionId: 'sess-claude-next' },
     ]));
-    const codexProvider = new StubAgentProvider(() => new StubAgentQuery([
+    const codexProvider = new StubRuntimeProvider('codex', () => new StubAgentQuery([
       { type: 'conversation.run.started' },
       { type: 'conversation.run.completed', sessionId: 'thread-codex-1' },
     ]));
@@ -197,7 +307,7 @@ describe('ChatSession', () => {
         ),
       },
       store,
-      'sess-claude',
+      runtimeStore,
     );
     const ws = new FakeWebSocket();
     session.connect(ws);
@@ -207,9 +317,13 @@ describe('ChatSession', () => {
     expect(claudeProvider.lastConfig).toBeNull();
     expect(codexProvider.lastConfig?.model).toBe('gpt-5.4');
     expect(codexProvider.lastConfig?.resumeSessionId).toBeNull();
-    expect(store.getSession('orders')).toEqual({
-      sdkSessionId: 'thread-codex-1',
+    expect(runtimeStore.getSession('builder', 'orders')).toEqual({
       providerKind: 'codex',
+      snapshot: {
+        providerKind: 'codex',
+        version: 1,
+        state: { resumeSessionId: 'thread-codex-1' },
+      },
     });
   });
 });

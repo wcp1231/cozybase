@@ -2,57 +2,46 @@ import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronRight, Loader2, SendHorizontal, Square, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { AppMode } from '../../pages/content-slot';
-import { useChatStore, type ChatMessage, type ChatToolMessage } from '../../stores/chat-store';
+import { useChatStore, type ChatMessage, type ChatSessionKind, type ChatToolMessage } from '../../stores/chat-store';
 
 const CHAT_INPUT_MAX_HEIGHT = 132;
 
 export function ChatPanel({
-  mode,
+  kind,
   appName,
   onClose,
   dismissible,
 }: {
-  mode: AppMode;
+  kind: ChatSessionKind | null;
   appName?: string;
   onClose?: () => void;
   dismissible: boolean;
 }) {
-  // Stable mode: placeholder UI
-  if (mode === 'stable') {
+  if (!kind || !appName) {
     return (
       <ChatShell title="AI 助手" dismissible={dismissible} onClose={onClose}>
-        <PlaceholderMessage text="Home 模式暂不支持 AI 助手" />
+        <PlaceholderMessage text="请先进入某个 APP 页面。" />
       </ChatShell>
     );
   }
 
-  // Draft mode without an app selected: prompt UI
-  if (!appName) {
-    return (
-      <ChatShell title="AI Builder" dismissible={dismissible} onClose={onClose}>
-        <PlaceholderMessage text="请先选择或创建一个应用" />
-      </ChatShell>
-    );
-  }
-
-  // Draft mode with an app selected: full chat UI
   return (
-    <ActiveChat appName={appName} dismissible={dismissible} onClose={onClose} />
+    <ActiveChat kind={kind} appName={appName} dismissible={dismissible} onClose={onClose} />
   );
 }
 
-/** Full chat UI — only rendered when draft + appName is present */
 function ActiveChat({
+  kind,
   appName,
   onClose,
   dismissible,
 }: {
+  kind: ChatSessionKind;
   appName: string;
   onClose?: () => void;
   dismissible: boolean;
 }) {
-  const { messages, streaming, connected, send, cancel } = useChatStore();
+  const { messages, streaming, connected, canCancel, send, cancel } = useChatStore();
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -85,8 +74,7 @@ function ActiveChat({
     resizeInput(inputRef.current);
   }, [input]);
 
-  const suggestions = ['新增页面', '生成表单', '调整布局'];
-  const introMessage = `我可以继续帮你修改「${appName}」的界面、组件和交互。`;
+  const config = getPanelConfig(kind, appName);
 
   const handleSend = (value: string) => {
     if (!value.trim() || streaming || !connected) return;
@@ -101,7 +89,7 @@ function ActiveChat({
           <Bot className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className='truncate font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>AI Builder</div>
+          <div className='truncate font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>{config.title}</div>
         </div>
         {!connected && <span className="rounded bg-[#FEF2F2] px-1.5 py-0.5 text-[10px] text-[#DC2626]">离线</span>}
         {dismissible && onClose && (
@@ -117,13 +105,13 @@ function ActiveChat({
       </div>
 
       <div ref={chatScrollRef} className="flex flex-1 flex-col gap-4 overflow-y-auto bg-[#F8FAFC] px-5 py-4">
-        {messages.length === 0 && <AssistantBubble text={introMessage} />}
+        {messages.length === 0 && <AssistantBubble text={config.introMessage} />}
         {messages.map((message, index) => (
           <ChatBubble key={index} message={message} />
         ))}
         {!messages.length && (
           <div className="flex flex-wrap gap-2">
-            {suggestions.map((suggestion) => (
+            {config.suggestions.map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"
@@ -159,12 +147,12 @@ function ActiveChat({
                 handleSend(input);
               }
             }}
-            placeholder="告诉 AI 如何修改这个应用..."
+            placeholder={config.inputPlaceholder}
             disabled={!connected}
             className="min-h-[38px] max-h-[132px] min-w-0 flex-1 resize-none rounded-[20px] border border-[#E2E8F0] bg-white px-4 py-[9px] text-sm leading-5 text-[#27272A] outline-none placeholder:text-[#A1A1AA] focus:border-[#94A3B8] disabled:opacity-60"
           />
 
-          {streaming ? (
+          {streaming && canCancel ? (
             <button
               type="button"
               onClick={cancel}
@@ -177,7 +165,7 @@ function ActiveChat({
             <button
               type="button"
               onClick={() => handleSend(input)}
-              disabled={!input.trim() || !connected}
+              disabled={streaming || !input.trim() || !connected}
               className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#111827] text-white transition-colors hover:bg-[#0B1220] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Send"
             >
@@ -188,6 +176,24 @@ function ActiveChat({
       </div>
     </div>
   );
+}
+
+function getPanelConfig(kind: ChatSessionKind, appName: string) {
+  if (kind === 'operator') {
+    return {
+      title: 'Operator Agent',
+      introMessage: `我可以直接帮你操作「${appName}」的已发布应用数据和函数。`,
+      suggestions: ['列出最近 10 条记录', '帮我查询今天新增的数据', '调用一个可用函数看看'],
+      inputPlaceholder: '告诉我你想在这个 APP 里完成什么操作...',
+    };
+  }
+
+  return {
+    title: 'AI Builder',
+    introMessage: `我可以继续帮你修改「${appName}」的界面、组件和交互。`,
+    suggestions: ['新增页面', '生成表单', '调整布局'],
+    inputPlaceholder: '告诉 AI 如何修改这个应用...',
+  };
 }
 
 /** Lightweight shell with header — used for placeholder states */

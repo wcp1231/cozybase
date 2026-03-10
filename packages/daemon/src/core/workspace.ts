@@ -21,10 +21,18 @@ const ThemeConfigSchema = z.object({
   tokens: z.record(safeCSSKey, safeCSSValue).optional(),
 }).default({});
 
+const OperatorConfigSchema = z.object({
+  provider: z.string().optional(),
+  agent_provider: z.string().optional(),
+  model_provider: z.string().optional(),
+  model: z.string().optional(),
+}).optional();
+
 const WorkspaceConfigSchema = z.object({
   name: z.string(),
   version: z.number().int().positive(),
   theme: ThemeConfigSchema.optional(),
+  operator: OperatorConfigSchema,
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

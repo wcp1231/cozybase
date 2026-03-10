@@ -20,7 +20,7 @@ mock.module('@anthropic-ai/claude-agent-sdk', () => ({
   },
 }));
 
-const { ClaudeCodeProvider } = await import('../../../agent/src/providers/claude-code.ts');
+const { ClaudeCodeProvider } = await import('../../../ai-runtime/src/providers/claude-code.ts');
 
 function makeSdkQuery(messages: unknown[], error?: Error): FakeSdkQuery {
   return {

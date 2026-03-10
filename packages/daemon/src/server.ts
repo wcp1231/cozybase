@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { existsSync, readFileSync, mkdirSync, symlinkSync, lstatSync } from 'fs';
-import { resolve, join } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import type { Config } from './config';
 import { Workspace } from './core/workspace';
 import { AppErrorRecorder } from './core/app-error-recorder';
@@ -19,31 +19,11 @@ import { createRuntime, type AppRegistry, type PlatformHandler } from '@cozybase
 import { generateThemeCSS } from '@cozybase/ui';
 import { UiBridge } from './core/ui-bridge';
 import { AppManager } from './modules/apps/manager';
-import { LocalBackend } from './agent/local-backend';
-import { createCozybaseSdkMcpServer } from './agent/sdk-mcp-server';
-import { ChatSessionManager } from './agent/chat-session-manager';
-import { SessionStore } from './agent/session-store';
-import { extractAppInfo, deduplicateSlug } from './agent/extract-app-info';
-import { initWorkspace } from './workspace-init';
+import { extractAppInfo, deduplicateSlug } from '@cozybase/builder-agent';
 import { eventBus } from './core/event-bus';
 import { ScheduleManager } from './core/schedule-manager';
-import type { AgentProvider } from '@cozybase/agent';
-import { ClaudeCodeProvider, CodexProvider } from '@cozybase/agent';
-import { startInProcessMcpHttpBridge, type InProcessMcpHttpBridge } from './mcp/http-bridge';
-import {
-  resolveAgentProviderKind,
-  resolveEffectiveAgentConfig,
-  type AgentProviderKind,
-} from './modules/settings/agent-config';
-import { resolveDaemonEntryPath, resolveWebDistDir } from './runtime-paths';
-
-type CodexMcpMode = 'http' | 'stdio';
-
-type ProviderOptionsFactory = (ctx: {
-  appSlug: string;
-  agentDir: string;
-  mode: 'chat' | 'extract';
-}) => unknown;
+import { resolveWebDistDir } from './runtime-paths';
+import { bootstrapAi } from './ai/bootstrap';
 
 export function createServer(config: Config) {
   const app = new Hono();
@@ -316,162 +296,36 @@ export function createServer(config: Config) {
     return c.json({ authenticated: true, user: { id: 'system', name: 'System', role: 'admin' } });
   });
 
-  // --- Agent Infrastructure ---
-  // Follows the same init-once pattern as workspace.init():
-  // copy templates on first creation, then leave them alone.
-  const agentDir = join(config.workspaceDir, 'agent');
-  mkdirSync(join(agentDir, 'apps'), { recursive: true });
-
-  initWorkspace(agentDir);
-  const claudeDocPath = join(agentDir, 'CLAUDE.md');
-  if (!pathExists(claudeDocPath)) {
-    symlinkSync('AGENTS.md', claudeDocPath);
-  }
-  const agentsSkillsRoot = join(agentDir, '.agents');
-  const claudeSkillsRoot = join(agentDir, '.claude');
-  if (pathExists(agentsSkillsRoot) && !pathExists(claudeSkillsRoot)) {
-    symlinkSync('.agents', claudeSkillsRoot);
-  }
-
-  const localBackend = new LocalBackend({
+  const {
+    agentDir,
+    chatSessionManager,
+    operatorSessionManager,
+    resolveBuilderRuntime,
+    startup,
+    shutdown: shutdownAgentInfra,
+  } = bootstrapAi({
+    config,
     workspace,
+    app,
+    registry,
+    stablePlatformClient,
     appManager,
     draftRebuilder,
     verifier,
     publisher,
-    registry,
     scheduleManager,
     uiBridge,
-    honoApp: app,
     eventBus,
+    runtimeStartup,
   });
 
-  const sdkMcpServer = createCozybaseSdkMcpServer({
-    backend: localBackend,
-    appsDir: join(agentDir, 'apps'),
-  });
-
-  const agentProviders: Record<AgentProviderKind, AgentProvider> = {
-    claude: new ClaudeCodeProvider(),
-    codex: new CodexProvider(),
-  };
-  const codexMcpMode = resolveCodexMcpMode(process.env.COZYBASE_CODEX_MCP_MODE);
-  const codexApprovalPolicy = process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never';
-  const codexSandboxMode = process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write';
-  const initialAgentConfig = resolveAgentConfig();
-
-  let codexHttpBridge: InProcessMcpHttpBridge | null = null;
-  // Default to "failed" while bridge startup is in-flight to avoid race conditions:
-  // requests before startup settles should use stdio fallback deterministically.
-  let codexHttpBridgeFailed = initialAgentConfig.provider === 'codex' && codexMcpMode === 'http';
-
-  const codexBridgeStartup =
-    initialAgentConfig.provider === 'codex' && codexMcpMode === 'http'
-      ? startInProcessMcpHttpBridge({
-          backend: localBackend,
-          appsDir: join(agentDir, 'apps'),
-        })
-          .then((bridge) => {
-            codexHttpBridge = bridge;
-            codexHttpBridgeFailed = false;
-            console.log(`Codex MCP bridge ready at ${bridge.url}`);
-          })
-          .catch((err) => {
-            codexHttpBridgeFailed = true;
-            console.error(
-              'Failed to start in-process MCP HTTP bridge. Falling back to stdio MCP for Codex:',
-              err,
-            );
-          })
-      : Promise.resolve();
-
-  const buildProviderOptionsFactory = (providerKind: AgentProviderKind): ProviderOptionsFactory => ({ mode }) => {
-    if (providerKind === 'claude') {
-      if (mode === 'extract') {
-        return {
-          tools: [],
-          allowedTools: [],
-          permissionMode: 'acceptEdits',
-          settingSources: ['project'],
-        };
-      }
-      return {
-        tools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
-        allowedTools: [
-          'Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep',
-          'mcp__cozybase__*',
-        ],
-        mcpServers: { cozybase: sdkMcpServer },
-        permissionMode: 'acceptEdits',
-        settingSources: ['project'],
-      };
-    }
-
-    const baseCodexConfig: Record<string, unknown> = {
-      approval_policy: codexApprovalPolicy,
-      sandbox_mode: mode === 'extract' ? 'read-only' : codexSandboxMode,
-    };
-
-    if (mode === 'extract') {
-      return { codexConfig: { ...baseCodexConfig, mcp_servers: {} } };
-    }
-
-    const mcpServerConfig = buildCodexMcpServerConfig({
-      codexMcpMode,
-      bridge: codexHttpBridge,
-      bridgeFailed: codexHttpBridgeFailed,
-      workspaceDir: config.workspaceDir,
-      agentDir,
-    });
-
-    return {
-      codexConfig: {
-        ...baseCodexConfig,
-        mcp_servers: {
-          cozybase: mcpServerConfig,
-        },
-      },
-    };
-  };
-
-  function resolveAgentConfig() {
-    return resolveEffectiveAgentConfig({
-      storedProvider: platformRepo.settings.get('agent.provider'),
-      storedModel: platformRepo.settings.get('agent.model'),
-      envProvider: process.env.COZYBASE_AGENT_PROVIDER,
-      envModel: process.env.COZYBASE_AGENT_MODEL,
-    });
-  }
-
-  function resolveAgentRuntime() {
-    const agentConfig = resolveAgentConfig();
-    return {
-      agentProvider: agentProviders[agentConfig.provider],
-      providerKind: agentConfig.provider,
-      model: agentConfig.model,
-      providerOptionsFactory: buildProviderOptionsFactory(agentConfig.provider),
-    };
-  }
-
-  const sessionStore = new SessionStore(workspace.getPlatformDb());
-
-  const chatSessionManager = new ChatSessionManager(
-    {
-      agentProvider: agentProviders[initialAgentConfig.provider],
-      providerKind: initialAgentConfig.provider,
-      agentDir,
-      model: initialAgentConfig.model,
-      providerOptionsFactory: buildProviderOptionsFactory(initialAgentConfig.provider),
-      runtimeResolver: resolveAgentRuntime,
+  // Wire session cleanup so app delete/rename cleans up both agent types.
+  appManager.setSessionCleanup({
+    remove(appSlug: string) {
+      chatSessionManager.remove(appSlug);
+      operatorSessionManager.remove(appSlug);
     },
-    sessionStore,
-    eventBus,
-  );
-
-  const startup = Promise.all([runtimeStartup, codexBridgeStartup]).then(() => undefined);
-
-  // Wire session cleanup so app delete/rename cleans up in-memory chat sessions
-  appManager.setSessionCleanup(chatSessionManager);
+  });
 
   // --- AI-powered app creation endpoint ---
   app.post('/api/v1/apps/create-with-ai', async (c) => {
@@ -487,12 +341,12 @@ export function createServer(config: Config) {
     }
 
     // 1. Extract structured app info from free-text via LLM
-    const agentRuntime = resolveAgentRuntime();
+    const builderRuntime = resolveBuilderRuntime();
     const info = await extractAppInfo(body.idea.trim(), {
-      provider: agentRuntime.agentProvider,
+      provider: builderRuntime.agentProvider,
       cwd: agentDir,
-      model: agentRuntime.model,
-      providerOptions: agentRuntime.providerOptionsFactory({
+      model: typeof builderRuntime.model === 'string' ? builderRuntime.model : undefined,
+      providerOptions: builderRuntime.providerOptionsFactory?.({
         appSlug: '__extract__',
         agentDir,
         mode: 'extract',
@@ -550,36 +404,15 @@ export function createServer(config: Config) {
     registry,
     uiBridge,
     chatSessionManager,
+    operatorSessionManager,
     appManager,
     draftRebuilder,
     verifier,
     publisher,
     startup,
     scheduleManager,
-    shutdownAgentInfra: async () => {
-      scheduleManager.shutdown();
-      if (codexHttpBridge) {
-        await codexHttpBridge.close().catch((err) => {
-          console.error('Failed to close Codex MCP bridge:', err);
-        });
-      }
-      for (const agentProvider of Object.values(agentProviders)) {
-        agentProvider.dispose();
-      }
-    },
+    shutdownAgentInfra,
   };
-}
-
-function pathExists(path: string): boolean {
-  if (existsSync(path)) {
-    return true;
-  }
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -653,46 +486,4 @@ async function initializeRuntime(
       }
     }
   }
-}
-
-function resolveCodexMcpMode(value: string | undefined): CodexMcpMode {
-  return value?.toLowerCase() === 'stdio' ? 'stdio' : 'http';
-}
-
-function buildCodexMcpServerConfig(params: {
-  codexMcpMode: CodexMcpMode;
-  bridge: InProcessMcpHttpBridge | null;
-  bridgeFailed: boolean;
-  workspaceDir: string;
-  agentDir: string;
-}) {
-  const cliPath = resolveDaemonEntryPath();
-  const stdioConfig = {
-    type: 'stdio',
-    command: 'bun',
-    args: [
-      cliPath,
-      'mcp',
-      '--workspace',
-      params.workspaceDir,
-      '--apps-dir',
-      join(params.agentDir, 'apps'),
-    ],
-  };
-
-  if (params.codexMcpMode === 'stdio') {
-    return stdioConfig;
-  }
-
-  if (params.bridge && !params.bridgeFailed) {
-    return {
-      type: 'streamable_http',
-      url: params.bridge.url,
-      http_headers: {
-        Authorization: `Bearer ${params.bridge.bearerToken}`,
-      },
-    };
-  }
-
-  return stdioConfig;
 }

@@ -35,9 +35,23 @@ export interface StartInProcessMcpHttpBridgeOptions {
   basePath?: string;
 }
 
+export interface StartInProcessMcpHttpBridgeWithFactoryOptions
+  extends StartInProcessMcpHttpBridgeOptions {
+  createServer: () => McpServer;
+}
+
 export async function startInProcessMcpHttpBridge(
   ctx: HandlerContext,
   options: StartInProcessMcpHttpBridgeOptions = {},
+): Promise<InProcessMcpHttpBridge> {
+  return startInProcessMcpHttpBridgeWithFactory({
+    ...options,
+    createServer: () => createMcpServer(ctx),
+  });
+}
+
+export async function startInProcessMcpHttpBridgeWithFactory(
+  options: StartInProcessMcpHttpBridgeWithFactoryOptions,
 ): Promise<InProcessMcpHttpBridge> {
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? 0;
@@ -73,23 +87,11 @@ export async function startInProcessMcpHttpBridge(
       },
     });
 
-    const mcpServer = createMcpServer(ctx);
+    const mcpServer = options.createServer();
     entry = { transport, server: mcpServer };
     await mcpServer.connect(transport);
     return entry;
   };
-
-  const server = createServer((req, res) => {
-    void handleRequest(req, res).catch((err) => {
-      console.error('[mcp-http-bridge] request failed:', err);
-      if (!res.headersSent) {
-        res.statusCode = 500;
-      }
-      if (!res.writableEnded) {
-        res.end('Internal Server Error');
-      }
-    });
-  });
 
   const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (!isAuthorized(req, bearerToken)) {
@@ -154,7 +156,17 @@ export async function startInProcessMcpHttpBridge(
     await session.server.close().catch(() => {});
   };
 
-  await listenWithRetry(server, host, port);
+  const server = await listenWithRetry(() => createServer((req, res) => {
+    void handleRequest(req, res).catch((err) => {
+      console.error('[mcp-http-bridge] request failed:', err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+      }
+      if (!res.writableEnded) {
+        res.end('Internal Server Error');
+      }
+    });
+  }), host, port);
 
   const address = server.address();
   if (!address || typeof address === 'string') {
@@ -214,23 +226,32 @@ function isAuthorized(req: IncomingMessage, token: string): boolean {
 }
 
 async function listenWithRetry(
-  server: ReturnType<typeof createServer>,
+  createHttpServer: () => ReturnType<typeof createServer>,
   host: string,
   port: number,
-): Promise<void> {
+): Promise<ReturnType<typeof createServer>> {
   if (port > 0) {
+    const server = createHttpServer();
     await listenOnce(server, host, port);
-    return;
+    return server;
   }
 
-  // Bun's node:http adapter may fail with port=0 in some environments.
-  // Retry with random high ports when auto-assignment is unavailable.
+  try {
+    const server = createHttpServer();
+    await listenOnce(server, host, 0);
+    return server;
+  } catch {
+    // Bun's node:http adapter may fail with port=0 in some environments.
+    // Retry with random high ports when auto-assignment is unavailable.
+  }
+
   let lastError: unknown = null;
   for (let i = 0; i < 12; i++) {
     const candidate = 38000 + Math.floor(Math.random() * 20000);
     try {
+      const server = createHttpServer();
       await listenOnce(server, host, candidate);
-      return;
+      return server;
     } catch (err: any) {
       lastError = err;
       if (err?.code !== 'EADDRINUSE') {

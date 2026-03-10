@@ -198,9 +198,12 @@ export function createDbRoutes() {
     }
 
     const columns = Object.keys(body);
-    const placeholders = columns.map(() => '?').join(', ');
+    if (columns.length === 0) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Request body must include at least one field' } }, 400);
+    }
+
     const values = Object.values(body);
-    const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
+    const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`;
 
     let lastInsertRowid: number | bigint | undefined;
     try {

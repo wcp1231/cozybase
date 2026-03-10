@@ -1,5 +1,5 @@
 /**
- * Chat WebSocket client for connecting to the daemon's /api/v1/chat/ws endpoint.
+ * Chat WebSocket client for connecting to the daemon's chat endpoints.
  */
 
 type MessageHandler = (msg: unknown) => void;
@@ -84,8 +84,15 @@ export class ChatClient {
   }
 }
 
-/** Build the WebSocket URL for the chat endpoint based on current page location. */
-export function getChatWsUrl(appName: string): string {
+function getWebSocketBaseUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/v1/chat/ws?app=${encodeURIComponent(appName)}`;
+  return `${protocol}//${window.location.host}`;
+}
+
+export function getBuilderChatWsUrl(appName: string): string {
+  return `${getWebSocketBaseUrl()}/api/v1/chat/ws?app=${encodeURIComponent(appName)}`;
+}
+
+export function getOperatorChatWsUrl(appName: string): string {
+  return `${getWebSocketBaseUrl()}/api/v1/operator/ws?app=${encodeURIComponent(appName)}`;
 }

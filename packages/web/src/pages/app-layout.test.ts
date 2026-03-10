@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { loadAppLayoutData } from './app-layout';
+import { loadAppLayoutData, resolveChatTarget } from './app-layout';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -85,9 +85,8 @@ describe('loadAppLayoutData', () => {
     ]);
   });
 
-  test('fallback prepares and retries UI when draft UI returns 404 first', async () => {
+  test('returns null UI when draft UI returns 404', async () => {
     const calls: Array<{ url: string; method: string }> = [];
-    let uiCallCount = 0;
     const fetchMock: typeof fetch = async (input, init) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
@@ -107,14 +106,7 @@ describe('loadAppLayoutData', () => {
         });
       }
       if (url === '/draft/apps/orders/ui') {
-        uiCallCount += 1;
-        if (uiCallCount === 1) {
-          return jsonResponse({ error: { code: 'NOT_FOUND' } }, 404);
-        }
-        return jsonResponse({ data: { pages: [{ path: 'home', title: 'Home', body: [] }] } });
-      }
-      if (url === '/draft/apps/orders/prepare') {
-        return jsonResponse({ data: { success: true } });
+        return jsonResponse({ error: { code: 'NOT_FOUND' } }, 404);
       }
       throw new Error(`Unexpected fetch request: ${method} ${url}`);
     };
@@ -124,15 +116,11 @@ describe('loadAppLayoutData', () => {
     expect(calls).toEqual([
       { url: '/api/v1/apps/orders', method: 'GET' },
       { url: '/draft/apps/orders/ui', method: 'GET' },
-      { url: '/draft/apps/orders/prepare', method: 'POST' },
-      { url: '/draft/apps/orders/ui', method: 'GET' },
     ]);
-    expect(result.pagesJson).toEqual({
-      pages: [{ path: 'home', title: 'Home', body: [] }],
-    });
+    expect(result.pagesJson).toBeNull();
   });
 
-  test('throws explicit error when auto prepare fails', async () => {
+  test('returns null UI when draft UI is missing without auto-prepare', async () => {
     const calls: Array<{ url: string; method: string }> = [];
     const fetchMock: typeof fetch = async (input, init) => {
       const url = String(input);
@@ -203,5 +191,28 @@ describe('loadAppLayoutData', () => {
       { url: '/api/v1/apps/orders', method: 'GET' },
       { url: '/draft/apps/orders/ui', method: 'GET' },
     ]);
+  });
+});
+
+describe('resolveChatTarget', () => {
+  test('uses operator chat on stable app pages', () => {
+    expect(resolveChatTarget('/stable/apps/orders/home', 'stable', 'orders')).toEqual({
+      kind: 'operator',
+      appName: 'orders',
+    });
+  });
+
+  test('uses builder chat on draft app pages', () => {
+    expect(resolveChatTarget('/draft/apps/orders/home', 'draft', 'orders')).toEqual({
+      kind: 'builder',
+      appName: 'orders',
+    });
+  });
+
+  test('does not show chat on non-app and console routes', () => {
+    expect(resolveChatTarget('/stable', 'stable', undefined)).toBeNull();
+    expect(resolveChatTarget('/stable/apps', 'stable', undefined)).toBeNull();
+    expect(resolveChatTarget('/stable/settings', 'stable', undefined)).toBeNull();
+    expect(resolveChatTarget('/stable/apps/orders/console', 'stable', 'orders')).toBeNull();
   });
 });

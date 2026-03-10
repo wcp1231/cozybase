@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@cozybase/agent": "workspace:*",
+    "@cozybase/ai-runtime": "workspace:*",
     "@cozybase/ui": "workspace:*",
     "@dnd-kit/react": "^0.3.2",
     "clsx": "^2.1.1",

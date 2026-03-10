@@ -8,7 +8,7 @@
 
 ### Requirement: AgentEvent 必须覆盖 Agent 执行的完整事件生命周期
 
-系统 SHALL 定义 `AgentEvent` union type，通过 `type` 字段进行 discriminated union 区分，涵盖运行状态、消息输出、工具调用、通知和错误五类事件。所有事件 SHALL 以 `conversation.` 作为命名前缀。`AgentEvent` 的定义 SHALL 位于 `packages/agent/src/types.ts`，由 daemon 和 web 共同引用。
+系统 SHALL 定义 `AgentEvent` union type，通过 `type` 字段进行 discriminated union 区分，涵盖运行状态、消息输出、工具调用、通知和错误五类事件。所有事件 SHALL 以 `conversation.` 作为命名前缀。`AgentEvent` 的定义 SHALL 位于 `packages/ai-runtime/src/types.ts`，由 daemon 和 web 共同引用。
 
 #### Scenario: run 事件覆盖一次查询的起止
 
@@ -53,7 +53,7 @@
 
 ### Requirement: SessionEvent 必须覆盖应用层 WebSocket 会话的管理语义
 
-系统 SHALL 定义 `SessionEvent` union type，所有事件以 `session.` 作为命名前缀，用于传达会话连接状态、历史数据和应用层通知。`SessionEvent` 的定义 SHALL 位于 `packages/agent/src/types.ts`。
+系统 SHALL 定义 `SessionEvent` union type，所有事件以 `session.` 作为命名前缀，用于传达会话连接状态、历史数据和应用层通知。`SessionEvent` 的定义 SHALL 位于 `packages/ai-runtime/src/types.ts`。
 
 #### Scenario: session.connected 传递连接建立时的初始状态
 

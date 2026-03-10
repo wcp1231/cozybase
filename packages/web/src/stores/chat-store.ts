@@ -1,13 +1,13 @@
 /**
  * useChatStore — Zustand store for AI chat state.
  *
- * WebSocket lifecycle is driven by `setActiveApp(appName)`, not by module load.
- * Each APP gets its own WebSocket connection to `/api/v1/chat/ws?app=<appName>`.
+ * WebSocket lifecycle is driven by `setActiveSession(target)`, not by module load.
+ * Each APP/session kind gets its own WebSocket connection.
  */
 
 import { create } from 'zustand';
-import { ChatClient, getChatWsUrl } from '../lib/chat-client';
-import type { AgentEvent, SessionEvent } from '@cozybase/agent/types';
+import { ChatClient, getBuilderChatWsUrl, getOperatorChatWsUrl } from '../lib/chat-client';
+import type { AgentEvent, SessionEvent } from '@cozybase/ai-runtime/types';
 
 // --- Message types for the UI ---
 
@@ -25,12 +25,20 @@ export interface ChatToolMessage {
 
 export type ChatMessage = ChatTextMessage | ChatToolMessage;
 
+export type ChatSessionKind = 'builder' | 'operator';
+
+export interface ChatSessionTarget {
+  kind: ChatSessionKind;
+  appName: string;
+}
+
 export interface ChatState {
-  activeApp: string | null;
+  activeSession: ChatSessionTarget | null;
   messages: ChatMessage[];
   streaming: boolean;
   connected: boolean;
-  setActiveApp: (appName: string | null) => void;
+  canCancel: boolean;
+  setActiveSession: (target: ChatSessionTarget | null) => void;
   send: (text: string) => void;
   cancel: () => void;
   setOnReconciled: (callback: (() => void) | null) => void;
@@ -219,12 +227,13 @@ function resetIndexMaps() {
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  activeApp: null,
+  activeSession: null,
   messages: [],
   streaming: false,
   connected: false,
+  canCancel: false,
 
-  setActiveApp(appName: string | null) {
+  setActiveSession(target: ChatSessionTarget | null) {
     // Bump generation so stale callbacks from the old client are ignored
     const gen = ++generation;
 
@@ -235,15 +244,24 @@ export const useChatStore = create<ChatState>((set) => ({
     }
     resetIndexMaps();
 
-    if (!appName) {
-      set({ activeApp: null, messages: [], streaming: false, connected: false });
+    if (!target) {
+      set({ activeSession: null, messages: [], streaming: false, connected: false, canCancel: false });
       return;
     }
 
-    set({ activeApp: appName, messages: [], streaming: false, connected: false });
+    set({
+      activeSession: target,
+      messages: [],
+      streaming: false,
+      connected: false,
+      canCancel: target.kind === 'builder',
+    });
 
-    // Create new connection scoped to the app
-    client = new ChatClient(getChatWsUrl(appName), {
+    const url = target.kind === 'builder'
+      ? getBuilderChatWsUrl(target.appName)
+      : getOperatorChatWsUrl(target.appName);
+
+    client = new ChatClient(url, {
       onMessage: (msg) => handleMessage(set, gen, msg as WireEvent),
       onStatus: (connected) => {
         if (gen !== generation) return;
@@ -255,6 +273,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   send(text: string) {
     if (!text.trim()) return;
+    if (!useChatStore.getState().activeSession) return;
     set((s) => ({
       messages: [...s.messages, { role: 'user', content: text }],
     }));
@@ -262,6 +281,7 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   cancel() {
+    if (useChatStore.getState().activeSession?.kind !== 'builder') return;
     client?.send({ type: 'chat:cancel' });
   },
 

@@ -15,9 +15,12 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
-    "@cozybase/agent": "workspace:*",
+    "@cozybase/ai-runtime": "workspace:*",
+    "@cozybase/builder-agent": "workspace:*",
+    "@cozybase/operator-agent": "workspace:*",
     "@cozybase/runtime": "workspace:*",
     "@cozybase/ui": "workspace:*",
+    "@mariozechner/pi-ai": "^0.16.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "croner": "^9.0.0",
     "hono": "^4.7.0",

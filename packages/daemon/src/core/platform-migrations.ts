@@ -163,6 +163,35 @@ export const PLATFORM_MIGRATIONS: PlatformMigration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    name: 'operator_sessions',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS operator_sessions (
+          app_slug TEXT PRIMARY KEY REFERENCES apps(slug) ON DELETE CASCADE,
+          messages_json TEXT NOT NULL DEFAULT '[]',
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
+  {
+    version: 7,
+    name: 'agent_runtime_sessions',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_runtime_sessions (
+          usage_type TEXT NOT NULL,
+          app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
+          provider_kind TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (usage_type, app_slug)
+        );
+      `);
+    },
+  },
 ];
 
 /**
