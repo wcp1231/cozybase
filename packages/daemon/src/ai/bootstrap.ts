@@ -27,6 +27,7 @@ import { SessionStore } from './builder/session-store';
 import { RuntimeSessionStore } from './runtime-session-store';
 import { OperatorSessionManager } from './operator/session-manager';
 import { resolveOperatorRuntime } from './operator/runtime-config';
+import { CozyBaseSessionManager } from './cozybase/session-manager';
 import { initWorkspace } from '../workspace-init';
 import {
   resolveEffectiveAgentConfig,
@@ -57,7 +58,7 @@ export interface BootstrapAiDeps {
   publisher: Publisher;
   scheduleManager: ScheduleManager;
   uiBridge: UiBridge;
-  eventBus?: EventBus;
+  eventBus: EventBus;
   runtimeStartup: Promise<void>;
 }
 
@@ -65,6 +66,7 @@ export interface BootstrapAiResult {
   agentDir: string;
   chatSessionManager: ChatSessionManager;
   operatorSessionManager: OperatorSessionManager;
+  cozybaseSessionManager: CozyBaseSessionManager;
   resolveBuilderRuntime: () => BuilderRuntimeConfig;
   startup: Promise<void>;
   shutdown: () => Promise<void>;
@@ -230,12 +232,27 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
     stablePlatformClient: deps.stablePlatformClient,
     runtimeStore: runtimeSessionStore,
     runtimeResolver: () => resolveOperatorRuntime(deps.workspace, providerRegistry),
+    eventBus: deps.eventBus,
+  });
+
+  const cozybaseSessionManager = new CozyBaseSessionManager({
+    workspace: deps.workspace,
+    registry: deps.registry,
+    appManager: deps.appManager,
+    chatSessionManager,
+    operatorSessionManager,
+    runtimeStore: runtimeSessionStore,
+    providerRegistry,
+    eventBus: deps.eventBus,
+    agentDir,
+    resolveBuilderRuntime,
   });
 
   return {
     agentDir,
     chatSessionManager,
     operatorSessionManager,
+    cozybaseSessionManager,
     resolveBuilderRuntime,
     startup: Promise.all([deps.runtimeStartup, codexBridgeStartup]).then(() => undefined),
     shutdown: async () => {

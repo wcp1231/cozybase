@@ -1,4 +1,4 @@
-type Listener = (data: any) => void;
+type Listener<T> = (data: T) => void;
 
 export interface ChangeEvent {
   appId: string;
@@ -8,25 +8,56 @@ export interface ChangeEvent {
   oldRecord?: Record<string, unknown>;
 }
 
-export class EventBus {
-  private listeners = new Map<string, Set<Listener>>();
+export interface AppReconciledEvent {
+  appSlug: string;
+}
 
-  on(event: string, listener: Listener): () => void {
+export interface TaskCompletedEvent {
+  taskId: string;
+  appSlug: string;
+  summary: string;
+}
+
+export interface TaskFailedEvent {
+  taskId: string;
+  appSlug: string;
+  error: string;
+}
+
+export interface EventMap {
+  'app:reconciled': AppReconciledEvent;
+  'task:completed': TaskCompletedEvent;
+  'task:failed': TaskFailedEvent;
+}
+
+type WildcardEvent = { event: keyof EventMap; data: EventMap[keyof EventMap] };
+
+export class EventBus {
+  private listeners = new Map<string, Set<Listener<unknown>>>();
+
+  on<K extends keyof EventMap | '*'>(
+    event: K,
+    listener: Listener<K extends '*' ? WildcardEvent : EventMap[Extract<K, keyof EventMap>]>,
+  ): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(listener);
+    this.listeners.get(event)!.add(listener as Listener<unknown>);
     return () => this.off(event, listener);
   }
 
-  off(event: string, listener: Listener): void {
-    this.listeners.get(event)?.delete(listener);
+  off<K extends keyof EventMap | '*'>(
+    event: K,
+    listener: Listener<K extends '*' ? WildcardEvent : EventMap[Extract<K, keyof EventMap>]>,
+  ): void {
+    this.listeners.get(event)?.delete(listener as Listener<unknown>);
   }
 
-  emit(event: string, data: any): void {
-    this.listeners.get(event)?.forEach((fn) => fn(data));
-    // Also emit to wildcard listeners
-    this.listeners.get('*')?.forEach((fn) => fn({ event, data }));
+  emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
+    this.listeners.get(event)?.forEach((fn) => (fn as Listener<EventMap[K]>)(data));
+    this.listeners.get('*')?.forEach((fn) => {
+      (fn as Listener<WildcardEvent>)({ event, data });
+    });
   }
 }
 

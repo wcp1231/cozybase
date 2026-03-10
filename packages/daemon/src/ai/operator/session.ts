@@ -1,4 +1,4 @@
-import type { AgentSessionSpec, AgentToolMode } from '@cozybase/ai-runtime';
+import type { AgentEvent, AgentSessionSpec, AgentToolMode } from '@cozybase/ai-runtime';
 import {
   buildOperatorSystemPrompt,
   createOperatorTools,
@@ -15,6 +15,7 @@ import {
   type InProcessMcpHttpBridge,
 } from '../../mcp/http-bridge';
 import { resolveBunExecutable, resolveDaemonEntryPath } from '../../runtime-paths';
+import type { EventBus } from '../../core/event-bus';
 
 interface WebSocketLike {
   send(data: string): void;
@@ -32,6 +33,7 @@ export interface OperatorSessionConfig {
   runtimeResolver: () => OperatorRuntimeConfig;
   runtimeStore: RuntimeSessionStore;
   maxMessages?: number;
+  eventBus?: EventBus;
 }
 
 export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> {
@@ -41,9 +43,12 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
   private readonly toolsDisabled =
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === '1' ||
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === 'true';
+  private readonly eventBus?: EventBus;
+  private lastAssistantMessage: string | null = null;
 
   constructor(private readonly config: OperatorSessionConfig) {
     super(config.appSlug, config.runtimeStore, config.runtimeResolver);
+    this.eventBus = config.eventBus;
   }
 
   connect(ws: WebSocketLike): void {
@@ -84,12 +89,30 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
   }
 
   protected afterPrompt(): void {
+    if (this.delegatedTaskId && this.eventBus) {
+      if (this.lastPromptError) {
+        this.eventBus.emit('task:failed', {
+          taskId: this.delegatedTaskId,
+          appSlug: this.appSlug,
+          error: this.lastPromptError,
+        });
+      } else {
+        this.eventBus.emit('task:completed', {
+          taskId: this.delegatedTaskId,
+          appSlug: this.appSlug,
+          summary: this.lastAssistantMessage?.trim() || `Operator task for '${this.appSlug}' completed.`,
+        });
+      }
+      this.delegatedTaskId = null;
+    }
     this.runEventBuffer = [];
+    this.lastAssistantMessage = null;
   }
 
   protected onShutdown(): void {
     this.appContextPromise = null;
     this.appContext = null;
+    this.lastAssistantMessage = null;
     if (this.mcpBridge) {
       void this.mcpBridge.close().catch((err) => {
         console.error(`[operator] Failed to close MCP bridge for '${this.appSlug}':`, err);
@@ -211,6 +234,12 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
       if (this.appContextPromise === pending) {
         this.appContextPromise = null;
       }
+    }
+  }
+
+  protected onRuntimeEvent(event: AgentEvent): void {
+    if (event.type === 'conversation.message.completed' && event.role === 'assistant' && event.content) {
+      this.lastAssistantMessage = event.content;
     }
   }
 }

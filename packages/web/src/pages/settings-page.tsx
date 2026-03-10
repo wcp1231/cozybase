@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Bot, Check, ChevronDown } from 'lucide-react';
 import { useAppContext } from './app-layout';
 
@@ -12,16 +12,34 @@ interface AgentConfig {
   model: string;
 }
 
-interface OperatorAgentMeta {
-  providers: string[];
+interface AdvancedAgentMeta extends AgentMeta {
   modelProviders: string[];
-  models: Record<string, string[]>;
 }
 
-interface OperatorAgentConfig {
-  provider: string;
+interface AdvancedAgentConfig extends AgentConfig {
   modelProvider: string | null;
-  model: string;
+}
+
+interface ProviderOption {
+  value: string;
+  disabled: boolean;
+  helperText: string;
+}
+
+interface AgentSettingsCardProps<TConfig extends AgentConfig> {
+  title: string;
+  description: string;
+  providerDescription: string;
+  modelDescription: string;
+  config: TConfig;
+  meta: AgentMeta | AdvancedAgentMeta;
+  saving: boolean;
+  saveSuccess: boolean;
+  error: string | null;
+  onProviderChange: (provider: string) => void;
+  onModelChange: (model: string) => void;
+  onModelProviderChange?: (modelProvider: string) => void;
+  onModelInputChange?: (value: string) => void;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -36,13 +54,17 @@ export function SettingsPage() {
 
   const [builderConfig, setBuilderConfig] = useState<AgentConfig | null>(null);
   const [builderMeta, setBuilderMeta] = useState<AgentMeta | null>(null);
-  const [operatorConfig, setOperatorConfig] = useState<OperatorAgentConfig | null>(null);
-  const [operatorMeta, setOperatorMeta] = useState<OperatorAgentMeta | null>(null);
+  const [operatorConfig, setOperatorConfig] = useState<AdvancedAgentConfig | null>(null);
+  const [operatorMeta, setOperatorMeta] = useState<AdvancedAgentMeta | null>(null);
+  const [cozybaseConfig, setCozybaseConfig] = useState<AdvancedAgentConfig | null>(null);
+  const [cozybaseMeta, setCozybaseMeta] = useState<AdvancedAgentMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingBuilder, setSavingBuilder] = useState(false);
   const [savingOperator, setSavingOperator] = useState(false);
+  const [savingCozybase, setSavingCozybase] = useState(false);
   const [builderSaveSuccess, setBuilderSaveSuccess] = useState(false);
   const [operatorSaveSuccess, setOperatorSaveSuccess] = useState(false);
+  const [cozybaseSaveSuccess, setCozybaseSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,18 +75,25 @@ export function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [builderRes, operatorRes] = await Promise.all([
+      const [builderRes, operatorRes, cozybaseRes] = await Promise.all([
         fetch('/api/v1/settings/agent'),
         fetch('/api/v1/settings/operator-agent'),
+        fetch('/api/v1/settings/cozybase-agent'),
       ]);
       if (!builderRes.ok) throw new Error(`HTTP ${builderRes.status}`);
       if (!operatorRes.ok) throw new Error(`HTTP ${operatorRes.status}`);
+      if (!cozybaseRes.ok) throw new Error(`HTTP ${cozybaseRes.status}`);
+
       const builderJson = await builderRes.json();
       const operatorJson = await operatorRes.json();
+      const cozybaseJson = await cozybaseRes.json();
+
       setBuilderConfig(builderJson.data);
       setBuilderMeta(builderJson.meta);
       setOperatorConfig(operatorJson.data);
       setOperatorMeta(operatorJson.meta);
+      setCozybaseConfig(cozybaseJson.data);
+      setCozybaseMeta(cozybaseJson.meta);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -72,12 +101,19 @@ export function SettingsPage() {
     }
   }
 
-  async function handleBuilderSave(updates: Partial<AgentConfig>) {
-    setSavingBuilder(true);
-    setBuilderSaveSuccess(false);
+  async function saveSettings<TConfig extends AgentConfig, TMeta extends AgentMeta | AdvancedAgentMeta>(
+    path: string,
+    updates: Partial<TConfig>,
+    setSaving: Dispatch<SetStateAction<boolean>>,
+    setSaveSuccess: Dispatch<SetStateAction<boolean>>,
+    setConfig: Dispatch<SetStateAction<TConfig | null>>,
+    setMeta: Dispatch<SetStateAction<TMeta | null>>,
+  ) {
+    setSaving(true);
+    setSaveSuccess(false);
     setError(null);
     try {
-      const res = await fetch('/api/v1/settings/agent', {
+      const res = await fetch(path, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -86,78 +122,106 @@ export function SettingsPage() {
         const json = await res.json().catch(() => null);
         throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
       }
-      const json = await res.json();
-      setBuilderConfig(json.data);
-      setBuilderMeta(json.meta);
-      setBuilderSaveSuccess(true);
-      setTimeout(() => setBuilderSaveSuccess(false), 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingBuilder(false);
-    }
-  }
 
-  async function handleOperatorSave(updates: Partial<OperatorAgentConfig>) {
-    setSavingOperator(true);
-    setOperatorSaveSuccess(false);
-    setError(null);
-    try {
-      const res = await fetch('/api/v1/settings/operator-agent', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
-      }
       const json = await res.json();
-      setOperatorConfig(json.data);
-      setOperatorMeta(json.meta);
-      setOperatorSaveSuccess(true);
-      setTimeout(() => setOperatorSaveSuccess(false), 2000);
+      setConfig(json.data);
+      setMeta(json.meta);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSavingOperator(false);
+      setSaving(false);
     }
   }
 
   function handleBuilderProviderChange(provider: string) {
     if (!builderMeta) return;
     const models = builderMeta.models[provider] ?? [];
-    const model = models[0] ?? '';
-    void handleBuilderSave({ provider, model });
+    void saveSettings<AgentConfig, AgentMeta>(
+      '/api/v1/settings/agent',
+      { provider, model: models[0] ?? '' },
+      setSavingBuilder,
+      setBuilderSaveSuccess,
+      setBuilderConfig,
+      setBuilderMeta,
+    );
   }
 
   function handleBuilderModelChange(model: string) {
-    void handleBuilderSave({ model });
+    void saveSettings<AgentConfig, AgentMeta>(
+      '/api/v1/settings/agent',
+      { model },
+      setSavingBuilder,
+      setBuilderSaveSuccess,
+      setBuilderConfig,
+      setBuilderMeta,
+    );
   }
 
   function handleOperatorProviderChange(provider: string) {
     if (!operatorMeta) return;
     const models = operatorMeta.models[provider] ?? [];
-    void handleOperatorSave({
-      provider,
-      modelProvider: provider === 'pi-agent-core' ? operatorMeta.modelProviders[0] ?? 'anthropic' : null,
-      model: provider === 'pi-agent-core' ? 'claude-sonnet-4-20250514' : (models[0] ?? ''),
-    });
+    void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
+      '/api/v1/settings/operator-agent',
+      {
+        provider,
+        modelProvider: provider === 'pi-agent-core' ? operatorMeta.modelProviders[0] ?? 'anthropic' : null,
+        model: provider === 'pi-agent-core' ? 'claude-sonnet-4-20250514' : (models[0] ?? ''),
+      },
+      setSavingOperator,
+      setOperatorSaveSuccess,
+      setOperatorConfig,
+      setOperatorMeta,
+    );
   }
 
   function handleOperatorModelProviderChange(modelProvider: string) {
     if (!operatorConfig) return;
-    void handleOperatorSave({ modelProvider, model: operatorConfig.model });
+    void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
+      '/api/v1/settings/operator-agent',
+      { modelProvider, model: operatorConfig.model },
+      setSavingOperator,
+      setOperatorSaveSuccess,
+      setOperatorConfig,
+      setOperatorMeta,
+    );
   }
 
   function handleOperatorModelChange(model: string) {
-    void handleOperatorSave({ model });
+    void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
+      '/api/v1/settings/operator-agent',
+      { model },
+      setSavingOperator,
+      setOperatorSaveSuccess,
+      setOperatorConfig,
+      setOperatorMeta,
+    );
   }
 
-  const builderProviders = builderMeta?.providers ?? [];
-  const builderModels = builderConfig ? (builderMeta?.models[builderConfig.provider] ?? []) : [];
-  const operatorProviders = operatorMeta?.providers ?? [];
-  const operatorModels = operatorConfig ? (operatorMeta?.models[operatorConfig.provider] ?? []) : [];
+  function handleCozybaseProviderChange(provider: string) {
+    if (!cozybaseMeta) return;
+    const models = cozybaseMeta.models[provider] ?? [];
+    void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
+      '/api/v1/settings/cozybase-agent',
+      { provider, model: models[0] ?? '' },
+      setSavingCozybase,
+      setCozybaseSaveSuccess,
+      setCozybaseConfig,
+      setCozybaseMeta,
+    );
+  }
+
+  function handleCozybaseModelChange(model: string) {
+    void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
+      '/api/v1/settings/cozybase-agent',
+      { model },
+      setSavingCozybase,
+      setCozybaseSaveSuccess,
+      setCozybaseConfig,
+      setCozybaseMeta,
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -186,225 +250,229 @@ export function SettingsPage() {
           <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
             正在加载设置...
           </div>
-        ) : error && !builderConfig && !operatorConfig ? (
+        ) : error && !builderConfig && !operatorConfig && !cozybaseConfig ? (
           <div className="rounded-2xl border border-[#FECACA] bg-white p-6 text-sm text-[#B91C1C]">
             加载失败：{error}
           </div>
-        ) : builderConfig && operatorConfig ? (
+        ) : builderConfig && builderMeta && operatorConfig && operatorMeta && cozybaseConfig && cozybaseMeta ? (
           <div className="max-w-2xl space-y-6">
-            <section className="rounded-2xl border border-[#E2E8F0] bg-white">
-              <div className="flex items-center gap-3 border-b border-[#E2E8F0] px-6 py-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#EEF2FF]">
-                  <Bot className="h-5 w-5 text-[#4F46E5]" />
-                </div>
-                <div>
-                  <h2 className='m-0 font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>
-                    Builder Agent 配置
-                  </h2>
-                  <p className="m-0 text-xs text-[#94A3B8]">选择 AI Agent 引擎和模型</p>
-                </div>
-                {builderSaveSuccess && (
-                  <div className="ml-auto flex items-center gap-1 text-xs font-semibold text-[#16A34A]">
-                    <Check className="h-3.5 w-3.5" />
-                    已保存
-                  </div>
-                )}
-              </div>
+            <AgentSettingsCard
+              title="Builder Agent 配置"
+              description="选择 AI Agent 引擎和模型"
+              providerDescription="选择使用哪种 AI Agent 来驱动代码生成"
+              modelDescription={`选择 ${PROVIDER_LABELS[builderConfig.provider] ?? builderConfig.provider} 使用的具体模型`}
+              config={builderConfig}
+              meta={builderMeta}
+              saving={savingBuilder}
+              saveSuccess={builderSaveSuccess}
+              error={error}
+              onProviderChange={handleBuilderProviderChange}
+              onModelChange={handleBuilderModelChange}
+            />
 
-              <div className="space-y-5 p-6">
-                {error && (
-                  <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-xs text-[#B91C1C]">
-                    {error}
-                  </div>
-                )}
+            <AgentSettingsCard
+              title="Operator Agent 配置"
+              description="选择 APP 使用页聊天使用的 Agent 引擎和模型"
+              providerDescription="选择 APP 使用阶段的聊天 Agent"
+              modelDescription={`选择 ${PROVIDER_LABELS[operatorConfig.provider] ?? operatorConfig.provider} 使用的具体模型`}
+              config={operatorConfig}
+              meta={operatorMeta}
+              saving={savingOperator}
+              saveSuccess={operatorSaveSuccess}
+              error={error}
+              onProviderChange={handleOperatorProviderChange}
+              onModelChange={handleOperatorModelChange}
+              onModelProviderChange={handleOperatorModelProviderChange}
+              onModelInputChange={(value) => setOperatorConfig((prev) => (prev ? { ...prev, model: value } : prev))}
+            />
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-[#334155]">
-                    Agent 引擎
-                  </label>
-                  <p className="m-0 text-xs text-[#94A3B8]">
-                    选择使用哪种 AI Agent 来驱动代码生成
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {builderProviders.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        disabled={savingBuilder}
-                        onClick={() => handleBuilderProviderChange(p)}
-                        className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
-                          builderConfig.provider === p
-                            ? 'border-[#4F46E5] bg-[#EEF2FF]'
-                            : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1] hover:bg-[#F8FAFC]'
-                        } ${savingBuilder ? 'opacity-60' : ''}`}
-                      >
-                        <span className="text-sm font-bold text-[#18181B]">
-                          {PROVIDER_LABELS[p] ?? p}
-                        </span>
-                        <span className="text-xs text-[#94A3B8]">
-                          {(builderMeta?.models[p] ?? []).length} 个模型可用
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="agent-model-select"
-                    className="block text-sm font-semibold text-[#334155]"
-                  >
-                    模型
-                  </label>
-                  <p className="m-0 text-xs text-[#94A3B8]">
-                    选择 {PROVIDER_LABELS[builderConfig.provider] ?? builderConfig.provider} 使用的具体模型
-                  </p>
-                  <div className="relative">
-                    <select
-                      id="agent-model-select"
-                      value={builderConfig.model}
-                      disabled={savingBuilder}
-                      onChange={(e) => handleBuilderModelChange(e.target.value)}
-                      className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${savingBuilder ? 'opacity-60' : ''}`}
-                    >
-                      {builderModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-[#E2E8F0] bg-white">
-              <div className="flex items-center gap-3 border-b border-[#E2E8F0] px-6 py-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#EEF2FF]">
-                  <Bot className="h-5 w-5 text-[#4F46E5]" />
-                </div>
-                <div>
-                  <h2 className='m-0 font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>
-                    Operator Agent 配置
-                  </h2>
-                  <p className="m-0 text-xs text-[#94A3B8]">选择 APP 使用页聊天使用的 Agent 引擎和模型</p>
-                </div>
-                {operatorSaveSuccess && (
-                  <div className="ml-auto flex items-center gap-1 text-xs font-semibold text-[#16A34A]">
-                    <Check className="h-3.5 w-3.5" />
-                    已保存
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-5 p-6">
-                {error && (
-                  <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-xs text-[#B91C1C]">
-                    {error}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-[#334155]">
-                    Agent 引擎
-                  </label>
-                  <p className="m-0 text-xs text-[#94A3B8]">
-                    选择 APP 使用阶段的聊天 Agent
-                  </p>
-                  <div className="grid grid-cols-3 gap-3">
-                    {operatorProviders.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        disabled={savingOperator}
-                        onClick={() => handleOperatorProviderChange(p)}
-                        className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
-                          operatorConfig.provider === p
-                            ? 'border-[#4F46E5] bg-[#EEF2FF]'
-                            : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1] hover:bg-[#F8FAFC]'
-                        } ${savingOperator ? 'opacity-60' : ''}`}
-                      >
-                        <span className="text-sm font-bold text-[#18181B]">
-                          {PROVIDER_LABELS[p] ?? p}
-                        </span>
-                        <span className="text-xs text-[#94A3B8]">
-                          {p === 'pi-agent-core' ? '兼容路径' : `${(operatorMeta?.models[p] ?? []).length} 个模型可用`}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {operatorConfig.provider === 'pi-agent-core' ? (
-                  <div className="space-y-5">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-[#334155]">
-                        模型提供方
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={operatorConfig.modelProvider ?? ''}
-                          disabled={savingOperator}
-                          onChange={(e) => handleOperatorModelProviderChange(e.target.value)}
-                          className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${savingOperator ? 'opacity-60' : ''}`}
-                        >
-                          {(operatorMeta?.modelProviders ?? []).map((value) => (
-                            <option key={value} value={value}>
-                              {value}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-[#334155]">
-                        模型
-                      </label>
-                      <input
-                        value={operatorConfig.model}
-                        disabled={savingOperator}
-                        onChange={(e) => setOperatorConfig((prev) => (prev ? { ...prev, model: e.target.value } : prev))}
-                        onBlur={() => handleOperatorModelChange(operatorConfig.model)}
-                        className={`h-10 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${savingOperator ? 'opacity-60' : ''}`}
-                      />
-                      <p className="m-0 text-xs text-[#94A3B8]">
-                        PI Agent 兼容路径使用自由模型字符串，由对应 model provider 解析。
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-[#334155]">
-                      模型
-                    </label>
-                    <p className="m-0 text-xs text-[#94A3B8]">
-                      选择 {PROVIDER_LABELS[operatorConfig.provider] ?? operatorConfig.provider} 使用的具体模型
-                    </p>
-                    <div className="relative">
-                      <select
-                        value={operatorConfig.model}
-                        disabled={savingOperator}
-                        onChange={(e) => handleOperatorModelChange(e.target.value)}
-                        className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${savingOperator ? 'opacity-60' : ''}`}
-                      >
-                        {operatorModels.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
+            <AgentSettingsCard
+              title="CozyBase Agent 配置"
+              description="选择平台级 CozyBase Agent 使用的引擎和模型"
+              providerDescription="选择平台统一入口 CozyBase Agent 的执行引擎"
+              modelDescription={`选择 ${PROVIDER_LABELS[cozybaseConfig.provider] ?? cozybaseConfig.provider} 使用的具体模型`}
+              config={cozybaseConfig}
+              meta={cozybaseMeta}
+              saving={savingCozybase}
+              saveSuccess={cozybaseSaveSuccess}
+              error={error}
+              onProviderChange={handleCozybaseProviderChange}
+              onModelChange={handleCozybaseModelChange}
+            />
           </div>
         ) : null}
       </main>
     </div>
   );
+}
+
+function AgentSettingsCard<TConfig extends AgentConfig>({
+  title,
+  description,
+  providerDescription,
+  modelDescription,
+  config,
+  meta,
+  saving,
+  saveSuccess,
+  error,
+  onProviderChange,
+  onModelChange,
+  onModelProviderChange,
+  onModelInputChange,
+}: AgentSettingsCardProps<TConfig>) {
+  const providerOptions = buildProviderOptions(meta.providers, meta.models);
+  const models = meta.models[config.provider] ?? [];
+  const showPiCompatFields =
+    config.provider === 'pi-agent-core'
+    && 'modelProviders' in meta
+    && Array.isArray(meta.modelProviders)
+    && typeof onModelProviderChange === 'function'
+    && typeof onModelInputChange === 'function';
+  const advancedConfig = config as unknown as AdvancedAgentConfig;
+
+  return (
+    <section className="rounded-2xl border border-[#E2E8F0] bg-white">
+      <div className="flex items-center gap-3 border-b border-[#E2E8F0] px-6 py-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#EEF2FF]">
+          <Bot className="h-5 w-5 text-[#4F46E5]" />
+        </div>
+        <div>
+          <h2 className='m-0 font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>
+            {title}
+          </h2>
+          <p className="m-0 text-xs text-[#94A3B8]">{description}</p>
+        </div>
+        {saveSuccess && (
+          <div className="ml-auto flex items-center gap-1 text-xs font-semibold text-[#16A34A]">
+            <Check className="h-3.5 w-3.5" />
+            已保存
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-5 p-6">
+        {error && (
+          <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-xs text-[#B91C1C]">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-[#334155]">
+            Agent 引擎
+          </label>
+          <p className="m-0 text-xs text-[#94A3B8]">
+            {providerDescription}
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {providerOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                disabled={saving || option.disabled}
+                onClick={() => onProviderChange(option.value)}
+                className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                  config.provider === option.value
+                    ? 'border-[#4F46E5] bg-[#EEF2FF]'
+                    : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1] hover:bg-[#F8FAFC]'
+                } ${saving || option.disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <span className="text-sm font-bold text-[#18181B]">
+                  {PROVIDER_LABELS[option.value] ?? option.value}
+                </span>
+                <span className="text-xs text-[#94A3B8]">
+                  {option.helperText}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {showPiCompatFields ? (
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-[#334155]">
+                模型提供方
+              </label>
+              <div className="relative">
+                <select
+                  value={advancedConfig.modelProvider ?? ''}
+                  disabled={saving}
+                  onChange={(e) => onModelProviderChange(e.target.value)}
+                  className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${saving ? 'opacity-60' : ''}`}
+                >
+                  {meta.modelProviders.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-[#334155]">
+                模型
+              </label>
+              <input
+                value={config.model}
+                disabled={saving}
+                onChange={(e) => onModelInputChange(e.target.value)}
+                onBlur={() => onModelChange(config.model)}
+                className={`h-10 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${saving ? 'opacity-60' : ''}`}
+              />
+              <p className="m-0 text-xs text-[#94A3B8]">
+                PI Agent 兼容路径使用自由模型字符串，由对应 model provider 解析。
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-[#334155]">
+              模型
+            </label>
+            <p className="m-0 text-xs text-[#94A3B8]">
+              {modelDescription}
+            </p>
+            <div className="relative">
+              <select
+                value={config.model}
+                disabled={saving}
+                onChange={(e) => onModelChange(e.target.value)}
+                className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${saving ? 'opacity-60' : ''}`}
+              >
+                {models.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function buildProviderOptions(
+  providers: string[],
+  models: Record<string, string[]>,
+): ProviderOption[] {
+  const ordered = [...providers];
+  if (!ordered.includes('pi-agent-core')) {
+    ordered.push('pi-agent-core');
+  }
+
+  return ordered.map((value) => ({
+    value,
+    disabled: value === 'pi-agent-core',
+    helperText:
+      value === 'pi-agent-core'
+        ? '即将支持'
+        : `${models[value]?.length ?? 0} 个模型可用`,
+  }));
 }

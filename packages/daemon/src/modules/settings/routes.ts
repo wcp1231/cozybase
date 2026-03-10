@@ -17,6 +17,14 @@ import {
   normalizeOperatorModelProvider,
   resolveEffectiveOperatorAgentConfig,
 } from './operator-agent-config';
+import {
+  getCozyBaseProviderMeta,
+  getDefaultCozyBaseModel,
+  normalizeCozyBaseAgentProvider,
+  normalizeCozyBaseModelProvider,
+  resolveEffectiveCozyBaseAgentConfig,
+  isValidCozyBaseModelForProvider,
+} from './cozybase-agent-config';
 
 export function createSettingsRoutes(platformRepo: PlatformRepository) {
   const app = new Hono();
@@ -196,6 +204,92 @@ export function createSettingsRoutes(platformRepo: PlatformRepository) {
     });
   });
 
+  app.get('/settings/cozybase-agent', (c) => {
+    const { agentProvider, modelProvider, model } = readCozyBaseAgentConfig(platformRepo);
+    return c.json({
+      data: { provider: agentProvider, modelProvider, model },
+      meta: getCozyBaseProviderMeta(),
+    });
+  });
+
+  app.put('/settings/cozybase-agent', async (c) => {
+    const body = await c.req.json<{ provider?: string; modelProvider?: string | null; model?: string }>();
+    const current = readCozyBaseAgentConfig(platformRepo);
+
+    if (body.provider !== undefined && !normalizeCozyBaseAgentProvider(body.provider)) {
+      const meta = getCozyBaseProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_PROVIDER',
+            message: `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    if (
+      body.modelProvider !== undefined &&
+      body.modelProvider !== null &&
+      !normalizeCozyBaseModelProvider(body.modelProvider)
+    ) {
+      const meta = getCozyBaseProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_MODEL_PROVIDER',
+            message: `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    if (body.model !== undefined && typeof body.model !== 'string') {
+      return c.json(
+        { error: { code: 'INVALID_MODEL', message: 'Model must be a non-empty string' } },
+        400,
+      );
+    }
+
+    const provider = normalizeCozyBaseAgentProvider(body.provider) ?? current.agentProvider;
+    const modelProvider =
+      normalizeCozyBaseModelProvider(body.modelProvider ?? undefined)
+      ?? current.modelProvider
+      ?? 'anthropic';
+    const candidateModel =
+      body.model !== undefined
+        ? body.model.trim()
+        : body.provider !== undefined && provider !== current.agentProvider
+          ? getDefaultCozyBaseModel(provider)
+          : current.model;
+
+    if (!candidateModel || !isValidCozyBaseModelForProvider(provider, candidateModel)) {
+      const meta = getCozyBaseProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_MODEL',
+            message: `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    platformRepo.transaction(() => {
+      platformRepo.settings.set('cozybase_agent.agent_provider', provider);
+      platformRepo.settings.set('cozybase_agent.model_provider', modelProvider);
+      platformRepo.settings.set('cozybase_agent.model', candidateModel);
+    });
+
+    return c.json({
+      data: { provider, modelProvider, model: candidateModel },
+      meta: getCozyBaseProviderMeta(),
+    });
+  });
+
   return app;
 }
 
@@ -213,5 +307,16 @@ function readOperatorAgentConfig(platformRepo: PlatformRepository) {
     agentProvider: platformRepo.settings.get('operator.agent_provider'),
     modelProvider: platformRepo.settings.get('operator.model_provider'),
     model: platformRepo.settings.get('operator.model'),
+  });
+}
+
+function readCozyBaseAgentConfig(platformRepo: PlatformRepository) {
+  return resolveEffectiveCozyBaseAgentConfig({
+    agentProvider: platformRepo.settings.get('cozybase_agent.agent_provider'),
+    modelProvider: platformRepo.settings.get('cozybase_agent.model_provider'),
+    model: platformRepo.settings.get('cozybase_agent.model'),
+    envAgentProvider: process.env.COZYBASE_AGENT_PROVIDER,
+    envModelProvider: process.env.COZYBASE_AGENT_MODEL_PROVIDER,
+    envModel: process.env.COZYBASE_AGENT_MODEL,
   });
 }

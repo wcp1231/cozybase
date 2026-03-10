@@ -40,6 +40,8 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
   private toolStartedAt = new Map<string, string>();
   private lastPersistMs = 0;
   private sameMsSequence = 0;
+  private lastAssistantMessage: string | null = null;
+  private readonly eventBus?: EventBus;
 
   constructor(
     appSlug: string,
@@ -53,6 +55,7 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
       runtimeStore,
       () => config.runtimeResolver?.() ?? config,
     );
+    this.eventBus = eventBus;
 
     if (eventBus) {
       this.unsubscribeReconcile = eventBus.on('app:reconciled', (data: { appSlug: string }) => {
@@ -118,11 +121,29 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
       createdAt: this.nextCreatedAt(),
     });
     this.toolStartedAt = new Map();
+    this.lastAssistantMessage = null;
   }
 
   protected afterPrompt(): void {
+    if (this.delegatedTaskId && this.eventBus) {
+      if (this.lastPromptError) {
+        this.eventBus.emit('task:failed', {
+          taskId: this.delegatedTaskId,
+          appSlug: this.appSlug,
+          error: this.lastPromptError,
+        });
+      } else {
+        this.eventBus.emit('task:completed', {
+          taskId: this.delegatedTaskId,
+          appSlug: this.appSlug,
+          summary: this.lastAssistantMessage?.trim() || `Builder task for '${this.appSlug}' completed.`,
+        });
+      }
+      this.delegatedTaskId = null;
+    }
     this.runEventBuffer = [];
     this.toolStartedAt = new Map();
+    this.lastAssistantMessage = null;
   }
 
   protected onPromptError(message: string): void {
@@ -140,6 +161,7 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
         break;
       case 'conversation.message.completed':
         if (event.role === 'assistant' && event.content) {
+          this.lastAssistantMessage = event.content;
           this.store.addMessage(this.appSlug, {
             role: 'assistant',
             content: event.content,
@@ -178,6 +200,7 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
     this.unsubscribeReconcile?.();
     this.unsubscribeReconcile = null;
     this.toolStartedAt = new Map();
+    this.lastAssistantMessage = null;
   }
 
   private trimMessageFromBuffer(messageId: string): void {

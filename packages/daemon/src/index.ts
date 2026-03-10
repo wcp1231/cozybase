@@ -2,6 +2,7 @@ import { loadConfig } from './config';
 import { createServer } from './server';
 import { writePidFile, cleanupPidFile } from './daemon-ctl';
 import type { OperatorSession } from './ai/operator/session';
+import type { CozyBaseSession } from './ai/cozybase/session';
 
 const config = loadConfig();
 const {
@@ -11,6 +12,7 @@ const {
   uiBridge,
   chatSessionManager,
   operatorSessionManager,
+  cozybaseSessionManager,
   startup,
   shutdownAgentInfra,
 } = createServer(config);
@@ -19,9 +21,10 @@ const {
 await startup;
 
 interface WsData {
-  type: 'agent-bridge' | 'chat' | 'operator';
+  type: 'agent-bridge' | 'chat' | 'operator' | 'cozybase';
   appSlug?: string;
   operatorSession?: OperatorSession;
+  cozybaseSession?: CozyBaseSession;
 }
 
 const server = Bun.serve<WsData>({
@@ -61,6 +64,13 @@ const server = Bun.serve<WsData>({
       return new Response('WebSocket upgrade failed', { status: 400 });
     }
 
+    if (url.pathname === '/api/v1/cozybase/ws') {
+      if (server.upgrade(req, { data: { type: 'cozybase' } })) {
+        return undefined as unknown as Response;
+      }
+      return new Response('WebSocket upgrade failed', { status: 400 });
+    }
+
     // All other requests go to Hono
     return app.fetch(req, server);
   },
@@ -79,6 +89,10 @@ const server = Bun.serve<WsData>({
           ws.send(JSON.stringify({ type: 'session.error', message }));
           ws.close(1011, message);
         }
+      } else if (ws.data.type === 'cozybase') {
+        const session = cozybaseSessionManager.getOrCreate();
+        ws.data.cozybaseSession = session;
+        session.connect(ws as any);
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.addSession(ws as any);
       }
@@ -105,6 +119,14 @@ const server = Bun.serve<WsData>({
             ws.send(JSON.stringify({ type: 'session.error', message: errorMessage }));
             ws.close(1011, errorMessage);
           });
+      } else if (ws.data.type === 'cozybase') {
+        const session = ws.data.cozybaseSession ?? cozybaseSessionManager.getOrCreate();
+        ws.data.cozybaseSession = session;
+        void session.handleMessage(ws as any, raw).catch((err) => {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          ws.send(JSON.stringify({ type: 'session.error', message: errorMessage }));
+          ws.close(1011, errorMessage);
+        });
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.handleMessage(ws as any, raw);
       }
@@ -116,6 +138,9 @@ const server = Bun.serve<WsData>({
       } else if (ws.data.type === 'operator' && ws.data.appSlug) {
         const session = ws.data.operatorSession ?? operatorSessionManager.get(ws.data.appSlug);
         session?.disconnect(ws as any);
+      } else if (ws.data.type === 'cozybase') {
+        const session = ws.data.cozybaseSession ?? cozybaseSessionManager.getOrCreate();
+        session.disconnect(ws as any);
       } else if (ws.data.type === 'agent-bridge') {
         uiBridge.removeSession(ws as any);
       }
@@ -143,6 +168,7 @@ console.log(`
     WS   /api/v1/agent/ws
     WS   /api/v1/chat/ws?app=<appName>
     WS   /api/v1/operator/ws?app=<appName>
+    WS   /api/v1/cozybase/ws
     POST /api/v1/ui/inspect
     *    /stable/apps/:appName/fn/:fnName
     *    /stable/apps/:appName/fn/_db/*
@@ -164,6 +190,7 @@ async function shutdown() {
   // Shutdown all chat sessions
   chatSessionManager.shutdown();
   operatorSessionManager.shutdown();
+  cozybaseSessionManager.shutdown();
 
   // Shutdown provider-owned resources (e.g. Codex MCP bridge)
   await shutdownAgentInfra?.();

@@ -1,0 +1,20 @@
+{
+  "name": "@cozybase/cozybase-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@cozybase/ai-runtime": "workspace:*",
+    "@sinclair/typebox": "^0.34.38"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

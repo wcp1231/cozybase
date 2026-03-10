@@ -29,6 +29,18 @@
         "typescript": "^5.7.0",
       },
     },
+    "packages/cozybase-agent": {
+      "name": "@cozybase/cozybase-agent",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cozybase/ai-runtime": "workspace:*",
+        "@sinclair/typebox": "^0.34.38",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/daemon": {
       "name": "@cozybase/daemon",
       "version": "0.1.0",
@@ -39,6 +51,7 @@
         "@anthropic-ai/claude-agent-sdk": "^0.2.63",
         "@cozybase/ai-runtime": "workspace:*",
         "@cozybase/builder-agent": "workspace:*",
+        "@cozybase/cozybase-agent": "workspace:*",
         "@cozybase/operator-agent": "workspace:*",
         "@cozybase/runtime": "workspace:*",
         "@cozybase/ui": "workspace:*",
@@ -196,6 +209,8 @@
     "@cozybase/ai-runtime": ["@cozybase/ai-runtime@workspace:packages/ai-runtime"],
 
     "@cozybase/builder-agent": ["@cozybase/builder-agent@workspace:packages/builder-agent"],
+
+    "@cozybase/cozybase-agent": ["@cozybase/cozybase-agent@workspace:packages/cozybase-agent"],
 
     "@cozybase/daemon": ["@cozybase/daemon@workspace:packages/daemon"],
 

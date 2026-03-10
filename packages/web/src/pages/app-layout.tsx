@@ -67,8 +67,12 @@ export function resolveChatTarget(
   mode: AppMode | null,
   appName?: string,
 ): ChatSessionTarget | null {
-  if (!mode || !appName) return null;
+  if (!mode) return null;
   const segments = pathname.split('/').filter(Boolean);
+  if (mode === 'stable' && segments.length === 1 && segments[0] === 'stable') {
+    return { kind: 'cozybase' };
+  }
+  if (!appName) return null;
   if (segments.length < 3) return null;
   if (segments[0] !== mode || segments[1] !== 'apps' || segments[2] !== appName) return null;
   if (segments[3] === 'console') return null;
@@ -356,7 +360,7 @@ export function AppLayout() {
               />
               <ChatPanel
                 kind={chatTarget.kind}
-                appName={appName}
+                appName={'appName' in chatTarget ? chatTarget.appName : undefined}
                 dismissible
                 onClose={() => setChatVisible(false)}
               />
@@ -401,7 +405,7 @@ export function AppLayout() {
           <aside className="absolute right-0 h-full w-[380px] max-w-[94vw] border-l border-[#E7EBF2] bg-white">
             <ChatPanel
               kind={chatTarget.kind}
-              appName={appName}
+              appName={'appName' in chatTarget ? chatTarget.appName : undefined}
               dismissible
               onClose={() => setChatVisible(false)}
             />

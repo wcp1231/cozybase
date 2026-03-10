@@ -6,7 +6,12 @@
  */
 
 import { create } from 'zustand';
-import { ChatClient, getBuilderChatWsUrl, getOperatorChatWsUrl } from '../lib/chat-client';
+import {
+  ChatClient,
+  getBuilderChatWsUrl,
+  getCozybaseChatWsUrl,
+  getOperatorChatWsUrl,
+} from '../lib/chat-client';
 import type { AgentEvent, SessionEvent } from '@cozybase/ai-runtime/types';
 
 // --- Message types for the UI ---
@@ -25,12 +30,12 @@ export interface ChatToolMessage {
 
 export type ChatMessage = ChatTextMessage | ChatToolMessage;
 
-export type ChatSessionKind = 'builder' | 'operator';
+export type ChatSessionKind = 'builder' | 'operator' | 'cozybase';
 
-export interface ChatSessionTarget {
-  kind: ChatSessionKind;
-  appName: string;
-}
+export type ChatSessionTarget =
+  | { kind: 'builder'; appName: string }
+  | { kind: 'operator'; appName: string }
+  | { kind: 'cozybase' };
 
 export interface ChatState {
   activeSession: ChatSessionTarget | null;
@@ -259,7 +264,9 @@ export const useChatStore = create<ChatState>((set) => ({
 
     const url = target.kind === 'builder'
       ? getBuilderChatWsUrl(target.appName)
-      : getOperatorChatWsUrl(target.appName);
+      : target.kind === 'operator'
+        ? getOperatorChatWsUrl(target.appName)
+        : getCozybaseChatWsUrl();
 
     client = new ChatClient(url, {
       onMessage: (msg) => handleMessage(set, gen, msg as WireEvent),

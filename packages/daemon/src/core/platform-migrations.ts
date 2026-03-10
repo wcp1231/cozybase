@@ -192,6 +192,30 @@ export const PLATFORM_MIGRATIONS: PlatformMigration[] = [
       `);
     },
   },
+  {
+    version: 8,
+    name: 'agent_runtime_sessions_remove_app_fk',
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE agent_runtime_sessions RENAME TO agent_runtime_sessions_old;
+
+        CREATE TABLE agent_runtime_sessions (
+          usage_type TEXT NOT NULL,
+          app_slug TEXT NOT NULL,
+          provider_kind TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (usage_type, app_slug)
+        );
+
+        INSERT INTO agent_runtime_sessions (usage_type, app_slug, provider_kind, snapshot_json, updated_at)
+        SELECT usage_type, app_slug, provider_kind, snapshot_json, updated_at
+        FROM agent_runtime_sessions_old;
+
+        DROP TABLE agent_runtime_sessions_old;
+      `);
+    },
+  },
 ];
 
 /**

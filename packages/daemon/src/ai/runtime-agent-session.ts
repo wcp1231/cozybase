@@ -27,6 +27,7 @@ type WireEvent = AgentEvent | SessionEvent;
 
 export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLike> {
   readonly appSlug: string;
+  delegatedTaskId: string | null = null;
 
   protected ws: WebSocketLike | null = null;
   protected streaming = false;
@@ -34,6 +35,7 @@ export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLi
   protected runtimeSessionPromise: Promise<AgentRuntimeSession> | null = null;
   protected runEventBuffer: WireEvent[] = [];
   protected runtimeProviderKind: string | null = null;
+  protected lastPromptError: string | null = null;
 
   constructor(
     appSlug: string,
@@ -118,6 +120,7 @@ export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLi
 
     this.streaming = true;
     this.runEventBuffer = [];
+    this.lastPromptError = null;
 
     try {
       await this.beforePrompt(text);
@@ -125,6 +128,7 @@ export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLi
       await runtimeSession.prompt(text);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      this.lastPromptError = message;
       this.sendToWs({ type: 'conversation.error', message });
       this.onPromptError(message);
     } finally {

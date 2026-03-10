@@ -17,6 +17,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
     "@cozybase/ai-runtime": "workspace:*",
     "@cozybase/builder-agent": "workspace:*",
+    "@cozybase/cozybase-agent": "workspace:*",
     "@cozybase/operator-agent": "workspace:*",
     "@cozybase/runtime": "workspace:*",
     "@cozybase/ui": "workspace:*",

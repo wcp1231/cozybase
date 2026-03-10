@@ -1,6 +1,6 @@
 import { getApiKey, getModel } from '@mariozechner/pi-ai';
 
-export const VALID_OPERATOR_AGENT_PROVIDERS = ['pi-agent-core', 'codex', 'claude-code'] as const;
+export const VALID_OPERATOR_AGENT_PROVIDERS = ['claude-code', 'codex', 'pi-agent-core'] as const;
 
 export type OperatorAgentProviderKind = (typeof VALID_OPERATOR_AGENT_PROVIDERS)[number];
 

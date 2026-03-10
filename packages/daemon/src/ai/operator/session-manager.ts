@@ -4,6 +4,7 @@ import { normalizeRuntimeSchema, type AppContext } from '@cozybase/operator-agen
 import { OperatorSession } from './session';
 import type { RuntimeSessionStore } from '../runtime-session-store';
 import type { OperatorRuntimeConfig } from './runtime-config';
+import type { EventBus } from '../../core/event-bus';
 
 export interface OperatorSessionManagerConfig {
   workspace: Workspace;
@@ -13,6 +14,7 @@ export interface OperatorSessionManagerConfig {
   stablePlatformClient: PlatformClient;
   runtimeStore: RuntimeSessionStore;
   runtimeResolver: () => OperatorRuntimeConfig;
+  eventBus?: EventBus;
 }
 
 export class OperatorSessionManager {
@@ -56,6 +58,7 @@ export class OperatorSessionManager {
       workspaceDir: this.config.workspaceDir ?? this.config.workspace.root,
       runtimeResolver: this.config.runtimeResolver,
       runtimeStore: this.config.runtimeStore,
+      eventBus: this.config.eventBus,
     });
     this.sessions.set(appSlug, session);
     return session;

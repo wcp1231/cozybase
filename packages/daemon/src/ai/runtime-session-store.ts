@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { projectHistoryFromSnapshot, type ProviderSessionSnapshot, type StoredMessage } from '@cozybase/ai-runtime';
 
-export type RuntimeSessionUsageType = 'builder' | 'operator';
+export type RuntimeSessionUsageType = 'builder' | 'operator' | 'cozybase';
 
 export interface StoredRuntimeSession {
   providerKind: string;

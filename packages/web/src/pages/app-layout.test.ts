@@ -210,7 +210,9 @@ describe('resolveChatTarget', () => {
   });
 
   test('does not show chat on non-app and console routes', () => {
-    expect(resolveChatTarget('/stable', 'stable', undefined)).toBeNull();
+    expect(resolveChatTarget('/stable', 'stable', undefined)).toEqual({
+      kind: 'cozybase',
+    });
     expect(resolveChatTarget('/stable/apps', 'stable', undefined)).toBeNull();
     expect(resolveChatTarget('/stable/settings', 'stable', undefined)).toBeNull();
     expect(resolveChatTarget('/stable/apps/orders/console', 'stable', 'orders')).toBeNull();

@@ -44,6 +44,9 @@ mock.module('../lib/chat-client', () => ({
   getOperatorChatWsUrl(appName: string) {
     return `ws://operator/${appName}`;
   },
+  getCozybaseChatWsUrl() {
+    return 'ws://cozybase';
+  },
 }));
 
 const { useChatStore } = await import('./chat-store');
@@ -240,5 +243,19 @@ describe('useChatStore', () => {
     useChatStore.getState().cancel();
 
     expect(client.sent).toEqual([]);
+  });
+
+  test('uses cozybase endpoint and shared chat payload for cozybase sessions', () => {
+    useChatStore.getState().setActiveSession({ kind: 'cozybase' });
+    const client = latestClient();
+
+    expect(client.url).toBe('ws://cozybase');
+    expect(useChatStore.getState().canCancel).toBe(false);
+
+    client.emitStatus(true);
+    useChatStore.getState().send('帮我看看有哪些应用');
+
+    expect(useChatStore.getState().messages.at(-1)).toEqual({ role: 'user', content: '帮我看看有哪些应用' });
+    expect(client.sent).toEqual([{ type: 'chat:send', message: '帮我看看有哪些应用' }]);
   });
 });

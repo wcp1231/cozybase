@@ -28,14 +28,17 @@ describe('Settings API (/api/v1/settings)', () => {
     previousEnv = {
       COZYBASE_AGENT_PROVIDER: process.env.COZYBASE_AGENT_PROVIDER,
       COZYBASE_AGENT_MODEL: process.env.COZYBASE_AGENT_MODEL,
+      COZYBASE_AGENT_MODEL_PROVIDER: process.env.COZYBASE_AGENT_MODEL_PROVIDER,
     };
     delete process.env.COZYBASE_AGENT_PROVIDER;
     delete process.env.COZYBASE_AGENT_MODEL;
+    delete process.env.COZYBASE_AGENT_MODEL_PROVIDER;
   });
 
   afterEach(() => {
     process.env.COZYBASE_AGENT_PROVIDER = previousEnv.COZYBASE_AGENT_PROVIDER;
     process.env.COZYBASE_AGENT_MODEL = previousEnv.COZYBASE_AGENT_MODEL;
+    process.env.COZYBASE_AGENT_MODEL_PROVIDER = previousEnv.COZYBASE_AGENT_MODEL_PROVIDER;
     handle?.cleanup();
   });
 
@@ -153,6 +156,42 @@ describe('Settings API (/api/v1/settings)', () => {
     expect(await res.json()).toMatchObject({
       error: {
         code: 'INVALID_MODEL_PROVIDER',
+      },
+    });
+  });
+
+  test('returns the effective default cozybase provider and model when nothing is stored', async () => {
+    handle = createTestWorkspace();
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request('/api/v1/settings/cozybase-agent');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        provider: 'claude-code',
+        modelProvider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+      },
+    });
+  });
+
+  test('cozybase agent falls back from legacy claude-haiku to the supported default model', async () => {
+    handle = createTestWorkspace();
+    const { app, workspace } = createServer(createTestConfig(handle.root));
+
+    workspace.getPlatformRepo().transaction(() => {
+      workspace.getPlatformRepo().settings.set('cozybase_agent.agent_provider', 'claude-code');
+      workspace.getPlatformRepo().settings.set('cozybase_agent.model_provider', 'anthropic');
+      workspace.getPlatformRepo().settings.set('cozybase_agent.model', 'claude-haiku');
+    });
+
+    const res = await app.request('/api/v1/settings/cozybase-agent');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        provider: 'claude-code',
+        modelProvider: 'anthropic',
+        model: 'claude-sonnet-4-6',
       },
     });
   });

@@ -96,3 +96,7 @@ export function getBuilderChatWsUrl(appName: string): string {
 export function getOperatorChatWsUrl(appName: string): string {
   return `${getWebSocketBaseUrl()}/api/v1/operator/ws?app=${encodeURIComponent(appName)}`;
 }
+
+export function getCozybaseChatWsUrl(): string {
+  return `${getWebSocketBaseUrl()}/api/v1/cozybase/ws`;
+}
