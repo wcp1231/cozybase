@@ -1,5 +1,5 @@
 import { Type } from '@sinclair/typebox';
-import { callJsonApiDetailed } from '../http';
+import { callJsonApiDetailed, encodeJsonBody } from '../http';
 import type { CallApiFn } from '../types';
 import type { OperatorActionDefinition } from '../actions';
 import { bindAction } from './shared';
@@ -33,7 +33,7 @@ export const callFunctionAction: OperatorActionDefinition<typeof CallFunctionSch
         headers: input.body === undefined ? undefined : {
           'Content-Type': 'application/json',
         },
-        body: input.body === undefined ? undefined : JSON.stringify(input.body),
+        body: encodeJsonBody(input.body),
       },
     );
     return {

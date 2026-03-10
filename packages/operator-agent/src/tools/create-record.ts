@@ -1,5 +1,5 @@
 import { Type } from '@sinclair/typebox';
-import { callJsonApi } from '../http';
+import { callJsonApi, encodeJsonBody } from '../http';
 import type { CallApiFn } from '../types';
 import type { OperatorActionDefinition } from '../actions';
 import { bindAction } from './shared';
@@ -22,7 +22,7 @@ export const createRecordAction: OperatorActionDefinition<typeof CreateRecordSch
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input.data),
+        body: encodeJsonBody(input.data),
       },
     );
     return { record };

@@ -81,6 +81,19 @@ function toZodSchema(schema: Record<string, unknown>): z.ZodTypeAny {
     if (schema.additionalProperties) {
       return z.record(z.string(), toZodSchema(schema.additionalProperties as Record<string, unknown>));
     }
+    if (schema.patternProperties && typeof schema.patternProperties === 'object') {
+      const entries = Object.values(schema.patternProperties as Record<string, Record<string, unknown>>);
+      if (entries.length === 1) {
+        return z.record(z.string(), toZodSchema(entries[0] ?? {}));
+      }
+      if (entries.length > 1) {
+        const options = entries.map((entry) => toZodSchema(entry ?? {}));
+        const [first, second, ...rest] = options;
+        if (first && second) {
+          return z.record(z.string(), z.union([first, second, ...rest]));
+        }
+      }
+    }
     return z.object(toZodRawShapeFromSchema(schema));
   }
 

@@ -125,6 +125,26 @@ export function buildQueryString(params: Record<string, string | number | undefi
   return built ? `?${built}` : '';
 }
 
+export function encodeJsonBody(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      try {
+        JSON.parse(trimmed);
+        return trimmed;
+      } catch {
+        // Fall through and encode as a JSON string value.
+      }
+    }
+  }
+
+  return JSON.stringify(value);
+}
+
 export function normalizeRuntimeSchema(schema: Record<string, RuntimeSchemaTable>): AppTableSchema[] {
   return Object.entries(schema).map(([tableName, table]) => ({
     name: tableName,

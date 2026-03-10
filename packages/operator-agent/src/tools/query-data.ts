@@ -18,7 +18,7 @@ export const queryDataAction: OperatorActionDefinition<typeof QueryDataSchema> =
   schema: QueryDataSchema,
   async execute({ callApi }, input) {
     const query = buildQueryString({
-      where: input.where,
+      where: normalizeWhereCondition(input.where),
       select: input.select,
       order: input.order,
       limit: input.limit,
@@ -44,4 +44,41 @@ export const queryDataAction: OperatorActionDefinition<typeof QueryDataSchema> =
 
 export function createQueryDataTool(callApi: CallApiFn) {
   return bindAction(queryDataAction, callApi);
+}
+
+function normalizeWhereCondition(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return value;
+  }
+
+  if (/^[A-Za-z_][\w.]*=(eq|neq|gt|gte|lt|lte|like|ilike|in|is)\./.test(trimmed)) {
+    return trimmed;
+  }
+
+  const match = trimmed.match(/^([A-Za-z_][\w.]*)\s*=\s*(.+)$/s);
+  if (!match) {
+    return trimmed;
+  }
+
+  const [, field, rawValue] = match;
+  const normalizedValue = normalizeEqualityValue(rawValue.trim());
+  return normalizedValue === null ? trimmed : `${field}=eq.${normalizedValue}`;
+}
+
+function normalizeEqualityValue(rawValue: string): string | null {
+  const quoted = rawValue.match(/^'(.*)'$/s) ?? rawValue.match(/^"(.*)"$/s);
+  if (quoted) {
+    return quoted[1] ?? '';
+  }
+
+  if (/^-?\d+(\.\d+)?$/.test(rawValue)) {
+    return rawValue;
+  }
+
+  if (/^(true|false|null)$/i.test(rawValue)) {
+    return rawValue.toLowerCase();
+  }
+
+  return null;
 }
