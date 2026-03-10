@@ -8,6 +8,9 @@
         "mkdir": true,
         "./node_modules/.bin/tsc": true,
         "node_modules/.bin/tsc": true,
-        "node_modules/.bin/openspec": true
+        "node_modules/.bin/openspec": true,
+        "npm pack": true,
+        "tar": true,
+        "printf": true
     }
 }

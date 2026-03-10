@@ -97,4 +97,63 @@ describe('Settings API (/api/v1/settings)', () => {
     expect(workspace.getPlatformRepo().settings.get('agent.provider')).toBe('codex');
     expect(workspace.getPlatformRepo().settings.get('agent.model')).toBe('gpt-5.3-codex');
   });
+
+  test('returns the effective default operator provider and model when nothing is stored', async () => {
+    handle = createTestWorkspace();
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request('/api/v1/settings/operator-agent');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        provider: 'pi-agent-core',
+        modelProvider: 'anthropic',
+        model: 'claude-sonnet-4-20250514',
+      },
+    });
+  });
+
+  test('stores operator settings in platform settings', async () => {
+    handle = createTestWorkspace();
+    const { app, workspace } = createServer(createTestConfig(handle.root));
+
+    const putRes = await app.request(
+      jsonReq('/api/v1/settings/operator-agent', 'PUT', {
+        provider: 'codex',
+      }),
+    );
+
+    expect(putRes.status).toBe(200);
+    expect(await putRes.json()).toMatchObject({
+      data: {
+        provider: 'codex',
+        modelProvider: null,
+        model: 'gpt-5.4',
+      },
+    });
+
+    expect(workspace.getPlatformRepo().settings.get('operator.agent_provider')).toBe('codex');
+    expect(workspace.getPlatformRepo().settings.get('operator.model')).toBe('gpt-5.4');
+    expect(workspace.getPlatformRepo().settings.get('operator.model_provider')).toBeNull();
+  });
+
+  test('validates pi-agent-core operator model provider and model', async () => {
+    handle = createTestWorkspace();
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request(
+      jsonReq('/api/v1/settings/operator-agent', 'PUT', {
+        provider: 'pi-agent-core',
+        modelProvider: 'invalid',
+        model: 'gpt-4o-mini',
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: 'INVALID_MODEL_PROVIDER',
+      },
+    });
+  });
 });

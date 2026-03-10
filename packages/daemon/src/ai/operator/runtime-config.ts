@@ -1,11 +1,16 @@
 import type { AgentProviderRegistry, AgentRuntimeProvider } from '@cozybase/ai-runtime';
-import { getApiKey, getModel, getProviders, type KnownProvider } from '@mariozechner/pi-ai';
+import { getModel } from '@mariozechner/pi-ai';
 import type { Workspace } from '../../core/workspace';
 import { resolveEffectiveAgentConfig } from '../../modules/settings/agent-config';
-
-export const VALID_OPERATOR_AGENT_PROVIDERS = ['pi-agent-core', 'codex', 'claude-code'] as const;
-
-export type OperatorAgentProviderKind = (typeof VALID_OPERATOR_AGENT_PROVIDERS)[number];
+import {
+  DEFAULT_OPERATOR_MODEL_PROVIDER,
+  DEFAULT_PI_AGENT_MODEL,
+  type OperatorAgentProviderKind,
+  getDefaultOperatorModel,
+  normalizeOperatorAgentProvider,
+  resolveEffectiveOperatorAgentConfig,
+  resolvePiApiKey,
+} from '../../modules/settings/operator-agent-config';
 
 export interface OperatorRuntimeConfig {
   agentProvider: AgentRuntimeProvider;
@@ -14,11 +19,6 @@ export interface OperatorRuntimeConfig {
   toolMode: 'native' | 'mcp';
   getApiKey?: () => string | undefined;
 }
-
-const DEFAULT_MODEL_PROVIDER = 'anthropic';
-const DEFAULT_PI_AGENT_MODEL = 'claude-sonnet-4-20250514';
-const DEFAULT_CLAUDE_CODE_MODEL = 'claude-sonnet-4-6';
-const DEFAULT_CODEX_MODEL = 'gpt-5.4';
 
 const PROVIDER_REGISTRY_KIND: Record<OperatorAgentProviderKind, string> = {
   'pi-agent-core': 'pi-agent-core',
@@ -38,23 +38,14 @@ export function resolveOperatorRuntime(
 ): OperatorRuntimeConfig {
   workspace.load();
 
-  const rawAgentProvider = workspace.config.operator?.agent_provider;
-  const legacyProvider = workspace.config.operator?.provider?.trim();
-  let configuredAgentProvider = normalizeAgentProvider(rawAgentProvider);
+  const platformRepo = workspace.getPlatformRepo();
+  const storedAgentProvider = platformRepo.settings.get('operator.agent_provider');
+  const storedModelProvider = platformRepo.settings.get('operator.model_provider');
+  const storedModel = platformRepo.settings.get('operator.model');
+  let configuredAgentProvider = normalizeOperatorAgentProvider(storedAgentProvider);
   const toolsDisabled =
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === '1' ||
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === 'true';
-
-  if (!configuredAgentProvider) {
-    const legacyAgentProvider = normalizeAgentProvider(legacyProvider);
-    if (legacyAgentProvider) {
-      configuredAgentProvider = legacyAgentProvider;
-      console.warn(
-        '[operator] workspace.yaml uses deprecated operator.provider for agent selection; ' +
-          'treating it as operator.agent_provider.',
-      );
-    }
-  }
 
   if (!configuredAgentProvider && toolsDisabled) {
     configuredAgentProvider = resolveDebugOperatorProviderFromBuilder(workspace);
@@ -65,13 +56,36 @@ export function resolveOperatorRuntime(
     configuredAgentProvider,
     Boolean(configuredAgentProvider),
   );
-  const modelProvider = resolveModelProvider(workspace, providerKind, legacyProvider);
+  const hasStoredOperatorConfig = Boolean(storedAgentProvider || storedModelProvider || storedModel);
+  let effectiveConfig = resolveEffectiveOperatorAgentConfig({
+    agentProvider: storedAgentProvider,
+    modelProvider: storedModelProvider,
+    model: storedModel,
+  });
+
+  if (
+    !hasStoredOperatorConfig &&
+    toolsDisabled &&
+    configuredAgentProvider &&
+    configuredAgentProvider !== 'pi-agent-core'
+  ) {
+    const builder = resolveEffectiveAgentConfig({
+      storedProvider: workspace.getPlatformRepo().settings.get('agent.provider'),
+      storedModel: workspace.getPlatformRepo().settings.get('agent.model'),
+      envProvider: process.env.COZYBASE_AGENT_PROVIDER,
+      envModel: process.env.COZYBASE_AGENT_MODEL,
+    });
+    effectiveConfig = {
+      agentProvider: configuredAgentProvider,
+      modelProvider: null,
+      model: builder.model,
+    };
+  }
   const registryProvider = providerRegistry.require(PROVIDER_REGISTRY_KIND[providerKind]);
 
   if (providerKind === 'pi-agent-core') {
-    const configuredModel = workspace.config.operator?.model?.trim();
-    const modelName = configuredModel || DEFAULT_PI_AGENT_MODEL;
-    const resolvedProvider = modelProvider ?? DEFAULT_MODEL_PROVIDER;
+    const modelName = effectiveConfig.model || DEFAULT_PI_AGENT_MODEL;
+    const resolvedProvider = effectiveConfig.modelProvider ?? DEFAULT_OPERATOR_MODEL_PROVIDER;
 
     try {
       return {
@@ -79,74 +93,30 @@ export function resolveOperatorRuntime(
         providerKind,
         model: getModel(resolvedProvider, modelName as never),
         toolMode: PROVIDER_TOOL_MODE[providerKind],
-        getApiKey: () => getApiKey(resolvedProvider),
+        getApiKey: () => resolvePiApiKey(resolvedProvider),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
         `[operator] Invalid operator model config provider='${resolvedProvider}' model='${modelName}'. ` +
-          `Falling back to ${DEFAULT_MODEL_PROVIDER}/${DEFAULT_PI_AGENT_MODEL}. ${message}`,
+          `Falling back to ${DEFAULT_OPERATOR_MODEL_PROVIDER}/${DEFAULT_PI_AGENT_MODEL}. ${message}`,
       );
       return {
         agentProvider: registryProvider,
         providerKind,
-        model: getModel(DEFAULT_MODEL_PROVIDER, DEFAULT_PI_AGENT_MODEL),
+        model: getModel(DEFAULT_OPERATOR_MODEL_PROVIDER, DEFAULT_PI_AGENT_MODEL as never),
         toolMode: PROVIDER_TOOL_MODE[providerKind],
-        getApiKey: () => getApiKey(DEFAULT_MODEL_PROVIDER),
+        getApiKey: () => resolvePiApiKey(DEFAULT_OPERATOR_MODEL_PROVIDER),
       };
     }
   }
 
-  const configuredModel = workspace.config.operator?.model?.trim();
   return {
     agentProvider: registryProvider,
     providerKind,
-    model: configuredModel || getDefaultModel(providerKind),
+    model: effectiveConfig.model || getDefaultOperatorModel(providerKind),
     toolMode: PROVIDER_TOOL_MODE[providerKind],
   };
-}
-
-function normalizeAgentProvider(value: string | undefined): OperatorAgentProviderKind | null {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-  if (normalized === 'claude') {
-    return 'claude-code';
-  }
-  if (VALID_OPERATOR_AGENT_PROVIDERS.includes(normalized as OperatorAgentProviderKind)) {
-    return normalized as OperatorAgentProviderKind;
-  }
-  console.warn(
-    `[operator] Unsupported operator.agent_provider='${value}'. ` +
-      `Falling back to 'pi-agent-core'.`,
-  );
-  return null;
-}
-
-function resolveModelProvider(
-  workspace: Workspace,
-  providerKind: OperatorAgentProviderKind,
-  legacyProvider: string | undefined,
-): KnownProvider | undefined {
-  if (providerKind !== 'pi-agent-core') {
-    return undefined;
-  }
-
-  const configuredModelProvider = workspace.config.operator?.model_provider?.trim();
-  const legacyLooksLikeAgentProvider = Boolean(normalizeAgentProvider(legacyProvider));
-  if (!configuredModelProvider && legacyProvider && !legacyLooksLikeAgentProvider) {
-    console.warn(
-      '[operator] workspace.yaml uses deprecated operator.provider; ' +
-        'treating it as operator.model_provider for pi-agent-core.',
-    );
-  }
-
-  const candidate = configuredModelProvider || (legacyLooksLikeAgentProvider ? undefined : legacyProvider);
-  if (candidate && getProviders().includes(candidate as KnownProvider)) {
-    return candidate as KnownProvider;
-  }
-  return DEFAULT_MODEL_PROVIDER;
 }
 
 function resolveAvailableProviderKind(
@@ -170,13 +140,6 @@ function resolveAvailableProviderKind(
     );
     return 'pi-agent-core';
   }
-}
-
-function getDefaultModel(providerKind: Exclude<OperatorAgentProviderKind, 'pi-agent-core'>): string {
-  if (providerKind === 'codex') {
-    return DEFAULT_CODEX_MODEL;
-  }
-  return DEFAULT_CLAUDE_CODE_MODEL;
 }
 
 function resolveDebugOperatorProviderFromBuilder(workspace: Workspace): OperatorAgentProviderKind {

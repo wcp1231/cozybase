@@ -8,6 +8,15 @@ import {
   isValidModelForProvider,
   resolveEffectiveAgentConfig,
 } from './agent-config';
+import {
+  getDefaultOperatorModel,
+  getOperatorProviderMeta,
+  isValidOperatorModelForProvider,
+  isValidPiAgentModel,
+  normalizeOperatorAgentProvider,
+  normalizeOperatorModelProvider,
+  resolveEffectiveOperatorAgentConfig,
+} from './operator-agent-config';
 
 export function createSettingsRoutes(platformRepo: PlatformRepository) {
   const app = new Hono();
@@ -72,6 +81,121 @@ export function createSettingsRoutes(platformRepo: PlatformRepository) {
     });
   });
 
+  app.get('/settings/operator-agent', (c) => {
+    const { agentProvider, modelProvider, model } = readOperatorAgentConfig(platformRepo);
+    return c.json({
+      data: { provider: agentProvider, modelProvider, model },
+      meta: getOperatorProviderMeta(),
+    });
+  });
+
+  app.put('/settings/operator-agent', async (c) => {
+    const body = await c.req.json<{ provider?: string; modelProvider?: string | null; model?: string }>();
+    const current = readOperatorAgentConfig(platformRepo);
+
+    if (body.provider !== undefined && !normalizeOperatorAgentProvider(body.provider)) {
+      const meta = getOperatorProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_PROVIDER',
+            message: `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    if (
+      body.modelProvider !== undefined &&
+      body.modelProvider !== null &&
+      !normalizeOperatorModelProvider(body.modelProvider)
+    ) {
+      const meta = getOperatorProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_MODEL_PROVIDER',
+            message: `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    if (body.model !== undefined && typeof body.model !== 'string') {
+      return c.json(
+        { error: { code: 'INVALID_MODEL', message: 'Model must be a non-empty string' } },
+        400,
+      );
+    }
+
+    const provider = normalizeOperatorAgentProvider(body.provider) ?? current.agentProvider;
+    const providerChanged = provider !== current.agentProvider;
+    const modelProvider =
+      provider === 'pi-agent-core'
+        ? normalizeOperatorModelProvider(body.modelProvider ?? undefined) ??
+          (providerChanged ? null : current.modelProvider)
+        : null;
+    const candidateModel =
+      body.model !== undefined
+        ? body.model.trim()
+        : providerChanged
+          ? getDefaultOperatorModel(provider)
+          : current.model;
+
+    if (provider === 'pi-agent-core') {
+      const resolvedModelProvider = modelProvider ?? current.modelProvider ?? 'anthropic';
+      if (!candidateModel || !isValidPiAgentModel(resolvedModelProvider, candidateModel)) {
+        return c.json(
+          {
+            error: {
+              code: 'INVALID_MODEL',
+              message:
+                `Invalid model for provider '${provider}' and model provider '${resolvedModelProvider}'.`,
+            },
+          },
+          400,
+        );
+      }
+
+      platformRepo.transaction(() => {
+        platformRepo.settings.set('operator.agent_provider', provider);
+        platformRepo.settings.set('operator.model_provider', resolvedModelProvider);
+        platformRepo.settings.set('operator.model', candidateModel);
+      });
+
+      return c.json({
+        data: { provider, modelProvider: resolvedModelProvider, model: candidateModel },
+        meta: getOperatorProviderMeta(),
+      });
+    }
+
+    if (!candidateModel || !isValidOperatorModelForProvider(provider, candidateModel)) {
+      const meta = getOperatorProviderMeta();
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_MODEL',
+            message: `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
+          },
+        },
+        400,
+      );
+    }
+
+    platformRepo.transaction(() => {
+      platformRepo.settings.set('operator.agent_provider', provider);
+      platformRepo.settings.delete('operator.model_provider');
+      platformRepo.settings.set('operator.model', candidateModel);
+    });
+
+    return c.json({
+      data: { provider, modelProvider: null, model: candidateModel },
+      meta: getOperatorProviderMeta(),
+    });
+  });
+
   return app;
 }
 
@@ -81,5 +205,13 @@ function readAgentConfig(platformRepo: PlatformRepository) {
     storedModel: platformRepo.settings.get('agent.model'),
     envProvider: process.env.COZYBASE_AGENT_PROVIDER,
     envModel: process.env.COZYBASE_AGENT_MODEL,
+  });
+}
+
+function readOperatorAgentConfig(platformRepo: PlatformRepository) {
+  return resolveEffectiveOperatorAgentConfig({
+    agentProvider: platformRepo.settings.get('operator.agent_provider'),
+    modelProvider: platformRepo.settings.get('operator.model_provider'),
+    model: platformRepo.settings.get('operator.model'),
   });
 }
