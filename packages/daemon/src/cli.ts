@@ -32,6 +32,7 @@ function printHelp() {
       stop              Stop the running daemon
       restart           Restart the daemon
       status            Show daemon status
+    acp                 Start the ACP server (stdio)
     mcp                 Start the MCP server (stdio)
     operator-mcp        Start the Operator MCP server (stdio, app-scoped)
     init                Initialize Agent Workspace (AGENTS.md, Skills)
@@ -85,6 +86,12 @@ switch (command) {
   case 'mcp':
     await import('./mcp/mcp-entry');
     break;
+
+  case 'acp': {
+    const { runAcpCli } = await import('./acp/acp-entry');
+    await runAcpCli();
+    break;
+  }
 
   case 'operator-mcp':
     await import('./ai/operator/mcp-entry');
