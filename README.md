@@ -84,7 +84,7 @@ What the agent does behind the scenes:
 If you want to use your own coding agent instead of the built-in chat, Cozybase also exposes the same workflow over MCP:
 
 ```bash
-bun run mcp
+bun run builder-mcp
 bun packages/daemon/src/cli.ts init --apps-dir ./agent
 ```
 

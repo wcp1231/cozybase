@@ -33,10 +33,7 @@ import {
   resolveEffectiveAgentConfig,
   type AgentProviderKind,
 } from '../modules/settings/agent-config';
-import { resolveDaemonEntryPath } from '../runtime-paths';
-import { startInProcessMcpHttpBridge, type InProcessMcpHttpBridge } from '../mcp/http-bridge';
-
-type CodexMcpMode = 'http' | 'stdio';
+import { buildBuilderCodexMcpServerConfig } from './codex-mcp-config';
 
 type ProviderOptionsFactory = (ctx: {
   appSlug: string;
@@ -114,34 +111,8 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
   providerRegistry.register(new CodexProvider());
   providerRegistry.register(new PiAgentCoreProvider());
 
-  const codexMcpMode = resolveCodexMcpMode(process.env.COZYBASE_CODEX_MCP_MODE);
   const codexApprovalPolicy = process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never';
   const codexSandboxMode = process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write';
-  const initialBuilderConfig = resolveBuilderConfig(deps.workspace);
-
-  let codexHttpBridge: InProcessMcpHttpBridge | null = null;
-  let codexHttpBridgeFailed =
-    initialBuilderConfig.provider === 'codex' && codexMcpMode === 'http';
-
-  const codexBridgeStartup =
-    initialBuilderConfig.provider === 'codex' && codexMcpMode === 'http'
-      ? startInProcessMcpHttpBridge({
-          backend: localBackend,
-          appsDir: join(agentDir, 'apps'),
-        })
-          .then((bridge) => {
-            codexHttpBridge = bridge;
-            codexHttpBridgeFailed = false;
-            console.log(`Codex MCP bridge ready at ${bridge.url}`);
-          })
-          .catch((err) => {
-            codexHttpBridgeFailed = true;
-            console.error(
-              'Failed to start in-process MCP HTTP bridge. Falling back to stdio MCP for Codex:',
-              err,
-            );
-          })
-      : Promise.resolve();
 
   const buildProviderOptionsFactory =
     (providerKind: AgentProviderKind): ProviderOptionsFactory =>
@@ -182,10 +153,7 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
         return { codexConfig: { ...baseCodexConfig, mcp_servers: {} } };
       }
 
-      const mcpServerConfig = buildCodexMcpServerConfig({
-        codexMcpMode,
-        bridge: codexHttpBridge,
-        bridgeFailed: codexHttpBridgeFailed,
+      const mcpServerConfig = buildBuilderCodexMcpServerConfig({
         workspaceDir: deps.config.workspaceDir,
         agentDir,
       });
@@ -254,14 +222,9 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
     operatorSessionManager,
     cozybaseSessionManager,
     resolveBuilderRuntime,
-    startup: Promise.all([deps.runtimeStartup, codexBridgeStartup]).then(() => undefined),
+    startup: deps.runtimeStartup.then(() => undefined),
     shutdown: async () => {
       deps.scheduleManager.shutdown();
-      if (codexHttpBridge) {
-        await codexHttpBridge.close().catch((err) => {
-          console.error('Failed to close Codex MCP bridge:', err);
-        });
-      }
       for (const provider of providerRegistry.list()) {
         provider.dispose();
       }
@@ -299,46 +262,4 @@ function pathExists(path: string): boolean {
   } catch {
     return false;
   }
-}
-
-function resolveCodexMcpMode(value: string | undefined): CodexMcpMode {
-  return value?.toLowerCase() === 'stdio' ? 'stdio' : 'http';
-}
-
-function buildCodexMcpServerConfig(params: {
-  codexMcpMode: CodexMcpMode;
-  bridge: InProcessMcpHttpBridge | null;
-  bridgeFailed: boolean;
-  workspaceDir: string;
-  agentDir: string;
-}) {
-  const cliPath = resolveDaemonEntryPath();
-  const stdioConfig = {
-    type: 'stdio',
-    command: 'bun',
-    args: [
-      cliPath,
-      'mcp',
-      '--workspace',
-      params.workspaceDir,
-      '--apps-dir',
-      join(params.agentDir, 'apps'),
-    ],
-  };
-
-  if (params.codexMcpMode === 'stdio') {
-    return stdioConfig;
-  }
-
-  if (params.bridge && !params.bridgeFailed) {
-    return {
-      type: 'streamable_http',
-      url: params.bridge.url,
-      http_headers: {
-        Authorization: `Bearer ${params.bridge.bearerToken}`,
-      },
-    };
-  }
-
-  return stdioConfig;
 }

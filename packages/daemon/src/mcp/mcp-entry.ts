@@ -1,11 +1,11 @@
 /**
- * MCP CLI Entry Point — `cozybase mcp`
+ * Builder MCP CLI Entry Point — `cozybase builder-mcp`
  *
  * Starts an MCP Server over stdio, connecting AI Agents to cozybase.
  *
  * Usage:
- *   cozybase mcp --apps-dir /path/to/workspace
- *   cozybase mcp --url http://homelab:2765 --apps-dir /path/to/workspace
+ *   cozybase builder-mcp --apps-dir /path/to/workspace
+ *   cozybase builder-mcp --url http://homelab:2765 --apps-dir /path/to/workspace
  *
  * Connects to a running cozybase daemon via HTTP.
  * When --url is provided, connects to the specified daemon.
@@ -67,9 +67,9 @@ async function createBackend(config: {
   if (!remoteUrl) {
     console.error(
       'No running cozybase daemon detected.\n\n' +
-      'To use cozybase MCP, either:\n' +
+      'To use cozybase Builder MCP, either:\n' +
       '  1. Start the daemon:  cozybase daemon start\n' +
-      '  2. Specify a remote daemon URL:  cozybase mcp --url http://host:port\n',
+      '  2. Specify a remote daemon URL:  cozybase builder-mcp --url http://host:port\n',
     );
     process.exit(1);
   }

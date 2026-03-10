@@ -320,6 +320,26 @@ export function createServer(config: Config) {
     runtimeStartup,
   });
 
+  app.post('/internal/cozybase/actions/:actionName', async (c) => {
+    const actionName = c.req.param('actionName');
+    if (!actionName) {
+      throw new BadRequestError('actionName is required');
+    }
+
+    let input: unknown = {};
+    const body = await c.req.text();
+    if (body.trim().length > 0) {
+      try {
+        input = JSON.parse(body);
+      } catch {
+        throw new BadRequestError('Invalid JSON body');
+      }
+    }
+
+    const result = await cozybaseSessionManager.executeAction(actionName, input);
+    return c.json({ data: result });
+  });
+
   // Wire session cleanup so app delete/rename cleans up both agent types.
   appManager.setSessionCleanup({
     remove(appSlug: string) {

@@ -7,15 +7,10 @@ import {
 } from '@cozybase/operator-agent';
 import { RuntimeAgentSession } from '../runtime-agent-session';
 import type { RuntimeSessionStore } from '../runtime-session-store';
-import { createOperatorMcpServer } from './mcp-server';
 import type { OperatorRuntimeConfig } from './runtime-config';
 import { createOperatorSdkMcpServer } from './sdk-mcp-server';
-import {
-  startInProcessMcpHttpBridgeWithFactory,
-  type InProcessMcpHttpBridge,
-} from '../../mcp/http-bridge';
-import { resolveBunExecutable, resolveDaemonEntryPath } from '../../runtime-paths';
 import type { EventBus } from '../../core/event-bus';
+import { buildOperatorCodexMcpServerConfig } from '../codex-mcp-config';
 
 interface WebSocketLike {
   send(data: string): void;
@@ -39,7 +34,6 @@ export interface OperatorSessionConfig {
 export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> {
   private appContext: AppContext | null = null;
   private appContextPromise: Promise<AppContext> | null = null;
-  private mcpBridge: InProcessMcpHttpBridge | null = null;
   private readonly toolsDisabled =
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === '1' ||
     process.env.COZYBASE_OPERATOR_DISABLE_TOOLS === 'true';
@@ -113,12 +107,6 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
     this.appContextPromise = null;
     this.appContext = null;
     this.lastAssistantMessage = null;
-    if (this.mcpBridge) {
-      void this.mcpBridge.close().catch((err) => {
-        console.error(`[operator] Failed to close MCP bridge for '${this.appSlug}':`, err);
-      });
-      this.mcpBridge = null;
-    }
   }
 
   private resolveToolMode(runtime: OperatorRuntimeConfig): AgentToolMode {
@@ -166,51 +154,10 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
   }
 
   private async buildCodexOperatorMcpServerConfig(): Promise<Record<string, unknown>> {
-    const mode = resolveOperatorCodexMcpMode(process.env.COZYBASE_OPERATOR_CODEX_MCP_MODE);
-    if (mode === 'http') {
-      try {
-        const bridge = await this.ensureMcpBridge();
-        return {
-          type: 'streamable_http',
-          url: bridge.url,
-          http_headers: {
-            Authorization: `Bearer ${bridge.bearerToken}`,
-          },
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(
-          `[operator] Failed to start Operator MCP HTTP bridge for '${this.appSlug}'. Falling back to stdio MCP. ${message}`,
-        );
-      }
-    }
-
-    const cliPath = resolveDaemonEntryPath();
-    const command = resolveBunExecutable();
-    return {
-      type: 'stdio',
-      command,
-      args: [
-        cliPath,
-        'operator-mcp',
-        '--workspace',
-        this.config.workspaceDir,
-        '--app',
-        this.appSlug,
-      ],
-    };
-  }
-
-  private async ensureMcpBridge(): Promise<InProcessMcpHttpBridge> {
-    if (this.mcpBridge) {
-      return this.mcpBridge;
-    }
-
-    this.mcpBridge = await startInProcessMcpHttpBridgeWithFactory({
-      basePath: `/internal/operator/${encodeURIComponent(this.appSlug)}/mcp`,
-      createServer: () => createOperatorMcpServer(this.config.callApi),
+    return buildOperatorCodexMcpServerConfig({
+      workspaceDir: this.config.workspaceDir,
+      appSlug: this.appSlug,
     });
-    return this.mcpBridge;
   }
 
   private async ensureAppContext(): Promise<AppContext> {
@@ -242,8 +189,4 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
       this.lastAssistantMessage = event.content;
     }
   }
-}
-
-function resolveOperatorCodexMcpMode(value: string | undefined): 'http' | 'stdio' {
-  return value?.toLowerCase() === 'http' ? 'http' : 'stdio';
 }

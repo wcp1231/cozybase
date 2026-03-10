@@ -33,8 +33,9 @@ function printHelp() {
       restart           Restart the daemon
       status            Show daemon status
     acp                 Start the ACP server (stdio)
-    mcp                 Start the MCP server (stdio)
+    builder-mcp        Start the Builder MCP server (stdio)
     operator-mcp        Start the Operator MCP server (stdio, app-scoped)
+    cozybase-mcp       Start the CozyBase MCP server (stdio)
     init                Initialize Agent Workspace (AGENTS.md, Skills)
 
   Options:
@@ -83,7 +84,7 @@ switch (command) {
     await handleDaemon(args.slice(1));
     break;
 
-  case 'mcp':
+  case 'builder-mcp':
     await import('./mcp/mcp-entry');
     break;
 
@@ -95,6 +96,10 @@ switch (command) {
 
   case 'operator-mcp':
     await import('./ai/operator/mcp-entry');
+    break;
+
+  case 'cozybase-mcp':
+    await import('./ai/cozybase/mcp-entry');
     break;
 
   case 'init': {

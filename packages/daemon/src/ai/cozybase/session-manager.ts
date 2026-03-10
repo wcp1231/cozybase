@@ -2,6 +2,7 @@ import { extractAppInfo, deduplicateSlug } from '@cozybase/builder-agent';
 import type {
   AgentProviderRegistry,
 } from '@cozybase/ai-runtime';
+import { getCozyBaseActions } from '@cozybase/cozybase-agent';
 import type {
   AppDetail,
   AppLifecycleResult,
@@ -19,12 +20,12 @@ import type { AppManager } from '../../modules/apps/manager';
 import type { RuntimeSessionStore } from '../runtime-session-store';
 import type { ChatSessionManager } from '../builder/session-manager';
 import type { OperatorSessionManager } from '../operator/session-manager';
-import { startInProcessMcpHttpBridgeWithFactory, type InProcessMcpHttpBridge } from '../../mcp/http-bridge';
 import type { BuilderRuntimeConfig } from '../bootstrap';
 import { resolveCozyBaseRuntime } from './config';
-import { createCozyBaseMcpServer, createCozyBaseSdkMcpServer } from './mcp-server';
+import { createCozyBaseSdkMcpServer } from './mcp-server';
 import { CozyBaseSession } from './session';
 import { TaskRegistry, type EnqueueTaskInput } from './task-registry';
+import { buildCozyBaseCodexMcpServerConfig } from '../codex-mcp-config';
 
 export interface CozyBaseSessionManagerConfig {
   workspace: Workspace;
@@ -41,9 +42,9 @@ export interface CozyBaseSessionManagerConfig {
 
 export class CozyBaseSessionManager {
   private session: CozyBaseSession | null = null;
-  private codexBridge: InProcessMcpHttpBridge | null = null;
   private readonly taskRegistry: TaskRegistry;
   private readonly actionContext: CozyBaseActionContext;
+  private readonly actionsByName = new Map(getCozyBaseActions().map((action) => [action.name, action]));
 
   constructor(private readonly config: CozyBaseSessionManagerConfig) {
     this.taskRegistry = new TaskRegistry(this.config.eventBus, {
@@ -101,19 +102,14 @@ export class CozyBaseSessionManager {
           };
         }
 
-        const bridge = await this.ensureCodexBridge();
         return {
           codexConfig: {
             approval_policy: process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never',
             sandbox_mode: process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write',
             mcp_servers: {
-              cozybase: {
-                type: 'streamable_http',
-                url: bridge.url,
-                http_headers: {
-                  Authorization: `Bearer ${bridge.bearerToken}`,
-                },
-              },
+              cozybase: buildCozyBaseCodexMcpServerConfig({
+                workspaceDir: this.config.workspace.root,
+              }),
             },
           },
         };
@@ -128,24 +124,15 @@ export class CozyBaseSessionManager {
     this.session?.shutdown();
     this.session = null;
     this.taskRegistry.shutdown();
-    if (this.codexBridge) {
-      void this.codexBridge.close().catch((error) => {
-        console.error('Failed to close CozyBase MCP bridge:', error);
-      });
-      this.codexBridge = null;
-    }
   }
 
-  private async ensureCodexBridge(): Promise<InProcessMcpHttpBridge> {
-    if (this.codexBridge) {
-      return this.codexBridge;
+  async executeAction(actionName: string, input: unknown): Promise<unknown> {
+    const action = this.actionsByName.get(actionName);
+    if (!action) {
+      throw new Error(`Unknown CozyBase action '${actionName}'`);
     }
 
-    this.codexBridge = await startInProcessMcpHttpBridgeWithFactory({
-      basePath: '/internal/cozybase/mcp',
-      createServer: () => createCozyBaseMcpServer(this.actionContext),
-    });
-    return this.codexBridge;
+    return action.execute(this.actionContext, input as never);
   }
 
   private listApps(): AppSummary[] {

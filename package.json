@@ -4,7 +4,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run build:ui && bun packages/daemon/src/cli.ts daemon",
-    "mcp": "bun packages/daemon/src/cli.ts mcp",
+    "builder-mcp": "bun packages/daemon/src/cli.ts builder-mcp",
     "build:ui": "cd packages/ui && bun run build",
     "build:web": "bun run build:ui && cd packages/web && bun run build",
     "build:all": "bun run build:web",
