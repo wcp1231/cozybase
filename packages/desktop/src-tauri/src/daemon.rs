@@ -2,6 +2,7 @@ use std::{
   fs::{self, read_to_string, remove_file, OpenOptions},
   io::{Read, Write},
   net::{SocketAddr, TcpStream},
+  os::unix::fs::PermissionsExt,
   path::PathBuf,
   process::{Child, Command, Stdio},
   sync::{
@@ -20,6 +21,8 @@ use crate::tray::{self, TrayHandles, TrayVisualState};
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_INTERVAL: Duration = Duration::from_secs(10);
+const WORKSPACE_BIN_DIR: &str = "bin";
+const WORKSPACE_CLI_NAME: &str = "cozybase";
 
 #[derive(Default)]
 pub struct DesktopState {
@@ -45,6 +48,13 @@ struct DesktopRuntime {
   child: Option<Child>,
   port: Option<u16>,
   state: DaemonState,
+}
+
+struct WorkspaceCliPaths {
+  workspace_dir: PathBuf,
+  resource_dir: PathBuf,
+  daemon_entry: PathBuf,
+  bun_path: PathBuf,
 }
 
 pub fn attach_tray(app: &AppHandle<Wry>, tray_handles: TrayHandles) {
@@ -98,6 +108,21 @@ pub fn initialize(app: &AppHandle<Wry>) -> Result<(), String> {
     ),
   );
   Ok(())
+}
+
+pub fn refresh_workspace_cli(app: &AppHandle<Wry>) -> Result<PathBuf, String> {
+  let (workspace_dir, bun_path, daemon_entry, resource_dir) = snapshot_runtime(app)?;
+  let cli_path = write_workspace_cli(&WorkspaceCliPaths {
+    workspace_dir,
+    resource_dir,
+    daemon_entry,
+    bun_path,
+  })?;
+  debug_log(
+    app,
+    &format!("refresh_workspace_cli: wrote {}", cli_path.display()),
+  );
+  Ok(cli_path)
 }
 
 pub fn install_close_handler(app: &AppHandle<Wry>) {
@@ -371,6 +396,67 @@ fn stop_daemon(app: &AppHandle<Wry>) -> Result<(), String> {
   Ok(())
 }
 
+fn write_workspace_cli(paths: &WorkspaceCliPaths) -> Result<PathBuf, String> {
+  let bin_dir = paths.workspace_dir.join(WORKSPACE_BIN_DIR);
+  fs::create_dir_all(&bin_dir)
+    .map_err(|err| format!("Failed to create workspace bin dir {}: {err}", bin_dir.display()))?;
+
+  let cli_path = bin_dir.join(WORKSPACE_CLI_NAME);
+  let script = build_workspace_cli_script(paths);
+
+  fs::write(&cli_path, script)
+    .map_err(|err| format!("Failed to write workspace CLI {}: {err}", cli_path.display()))?;
+
+  let mut permissions = fs::metadata(&cli_path)
+    .map_err(|err| format!("Failed to stat workspace CLI {}: {err}", cli_path.display()))?
+    .permissions();
+  permissions.set_mode(0o755);
+  fs::set_permissions(&cli_path, permissions).map_err(|err| {
+    format!(
+      "Failed to mark workspace CLI executable {}: {err}",
+      cli_path.display()
+    )
+  })?;
+
+  Ok(cli_path)
+}
+
+fn build_workspace_cli_script(paths: &WorkspaceCliPaths) -> String {
+  let web_dist_dir = paths.resource_dir.join("web");
+  let guides_dir = paths.resource_dir.join("guides");
+  let templates_dir = paths.resource_dir.join("templates");
+
+  format!(
+    concat!(
+      "#!/bin/sh\n",
+      "set -eu\n\n",
+      "export COZYBASE_BUN_PATH={}\n",
+      "export COZYBASE_WORKSPACE={}\n",
+      "export COZYBASE_RESOURCE_DIR={}\n",
+      "export COZYBASE_DAEMON_ENTRY={}\n",
+      "export COZYBASE_WEB_DIST_DIR={}\n",
+      "export COZYBASE_GUIDES_DIR={}\n",
+      "export COZYBASE_TEMPLATES_DIR={}\n\n",
+      "exec {} {} \"$@\"\n"
+    ),
+    shell_escape(&paths.bun_path),
+    shell_escape(&paths.workspace_dir),
+    shell_escape(&paths.resource_dir),
+    shell_escape(&paths.daemon_entry),
+    shell_escape(&web_dist_dir),
+    shell_escape(&guides_dir),
+    shell_escape(&templates_dir),
+    shell_escape(&paths.bun_path),
+    shell_escape(&paths.daemon_entry),
+  )
+}
+
+fn shell_escape(path: &PathBuf) -> String {
+  let value = path.to_string_lossy();
+  let escaped = value.replace('\'', "'\"'\"'");
+  format!("'{escaped}'")
+}
+
 fn current_port(app: &AppHandle<Wry>) -> Option<u16> {
   let state = app.state::<DesktopState>();
   let runtime = state.runtime.lock().expect("runtime lock poisoned");
@@ -616,6 +702,76 @@ fn describe_child_state(child: Option<&mut Child>) -> String {
     Ok(Some(status)) => format!("exited({status})"),
     Ok(None) => format!("running(pid={})", child.id()),
     Err(err) => format!("try_wait_error({err})"),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    build_workspace_cli_script, write_workspace_cli, WorkspaceCliPaths, WORKSPACE_BIN_DIR,
+    WORKSPACE_CLI_NAME,
+  };
+  use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+  };
+
+  #[test]
+  fn workspace_cli_script_exports_bundle_environment() {
+    let paths = WorkspaceCliPaths {
+      workspace_dir: PathBuf::from("/Users/example/.cozybase"),
+      resource_dir: PathBuf::from("/Applications/CozyBase.app/Contents/Resources/resources"),
+      daemon_entry: PathBuf::from(
+        "/Applications/CozyBase.app/Contents/Resources/resources/daemon.js",
+      ),
+      bun_path: PathBuf::from(
+        "/Applications/CozyBase.app/Contents/Resources/resources/binaries/bun-aarch64-apple-darwin",
+      ),
+    };
+
+    let script = build_workspace_cli_script(&paths);
+
+    assert!(script.contains("export COZYBASE_BUN_PATH='/Applications/CozyBase.app/Contents/Resources/resources/binaries/bun-aarch64-apple-darwin'"));
+    assert!(script.contains("export COZYBASE_WORKSPACE='/Users/example/.cozybase'"));
+    assert!(script.contains("export COZYBASE_DAEMON_ENTRY='/Applications/CozyBase.app/Contents/Resources/resources/daemon.js'"));
+    assert!(script.contains("export COZYBASE_WEB_DIST_DIR='/Applications/CozyBase.app/Contents/Resources/resources/web'"));
+    assert!(script.contains("exec '/Applications/CozyBase.app/Contents/Resources/resources/binaries/bun-aarch64-apple-darwin' '/Applications/CozyBase.app/Contents/Resources/resources/daemon.js' \"$@\""));
+  }
+
+  #[test]
+  fn write_workspace_cli_creates_executable_script() {
+    let workspace_dir = unique_temp_dir("cozybase-desktop-cli-test");
+    let paths = WorkspaceCliPaths {
+      workspace_dir: workspace_dir.clone(),
+      resource_dir: PathBuf::from("/tmp/cozybase/resources"),
+      daemon_entry: PathBuf::from("/tmp/cozybase/resources/daemon.js"),
+      bun_path: PathBuf::from("/tmp/cozybase/resources/binaries/bun-aarch64-apple-darwin"),
+    };
+
+    let cli_path = write_workspace_cli(&paths).expect("workspace CLI should be written");
+    let metadata = fs::metadata(&cli_path).expect("workspace CLI metadata should exist");
+    let script = fs::read_to_string(&cli_path).expect("workspace CLI should be readable");
+
+    assert_eq!(
+      cli_path,
+      workspace_dir.join(WORKSPACE_BIN_DIR).join(WORKSPACE_CLI_NAME)
+    );
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o755);
+    assert!(script.starts_with("#!/bin/sh\nset -eu\n"));
+
+    fs::remove_dir_all(workspace_dir).expect("temp workspace should be removed");
+  }
+
+  fn unique_temp_dir(prefix: &str) -> PathBuf {
+    let unique = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .expect("time should move forward")
+      .as_nanos();
+    let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
+    fs::create_dir_all(&path).expect("temp dir should be created");
+    path
   }
 }
 

@@ -21,6 +21,7 @@ pub fn run() {
       let tray_handles = tray::build(app.handle())?;
       daemon::attach_tray(app.handle(), tray_handles);
       daemon::initialize(app.handle()).map_err(to_tauri_error)?;
+      daemon::refresh_workspace_cli(app.handle()).map_err(to_tauri_error)?;
       daemon::install_close_handler(app.handle());
       daemon::start_background(app.handle().clone());
       daemon::start_health_monitor(app.handle().clone());
