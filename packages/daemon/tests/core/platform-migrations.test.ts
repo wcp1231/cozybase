@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { AppErrorRecorder } from '../../src/core/app-error-recorder';
-import { runPlatformMigrations } from '../../src/core/platform-migrations';
+import { PLATFORM_MIGRATIONS, runPlatformMigrations } from '../../src/core/platform-migrations';
 import { PlatformRepository } from '../../src/core/platform-repository';
 
 function createMigratedDb(): Database {
@@ -75,7 +75,7 @@ describe('Platform migrations', () => {
     runPlatformMigrations(db);
 
     const rows = db.query('SELECT version FROM _platform_migrations ORDER BY version').all() as { version: number }[];
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(rows.map((r) => r.version)).toEqual(PLATFORM_MIGRATIONS.map((migration) => migration.version));
 
     db.close();
   });
