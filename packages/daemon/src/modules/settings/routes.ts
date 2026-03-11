@@ -25,6 +25,12 @@ import {
   resolveEffectiveCozyBaseAgentConfig,
   isValidCozyBaseModelForProvider,
 } from './cozybase-agent-config';
+import {
+  configureAcpxForCozybase,
+  ensureOpenClawSkillsDir,
+  type OpenClawStatus,
+  readOpenClawStatus,
+} from './openclaw';
 
 export function createSettingsRoutes(platformRepo: PlatformRepository) {
   const app = new Hono();
@@ -290,6 +296,77 @@ export function createSettingsRoutes(platformRepo: PlatformRepository) {
     });
   });
 
+  app.get('/settings/openclaw', (c) => {
+    return c.json({
+      data: readOpenClawSettings(platformRepo),
+    });
+  });
+
+  app.put('/settings/openclaw', async (c) => {
+    const body = await c.req.json<{ enabled?: boolean }>();
+    if (typeof body.enabled !== 'boolean') {
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_ENABLED',
+            message: '`enabled` must be a boolean.',
+          },
+        },
+        400,
+      );
+    }
+
+    platformRepo.settings.set('openclaw.enabled', body.enabled ? 'true' : 'false');
+
+    return c.json({
+      data: readOpenClawSettings(platformRepo),
+    });
+  });
+
+  app.post('/settings/openclaw/configure-acpx', (c) => {
+    try {
+      return c.json({
+        data: {
+          ...readOpenClawSettings(platformRepo),
+          ...configureAcpxForCozybase(),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '配置 ~/.acpx/config.json 失败。';
+      return c.json(
+        {
+          error: {
+            code: 'OPENCLAW_CONFIGURE_ACPX_FAILED',
+            message,
+          },
+        },
+        400,
+      );
+    }
+  });
+
+  app.post('/settings/openclaw/create-skills-dir', (c) => {
+    const status = readOpenClawStatus();
+    if (!status.openClawDirExists) {
+      return c.json(
+        {
+          error: {
+            code: 'OPENCLAW_DIR_NOT_FOUND',
+            message: '未检测到 ~/.openclaw 目录，无法创建 CozyBase skills 目录。',
+          },
+        },
+        400,
+      );
+    }
+
+    return c.json({
+      data: {
+        ...readOpenClawSettings(platformRepo),
+        ...ensureOpenClawSkillsDir(),
+      },
+    });
+  });
+
   return app;
 }
 
@@ -319,4 +396,11 @@ function readCozyBaseAgentConfig(platformRepo: PlatformRepository) {
     envModelProvider: process.env.COZYBASE_AGENT_MODEL_PROVIDER,
     envModel: process.env.COZYBASE_AGENT_MODEL,
   });
+}
+
+function readOpenClawSettings(platformRepo: PlatformRepository): OpenClawStatus & { enabled: boolean } {
+  return {
+    enabled: platformRepo.settings.get('openclaw.enabled') === 'true',
+    ...readOpenClawStatus(),
+  };
 }

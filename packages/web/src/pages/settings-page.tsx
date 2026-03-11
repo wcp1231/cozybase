@@ -26,6 +26,29 @@ interface ProviderOption {
   helperText: string;
 }
 
+type SettingsTabId = 'general' | 'openclaw' | 'agent';
+
+interface SettingsTab {
+  id: SettingsTabId;
+  label: string;
+}
+
+interface OpenClawStatus {
+  enabled: boolean;
+  openClawDirPath: string;
+  skillsDirPath: string;
+  skillFilePath: string;
+  acpxConfigPath: string;
+  openClawDirExists: boolean;
+  skillsDirExists: boolean;
+  skillFileExists: boolean;
+  acpxExecutableExists: boolean;
+  acpxExecutablePath: string | null;
+  acpxConfigExists: boolean;
+  acpxConfigValid: boolean;
+  acpxConfigIssue: string | null;
+}
+
 interface AgentSettingsCardProps<TConfig extends AgentConfig> {
   title: string;
   description: string;
@@ -49,31 +72,72 @@ const PROVIDER_LABELS: Record<string, string> = {
   'pi-agent-core': 'PI Agent',
 };
 
+const SETTINGS_TABS: SettingsTab[] = [
+  { id: 'general', label: '通用设置' },
+  { id: 'openclaw', label: 'OpenClaw' },
+  { id: 'agent', label: 'Agent' },
+];
+
 export function SettingsPage() {
   const { toggleSidebar, sidebarVisible } = useAppContext();
 
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('agent');
+  const [openClawEnabled, setOpenClawEnabled] = useState(false);
+  const [openClawStatus, setOpenClawStatus] = useState<OpenClawStatus | null>(null);
+  const [openClawLoading, setOpenClawLoading] = useState(true);
+  const [openClawToggleSaving, setOpenClawToggleSaving] = useState(false);
+  const [openClawActionLoading, setOpenClawActionLoading] = useState<'configure-acpx' | 'create-skills-dir' | null>(null);
+  const [openClawError, setOpenClawError] = useState<string | null>(null);
+  const [openClawSuccess, setOpenClawSuccess] = useState<string | null>(null);
   const [builderConfig, setBuilderConfig] = useState<AgentConfig | null>(null);
   const [builderMeta, setBuilderMeta] = useState<AgentMeta | null>(null);
   const [operatorConfig, setOperatorConfig] = useState<AdvancedAgentConfig | null>(null);
   const [operatorMeta, setOperatorMeta] = useState<AdvancedAgentMeta | null>(null);
   const [cozybaseConfig, setCozybaseConfig] = useState<AdvancedAgentConfig | null>(null);
   const [cozybaseMeta, setCozybaseMeta] = useState<AdvancedAgentMeta | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [agentLoading, setAgentLoading] = useState(true);
   const [savingBuilder, setSavingBuilder] = useState(false);
   const [savingOperator, setSavingOperator] = useState(false);
   const [savingCozybase, setSavingCozybase] = useState(false);
   const [builderSaveSuccess, setBuilderSaveSuccess] = useState(false);
   const [operatorSaveSuccess, setOperatorSaveSuccess] = useState(false);
   const [cozybaseSaveSuccess, setCozybaseSaveSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchConfig();
+    void Promise.all([fetchAgentConfig(), fetchOpenClawStatus()]);
   }, []);
 
-  async function fetchConfig() {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    if (!openClawEnabled || !openClawStatus?.openClawDirExists || openClawActionLoading) {
+      return;
+    }
+
+    if (!openClawStatus.acpxExecutableExists) {
+      return;
+    }
+
+    if (!openClawStatus.acpxConfigExists || !openClawStatus.acpxConfigValid) {
+      void runOpenClawAction(
+        '/api/v1/settings/openclaw/configure-acpx',
+        'configure-acpx',
+        '已自动更新 ~/.acpx/config.json。',
+      );
+      return;
+    }
+
+    if (!openClawStatus.skillFileExists) {
+      void runOpenClawAction(
+        '/api/v1/settings/openclaw/create-skills-dir',
+        'create-skills-dir',
+        '已自动创建 ~/.openclaw/skills/cozybase，并复制模板文件。',
+      );
+    }
+  }, [openClawActionLoading, openClawEnabled, openClawStatus]);
+
+  async function fetchAgentConfig() {
+    setAgentLoading(true);
+    setAgentError(null);
     try {
       const [builderRes, operatorRes, cozybaseRes] = await Promise.all([
         fetch('/api/v1/settings/agent'),
@@ -95,9 +159,55 @@ export function SettingsPage() {
       setCozybaseConfig(cozybaseJson.data);
       setCozybaseMeta(cozybaseJson.meta);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setAgentError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setAgentLoading(false);
+    }
+  }
+
+  async function fetchOpenClawStatus() {
+    setOpenClawLoading(true);
+    setOpenClawError(null);
+    try {
+      const res = await fetch('/api/v1/settings/openclaw');
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      const nextStatus = json.data as OpenClawStatus;
+      setOpenClawStatus(nextStatus);
+      setOpenClawEnabled(nextStatus.enabled && nextStatus.openClawDirExists);
+    } catch (err) {
+      setOpenClawError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOpenClawLoading(false);
+    }
+  }
+
+  async function saveOpenClawEnabled(enabled: boolean) {
+    setOpenClawToggleSaving(true);
+    setOpenClawError(null);
+    try {
+      const res = await fetch('/api/v1/settings/openclaw', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      const nextStatus = json.data as OpenClawStatus;
+      setOpenClawStatus(nextStatus);
+      setOpenClawEnabled(nextStatus.enabled && nextStatus.openClawDirExists);
+    } catch (err) {
+      setOpenClawError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOpenClawToggleSaving(false);
     }
   }
 
@@ -111,7 +221,7 @@ export function SettingsPage() {
   ) {
     setSaving(true);
     setSaveSuccess(false);
-    setError(null);
+    setAgentError(null);
     try {
       const res = await fetch(path, {
         method: 'PUT',
@@ -129,9 +239,36 @@ export function SettingsPage() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setAgentError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runOpenClawAction(
+    path: '/api/v1/settings/openclaw/configure-acpx' | '/api/v1/settings/openclaw/create-skills-dir',
+    action: 'configure-acpx' | 'create-skills-dir',
+    successMessage: string,
+  ) {
+    setOpenClawActionLoading(action);
+    setOpenClawError(null);
+    setOpenClawSuccess(null);
+
+    try {
+      const res = await fetch(path, { method: 'POST' });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      setOpenClawStatus(json.data as OpenClawStatus);
+      setOpenClawSuccess(successMessage);
+      setTimeout(() => setOpenClawSuccess(null), 2500);
+    } catch (err) {
+      setOpenClawError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOpenClawActionLoading(null);
     }
   }
 
@@ -246,63 +383,247 @@ export function SettingsPage() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-auto px-4 pb-6 pt-2 md:px-8 md:pb-8">
-        {loading ? (
-          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
-            正在加载设置...
+        <div className="space-y-6">
+          <div className="sticky top-0 z-10 -mx-1 overflow-x-auto px-1 pb-1">
+            <div
+              role="tablist"
+              aria-label="设置分类"
+              className="inline-flex min-w-full rounded-2xl border border-[#E2E8F0] bg-white p-1 shadow-sm md:min-w-0"
+            >
+              {SETTINGS_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  id={`settings-tab-${tab.id}`}
+                  role="tab"
+                  type="button"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`settings-panel-${tab.id}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-[#18181B] text-white'
+                      : 'text-[#475569] hover:bg-[#F8FAFC]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : error && !builderConfig && !operatorConfig && !cozybaseConfig ? (
-          <div className="rounded-2xl border border-[#FECACA] bg-white p-6 text-sm text-[#B91C1C]">
-            加载失败：{error}
-          </div>
-        ) : builderConfig && builderMeta && operatorConfig && operatorMeta && cozybaseConfig && cozybaseMeta ? (
-          <div className="max-w-2xl space-y-6">
-            <AgentSettingsCard
-              title="Builder Agent 配置"
-              description="选择 AI Agent 引擎和模型"
-              providerDescription="选择使用哪种 AI Agent 来驱动代码生成"
-              modelDescription={`选择 ${PROVIDER_LABELS[builderConfig.provider] ?? builderConfig.provider} 使用的具体模型`}
-              config={builderConfig}
-              meta={builderMeta}
-              saving={savingBuilder}
-              saveSuccess={builderSaveSuccess}
-              error={error}
-              onProviderChange={handleBuilderProviderChange}
-              onModelChange={handleBuilderModelChange}
-            />
 
-            <AgentSettingsCard
-              title="Operator Agent 配置"
-              description="选择 APP 使用页聊天使用的 Agent 引擎和模型"
-              providerDescription="选择 APP 使用阶段的聊天 Agent"
-              modelDescription={`选择 ${PROVIDER_LABELS[operatorConfig.provider] ?? operatorConfig.provider} 使用的具体模型`}
-              config={operatorConfig}
-              meta={operatorMeta}
-              saving={savingOperator}
-              saveSuccess={operatorSaveSuccess}
-              error={error}
-              onProviderChange={handleOperatorProviderChange}
-              onModelChange={handleOperatorModelChange}
-              onModelProviderChange={handleOperatorModelProviderChange}
-              onModelInputChange={(value) => setOperatorConfig((prev) => (prev ? { ...prev, model: value } : prev))}
-            />
+          <section
+            id={`settings-panel-${activeTab}`}
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeTab}`}
+            className="max-w-2xl"
+          >
+            {activeTab === 'general' ? (
+              <div className="min-h-64 rounded-2xl border border-dashed border-[#CBD5E1] bg-white/70 p-10" />
+            ) : null}
 
-            <AgentSettingsCard
-              title="CozyBase Agent 配置"
-              description="选择平台级 CozyBase Agent 使用的引擎和模型"
-              providerDescription="选择平台统一入口 CozyBase Agent 的执行引擎"
-              modelDescription={`选择 ${PROVIDER_LABELS[cozybaseConfig.provider] ?? cozybaseConfig.provider} 使用的具体模型`}
-              config={cozybaseConfig}
-              meta={cozybaseMeta}
-              saving={savingCozybase}
-              saveSuccess={cozybaseSaveSuccess}
-              error={error}
-              onProviderChange={handleCozybaseProviderChange}
-              onModelChange={handleCozybaseModelChange}
-            />
-          </div>
-        ) : null}
+            {activeTab === 'openclaw' ? (
+              openClawLoading ? (
+                <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
+                  正在检测 OpenClaw 环境...
+                </div>
+              ) : openClawError && !openClawStatus ? (
+                <div className="rounded-2xl border border-[#FECACA] bg-white p-6 text-sm text-[#B91C1C]">
+                  检测失败：{openClawError}
+                </div>
+              ) : openClawStatus ? (
+                <div className="space-y-6">
+                  <section className="rounded-2xl border border-[#E2E8F0] bg-white">
+                    <div className="flex items-center justify-between gap-4 px-6 py-5">
+                      <div className="space-y-1">
+                        <h2 className='m-0 font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>
+                          连接 OpenClaw
+                        </h2>
+                        <p className="m-0 text-sm text-[#94A3B8]">
+                          打开后展示 OpenClaw 所需环境的检测结果，并自动完成可修复项。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label="连接 OpenClaw"
+                        aria-checked={openClawEnabled}
+                        disabled={!openClawStatus.openClawDirExists || openClawToggleSaving}
+                        onClick={() => void saveOpenClawEnabled(!openClawEnabled)}
+                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                          openClawEnabled ? 'bg-[#18181B]' : 'bg-[#CBD5E1]'
+                        } ${!openClawStatus.openClawDirExists || openClawToggleSaving ? 'cursor-not-allowed opacity-50' : ''}`}
+                      >
+                        <span
+                          className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
+                            openClawEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {!openClawStatus.openClawDirExists ? (
+                      <div className="border-t border-[#FEE2E2] bg-[#FFF7ED] px-6 py-4 text-sm text-[#9A3412]">
+                        未检测到 OpenClaw 目录 <code className="rounded bg-white px-1 py-0.5 text-xs">{openClawStatus.openClawDirPath}</code>，当前无法开启 OpenClaw 功能。
+                      </div>
+                    ) : null}
+                  </section>
+
+                  {openClawEnabled ? (
+                    <div className="space-y-4">
+                      {openClawError ? (
+                        <div className="rounded-2xl border border-[#FECACA] bg-white p-4 text-sm text-[#B91C1C]">
+                          {openClawError}
+                        </div>
+                      ) : null}
+
+                      {openClawSuccess ? (
+                        <div className="rounded-2xl border border-[#BBF7D0] bg-[#F0FDF4] p-4 text-sm text-[#166534]">
+                          {openClawSuccess}
+                        </div>
+                      ) : null}
+
+                      <OpenClawStatusCard
+                        title="acpx 环境与配置"
+                        ok={openClawStatus.acpxExecutableExists && openClawStatus.acpxConfigExists && openClawStatus.acpxConfigValid}
+                        pathLabel={openClawStatus.acpxConfigPath}
+                        successText="已检测到 acpx 可执行文件，且 CozyBase ACP 配置可用。"
+                        failureText={
+                          !openClawStatus.acpxExecutableExists
+                            ? '未检测到 acpx 可执行文件。请先按照 OpenClaw / acpx 官方安装说明完成安装，并确保 `acpx` 已加入 PATH。'
+                            : openClawActionLoading === 'configure-acpx'
+                              ? '已检测到 acpx，正在自动检测并修复 ~/.acpx/config.json。'
+                              : (openClawStatus.acpxConfigIssue ?? '正在自动检测 ~/.acpx/config.json。')
+                        }
+                      />
+
+                      {openClawStatus.acpxExecutableExists && openClawStatus.acpxConfigExists && openClawStatus.acpxConfigValid ? (
+                        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5">
+                          <div className="flex items-center gap-2">
+                            <h3 className="m-0 text-sm font-semibold text-[#18181B]">CozyBase skills 模板</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              openClawStatus.skillFileExists
+                                ? 'bg-[#DCFCE7] text-[#166534]'
+                                : 'bg-[#FEF3C7] text-[#92400E]'
+                            }`}>
+                              {openClawStatus.skillFileExists ? '已就绪' : '自动准备中'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-[#64748B]">
+                            路径：
+                            <code className="ml-1 rounded bg-[#F8FAFC] px-1.5 py-0.5 text-[11px] text-[#334155]">{openClawStatus.skillFilePath}</code>
+                          </p>
+                          <p className="mb-0 mt-2 text-sm text-[#475569]">
+                            {openClawStatus.skillFileExists
+                              ? '已准备好 CozyBase skills 模板文件。'
+                              : openClawActionLoading === 'create-skills-dir'
+                                ? '正在自动创建 skills 目录并复制 SKILL.md 模板。'
+                                : 'acpx 配置通过后，将自动创建 skills 目录并复制 SKILL.md 模板。'}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null
+            ) : null}
+
+            {activeTab === 'agent' ? (
+              agentLoading ? (
+                <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
+                  正在加载设置...
+                </div>
+              ) : agentError && !builderConfig && !operatorConfig && !cozybaseConfig ? (
+                <div className="rounded-2xl border border-[#FECACA] bg-white p-6 text-sm text-[#B91C1C]">
+                  加载失败：{agentError}
+                </div>
+              ) : builderConfig && builderMeta && operatorConfig && operatorMeta && cozybaseConfig && cozybaseMeta ? (
+                <div className="space-y-6">
+                  <AgentSettingsCard
+                    title="Builder Agent 配置"
+                    description="选择 AI Agent 引擎和模型"
+                    providerDescription="选择使用哪种 AI Agent 来驱动代码生成"
+                    modelDescription={`选择 ${PROVIDER_LABELS[builderConfig.provider] ?? builderConfig.provider} 使用的具体模型`}
+                    config={builderConfig}
+                    meta={builderMeta}
+                    saving={savingBuilder}
+                    saveSuccess={builderSaveSuccess}
+                    error={agentError}
+                    onProviderChange={handleBuilderProviderChange}
+                    onModelChange={handleBuilderModelChange}
+                  />
+
+                  <AgentSettingsCard
+                    title="Operator Agent 配置"
+                    description="选择 APP 使用页聊天使用的 Agent 引擎和模型"
+                    providerDescription="选择 APP 使用阶段的聊天 Agent"
+                    modelDescription={`选择 ${PROVIDER_LABELS[operatorConfig.provider] ?? operatorConfig.provider} 使用的具体模型`}
+                    config={operatorConfig}
+                    meta={operatorMeta}
+                    saving={savingOperator}
+                    saveSuccess={operatorSaveSuccess}
+                    error={agentError}
+                    onProviderChange={handleOperatorProviderChange}
+                    onModelChange={handleOperatorModelChange}
+                    onModelProviderChange={handleOperatorModelProviderChange}
+                    onModelInputChange={(value) => setOperatorConfig((prev) => (prev ? { ...prev, model: value } : prev))}
+                  />
+
+                  <AgentSettingsCard
+                    title="CozyBase Agent 配置"
+                    description="选择平台级 CozyBase Agent 使用的引擎和模型"
+                    providerDescription="选择平台统一入口 CozyBase Agent 的执行引擎"
+                    modelDescription={`选择 ${PROVIDER_LABELS[cozybaseConfig.provider] ?? cozybaseConfig.provider} 使用的具体模型`}
+                    config={cozybaseConfig}
+                    meta={cozybaseMeta}
+                    saving={savingCozybase}
+                    saveSuccess={cozybaseSaveSuccess}
+                    error={agentError}
+                    onProviderChange={handleCozybaseProviderChange}
+                    onModelChange={handleCozybaseModelChange}
+                  />
+                </div>
+              ) : null
+            ) : null}
+          </section>
+        </div>
       </main>
     </div>
+  );
+}
+
+function OpenClawStatusCard({
+  title,
+  ok,
+  pathLabel,
+  successText,
+  failureText,
+}: {
+  title: string;
+  ok: boolean;
+  pathLabel?: string | null;
+  successText: string;
+  failureText: string;
+}) {
+  return (
+    <section className="rounded-2xl border border-[#E2E8F0] bg-white p-5">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <h3 className="m-0 text-sm font-semibold text-[#18181B]">{title}</h3>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${ok ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#B91C1C]'}`}>
+            {ok ? '已就绪' : '待处理'}
+          </span>
+        </div>
+        {pathLabel ? (
+          <p className="m-0 text-xs text-[#64748B]">
+            路径：
+            <code className="ml-1 rounded bg-[#F8FAFC] px-1.5 py-0.5 text-[11px] text-[#334155]">{pathLabel}</code>
+          </p>
+        ) : null}
+        <p className={`m-0 text-sm ${ok ? 'text-[#166534]' : 'text-[#92400E]'}`}>
+          {ok ? successText : failureText}
+        </p>
+      </div>
+    </section>
   );
 }
 

@@ -58,6 +58,10 @@ export function resolveWorkspaceTemplatesDir(env: NodeJS.ProcessEnv = process.en
   return join(resolveTemplatesRootDir(env), 'workspace');
 }
 
+export function resolveOpenClawTemplatesDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(resolveTemplatesRootDir(env), 'openclaw');
+}
+
 export function resolveGuidesDir(env: NodeJS.ProcessEnv = process.env): string {
   const configured = env.COZYBASE_GUIDES_DIR?.trim();
   if (configured && configured.length > 0) {
