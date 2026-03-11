@@ -1,96 +1,61 @@
 # Cozybase
 
-Cozybase is a local BaaS for AI Agents.
+Cozybase is a local Backend-as-a-Service (BaaS) for AI Agents.
 
-It gives an AI Agent a complete app-building runtime: database migrations, TypeScript functions, declarative UI pages, and a safe Draft-to-Stable publish flow.
+It gives an AI Agent a complete app-building runtime: database migrations, TypeScript functions, declarative UI pages, and a safe Draft-to-Stable publish flow. Users describe the app in natural language, the AI Agent builds and tests the app through Cozybase, and Cozybase serves the app locally.
 
-## What It Is
+## Features
 
-Cozybase is designed for an agent-driven workflow:
+- **AI-Driven App Building** — Built-in AI chat panel lets you describe apps in natural language; the agent handles schema, functions, UI, and deployment.
+- **Draft / Stable Environments** — Every app has isolated Draft and Stable runtimes. Changes are tested in Draft before publishing.
+- **Database Migrations** — Schema changes are managed as ordered, immutable migrations in `platform.sqlite`.
+- **TypeScript Functions** — Write server-side logic as TypeScript functions, executed in a sandboxed runtime.
+- **Declarative UI Pages** — Build app UIs with a declarative component model powered by React and Radix UI.
+- **MCP / ACP Protocol** — Expose the full workflow over MCP so you can plug in your own coding agent (Claude Code, Cursor, etc.).
+- **Desktop App** — Optional Tauri-based native desktop wrapper.
 
-- the user describes the app in natural language
-- the AI Agent builds and tests the app through Cozybase MCP tools
-- Cozybase serves the app locally and manages Draft and Stable environments
+## Installation
 
-Core ideas:
+### Prerequisites
 
-- `platform.sqlite` is the source of truth for app definitions
-- each app has separate `draft` and `stable` runtimes
-- published migrations are immutable
-- the built-in web UI includes an AI chat interface for app creation and iteration
+- [Codex](https://github.com/openai/codex) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed on your machine.
 
-Conceptually, an app looks like this:
+### Install Cozybase
 
-```text
-my-app/
-├── app.yaml
-├── migrations/
-├── seeds/
-├── functions/
-├── ui/
-└── package.json
-```
+1. Go to the [Releases](https://github.com/wcp1231/cozybase/releases) page and download the latest `.app` (macOS) file.
+2. Open the downloaded file and drag **Cozybase** into your `Applications` folder.
+3. Launch Cozybase from Applications.
 
-## How To Run It
+## Development Guide
 
-Requirements:
-
-- Bun
-
-Start Cozybase:
-
-```bash
-bun install
-bun run build:web
-bun run dev
-```
-
-The built-in web UI is only served after `packages/web/dist` has been built.
-If you run `bun run dev` without running `bun run build:web` first, visiting `/` on port 3000 will return `404 Not Found`.
-
-Then open:
+### Repository Layout
 
 ```text
-http://localhost:3000
+packages/
+├── daemon          # Core server, workspace management, publish/reconcile, MCP/ACP, CLI
+├── runtime         # Lightweight function execution and DB route runtime
+├── ui              # Shared React UI component library (Radix UI + TailwindCSS v4)
+├── web             # Browser SPA shell and built-in AI chat (React 19 + Vite)
+├── desktop         # Tauri 2 native desktop wrapper
+├── ai-runtime      # AI runtime abstractions (Claude, Codex, Pi Agent)
+├── builder-agent   # AI agent for building/modifying apps
+├── cozybase-agent  # Cozybase-specific agent implementation
+└── operator-agent  # Agent for operational tasks
 ```
 
-On first run, Cozybase initializes `~/.cozybase` and auto-publishes a sample `welcome` app.
-
-## Shortest Path To Build An App With AI Agent
-
-1. Build the web UI with `bun run build:web`, then start Cozybase with `bun run dev` and open the web UI.
-2. Open the built-in AI chat panel.
-3. Describe the app you want in natural language.
-4. Let the agent iterate in Draft.
-5. Review the result and confirm when you want it published to Stable.
-
-Example prompts:
-
-- "Build a todo app with create, complete, edit, and delete actions."
-- "Create a lightweight CRM with customers, deals, and notes."
-- "Add a dashboard page with overdue tasks and completion stats."
-- "Change the schema to support priorities and due dates, then test the draft app."
-
-What the agent does behind the scenes:
-
-1. creates or fetches the app
-2. edits app files
-3. syncs changes back to Cozybase
-4. reconciles the Draft runtime
-5. tests with SQL and API calls
-6. verifies against Stable
-7. publishes only after explicit user confirmation
-
-If you want to use your own coding agent instead of the built-in chat, Cozybase also exposes the same workflow over MCP:
+### Common Commands
 
 ```bash
-bun run builder-mcp
-bun packages/daemon/src/cli.ts init --apps-dir ./agent
+bun run dev                  # Build UI components and start daemon
+bun run build:web            # Build UI + web frontend
+bun run builder-mcp          # Start MCP server for external agents
+bun run desktop:dev          # Start desktop app (Tauri dev mode)
+bun run desktop:build        # Build desktop app for distribution
 ```
 
-## User Docs
+## More Documentation
 
-User-facing documentation will live under `docs/`:
+User-facing guides live under [`docs/`](./docs/):
 
 - [What Is Cozybase](./docs/what-is-cozybase.md)
 - [Getting Started](./docs/getting-started.md)
@@ -99,15 +64,6 @@ User-facing documentation will live under `docs/`:
 - [Publish and Safety](./docs/publish-and-safety.md)
 - [Prompt Examples](./docs/prompt-examples.md)
 - [Use Your Own Agent](./docs/use-your-own-agent.md)
+- [UI Editor](./docs/ui-editor.md)
 
-The existing files under `packages/daemon/guides/` are internal reference docs for AI Agents and app implementation, not end-user documentation.
-
-## Repository Layout
-
-```text
-packages/
-├── daemon   # Workspace, publish/reconcile flow, MCP, web server
-├── runtime  # Function execution, DB routes, UI runtime
-├── ui       # Shared UI renderer and components
-└── web      # Browser shell and built-in agent chat
-```
+Internal reference docs for AI Agents live under `packages/daemon/guides/`.
