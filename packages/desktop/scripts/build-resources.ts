@@ -1,9 +1,11 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 
 const repoRoot = resolve(import.meta.dir, '..', '..', '..');
 const desktopRoot = resolve(import.meta.dir, '..');
+const brandIconSource = join(repoRoot, 'assets', 'brand', 'cozybase-icon.png');
 const resourceRoot = join(desktopRoot, 'src-tauri', 'resources');
+const tauriIconTarget = join(desktopRoot, 'src-tauri', 'icons', 'icon.png');
 const daemonEntry = join(repoRoot, 'packages', 'daemon', 'src', 'cli.ts');
 const daemonOutput = join(resourceRoot, 'daemon.js');
 const webDistDir = join(repoRoot, 'packages', 'web', 'dist');
@@ -40,6 +42,14 @@ function copyTree(from: string, to: string) {
   cpSync(from, to, { recursive: true });
 }
 
+function copyFile(from: string, to: string) {
+  if (!existsSync(from)) {
+    throw new Error(`Required resource file not found: ${from}`);
+  }
+  mkdirSync(dirname(to), { recursive: true });
+  cpSync(from, to);
+}
+
 async function main() {
   if (!existsSync(webDistDir)) {
     throw new Error(`Web dist not found at ${webDistDir}. Run "bun run build:web" first.`);
@@ -54,6 +64,7 @@ async function main() {
   rmSync(`${daemonOutput}.map`, { force: true });
 
   await bundleDaemon();
+  copyFile(brandIconSource, tauriIconTarget);
   copyTree(webDistDir, join(resourceRoot, 'web'));
   copyTree(templatesDir, join(resourceRoot, 'templates'));
   copyTree(guidesDir, join(resourceRoot, 'guides'));

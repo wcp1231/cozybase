@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Grid2x2, Hammer, Home, Settings } from 'lucide-react';
+import cozybaseIcon from '../../../../../assets/brand/cozybase-icon.png';
 import { useAppContext } from '../../pages/app-layout';
 import { toAppListPath, toModeHomePath, toSettingsPath } from '../../pages/content-slot';
 
@@ -33,9 +34,7 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
         )}
         title="CozyBase"
       >
-        <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-[#18181B] font-["Outfit",sans-serif] text-lg font-extrabold text-white'>
-          C
-        </span>
+        <img src={cozybaseIcon} alt="CozyBase" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
         {!collapsed && (
           <span className='truncate font-["Outfit",sans-serif] text-xl font-extrabold tracking-[-0.02em] text-[#18181B]'>CozyBase</span>
         )}
