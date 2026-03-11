@@ -37,7 +37,9 @@ interface SessionState {
   socket: CozyBaseBridgeSocket;
   connected: boolean;
   mapper: CozyBaseAcpEventMapper;
-  activePrompt: ActivePrompt | null;
+  activeLifecycleId: string | null;
+  lifecyclePendingStart: boolean;
+  waiters: ActivePrompt[];
   updateQueue: Promise<void>;
 }
 
@@ -89,7 +91,9 @@ export class CozyBaseAcpServer implements Agent {
       socket,
       connected: false,
       mapper: new CozyBaseAcpEventMapper(),
-      activePrompt: null,
+      activeLifecycleId: null,
+      lifecyclePendingStart: false,
+      waiters: [],
       updateQueue: Promise.resolve(),
     };
     this.sessions.set(sessionId, session);
@@ -117,13 +121,6 @@ export class CozyBaseAcpServer implements Agent {
         'CozyBase bridge websocket is not connected',
       );
     }
-    if (session.activePrompt) {
-      throw RequestError.invalidParams(
-        { sessionId: params.sessionId },
-        'A prompt is already running for this session',
-      );
-    }
-
     const promptText = extractPromptText(params);
     if (!promptText.trim()) {
       throw RequestError.invalidParams(
@@ -133,12 +130,15 @@ export class CozyBaseAcpServer implements Agent {
     }
 
     return await new Promise<PromptResponse>((resolve, reject) => {
-      session.activePrompt = {
+      session.waiters.push({
         requestMessageId: params.messageId ?? null,
         cancelled: false,
         resolve,
         reject,
-      };
+      });
+      if (!session.activeLifecycleId) {
+        session.lifecyclePendingStart = true;
+      }
 
       try {
         session.socket.send(JSON.stringify({
@@ -146,7 +146,7 @@ export class CozyBaseAcpServer implements Agent {
           message: promptText,
         }));
       } catch (error) {
-        session.activePrompt = null;
+        session.waiters = session.waiters.filter((waiter) => waiter.resolve !== resolve);
         reject(RequestError.internalError(
           { sessionId: params.sessionId },
           error instanceof Error ? error.message : String(error),
@@ -157,10 +157,12 @@ export class CozyBaseAcpServer implements Agent {
 
   async cancel(params: CancelNotification): Promise<void> {
     const session = this.sessions.get(params.sessionId);
-    if (!session || !session.activePrompt || session.socket.readyState !== 1) {
+    if (!session || session.waiters.length === 0 || session.socket.readyState !== 1) {
       return;
     }
-    session.activePrompt.cancelled = true;
+    for (const waiter of session.waiters) {
+      waiter.cancelled = true;
+    }
     session.socket.send(JSON.stringify({ type: 'chat:cancel' }));
   }
 
@@ -222,26 +224,26 @@ export class CozyBaseAcpServer implements Agent {
 
     session.socket.addEventListener('close', (event: SocketCloseEventLike) => {
       session.connected = false;
-      if (session.activePrompt) {
-        const pending = session.activePrompt;
-        session.activePrompt = null;
-        pending.reject(RequestError.internalError(
+      this.rejectAllWaiters(
+        session,
+        RequestError.internalError(
           { sessionId: session.sessionId, code: event.code, reason: event.reason },
           'CozyBase bridge websocket closed',
-        ));
-      }
+        ),
+      );
     });
 
     session.socket.addEventListener('error', (event: SocketErrorEventLike) => {
-      if (!session.activePrompt) {
+      if (session.waiters.length === 0) {
         return;
       }
-      const pending = session.activePrompt;
-      session.activePrompt = null;
-      pending.reject(RequestError.internalError(
-        { sessionId: session.sessionId, error: event.error },
-        event.message ?? 'CozyBase bridge websocket error',
-      ));
+      this.rejectAllWaiters(
+        session,
+        RequestError.internalError(
+          { sessionId: session.sessionId, error: event.error },
+          event.message ?? 'CozyBase bridge websocket error',
+        ),
+      );
     });
   }
 
@@ -265,37 +267,59 @@ export class CozyBaseAcpServer implements Agent {
     }
 
     if (payload.type === 'session.error') {
-      if (session.activePrompt) {
-        const pending = session.activePrompt;
-        session.activePrompt = null;
-        pending.reject(RequestError.internalError(
+      this.rejectAllWaiters(
+        session,
+        RequestError.internalError(
           { sessionId: session.sessionId },
           String((payload as { message?: unknown }).message ?? 'Session error'),
-        ));
-      }
+        ),
+      );
       return;
     }
 
-    if (payload.type === 'conversation.run.completed') {
-      if (session.activePrompt) {
-        const pending = session.activePrompt;
-        session.activePrompt = null;
-        pending.resolve({
-          stopReason: pending.cancelled ? 'cancelled' : 'end_turn',
-          userMessageId: pending.requestMessageId,
-        });
+    if (payload.type === 'lifecycle.started') {
+      session.activeLifecycleId = String((payload as { lifecycleId?: unknown }).lifecycleId ?? '');
+      session.lifecyclePendingStart = false;
+      return;
+    }
+
+    if (payload.type === 'lifecycle.completed') {
+      const lifecycleId = String((payload as { lifecycleId?: unknown }).lifecycleId ?? '');
+      if (session.activeLifecycleId && lifecycleId !== session.activeLifecycleId) {
+        return;
       }
+      this.resolveAllWaiters(session);
+      session.activeLifecycleId = null;
+      session.lifecyclePendingStart = false;
+      return;
+    }
+
+    if (payload.type === 'lifecycle.failed') {
+      const lifecycleId = String((payload as { lifecycleId?: unknown }).lifecycleId ?? '');
+      if (session.activeLifecycleId && lifecycleId !== session.activeLifecycleId) {
+        return;
+      }
+      this.rejectAllWaiters(
+        session,
+        RequestError.internalError(
+          { sessionId: session.sessionId, lifecycleId },
+          String(payload.message ?? 'Lifecycle failed'),
+        ),
+      );
+      session.activeLifecycleId = null;
+      session.lifecyclePendingStart = false;
       return;
     }
 
     if (payload.type === 'conversation.error') {
-      if (session.activePrompt) {
-        const pending = session.activePrompt;
-        session.activePrompt = null;
-        pending.reject(RequestError.internalError(
-          { sessionId: session.sessionId },
-          String(payload.message ?? 'Conversation error'),
-        ));
+      if (!session.activeLifecycleId && !session.lifecyclePendingStart) {
+        this.rejectAllWaiters(
+          session,
+          RequestError.internalError(
+            { sessionId: session.sessionId },
+            String(payload.message ?? 'Conversation error'),
+          ),
+        );
       }
       return;
     }
@@ -327,6 +351,25 @@ export class CozyBaseAcpServer implements Agent {
       throw RequestError.invalidParams({ sessionId }, `Unknown session '${sessionId}'`);
     }
     return session;
+  }
+
+  private resolveAllWaiters(session: SessionState): void {
+    const pending = [...session.waiters];
+    session.waiters = [];
+    for (const waiter of pending) {
+      waiter.resolve({
+        stopReason: waiter.cancelled ? 'cancelled' : 'end_turn',
+        userMessageId: waiter.requestMessageId,
+      });
+    }
+  }
+
+  private rejectAllWaiters(session: SessionState, error: unknown): void {
+    const pending = [...session.waiters];
+    session.waiters = [];
+    for (const waiter of pending) {
+      waiter.reject(error);
+    }
   }
 }
 

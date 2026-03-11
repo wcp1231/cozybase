@@ -12,6 +12,11 @@ export interface AppReconciledEvent {
   appSlug: string;
 }
 
+export interface TaskStartedEvent {
+  taskId: string;
+  appSlug: string;
+}
+
 export interface TaskCompletedEvent {
   taskId: string;
   appSlug: string;
@@ -26,6 +31,7 @@ export interface TaskFailedEvent {
 
 export interface EventMap {
   'app:reconciled': AppReconciledEvent;
+  'task:started': TaskStartedEvent;
   'task:completed': TaskCompletedEvent;
   'task:failed': TaskFailedEvent;
 }

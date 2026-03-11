@@ -20,6 +20,10 @@ export type {
   ConversationRunStartedEvent,
   ConversationRunCompletedEvent,
   ConversationErrorEvent,
+  LifecycleEvent,
+  LifecycleStartedEvent,
+  LifecycleCompletedEvent,
+  LifecycleFailedEvent,
   // SessionEvent union and variants
   SessionEvent,
   SessionConnectedEvent,

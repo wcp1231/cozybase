@@ -150,6 +150,10 @@ export class TaskRegistry {
   }
 
   private startTask(task: DelegatedTask): void {
+    this.eventBus.emit('task:started', {
+      taskId: task.taskId,
+      appSlug: task.appSlug,
+    });
     const executor = this.executors[task.target];
     void executor(task).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);

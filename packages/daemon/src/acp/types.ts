@@ -1,10 +1,11 @@
 import type {
   AgentEvent,
+  LifecycleEvent,
   SessionEvent,
 } from '@cozybase/ai-runtime';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
-export type CozyBaseWireEvent = AgentEvent | SessionEvent | { type: string; [key: string]: unknown };
+export type CozyBaseWireEvent = AgentEvent | LifecycleEvent | SessionEvent | { type: string; [key: string]: unknown };
 
 export interface SocketOpenEventLike {
   type: 'open';

@@ -148,12 +148,14 @@ describe('CozyBaseAcpServer', () => {
       message: 'Open the homepage implementation.\n\nfile:///tmp/workspace/README.md',
     });
 
+    socket.receive({ type: 'lifecycle.started', lifecycleId: 'lifecycle-1' });
     socket.receive({ type: 'conversation.run.started' });
     socket.receive({ type: 'conversation.message.started', messageId: 'assistant-1', role: 'assistant' });
     socket.receive({ type: 'conversation.message.delta', messageId: 'assistant-1', role: 'assistant', delta: 'Working on it.' });
     socket.receive({ type: 'conversation.tool.started', toolUseId: 'tool-1', toolName: 'develop_app' });
     socket.receive({ type: 'conversation.tool.completed', toolUseId: 'tool-1', toolName: 'develop_app', summary: 'Patch applied.' });
     socket.receive({ type: 'conversation.run.completed', sessionId: 'resume-123' });
+    socket.receive({ type: 'lifecycle.completed', lifecycleId: 'lifecycle-1' });
 
     await expect(promptPromise).resolves.toEqual({
       stopReason: 'end_turn',
@@ -200,7 +202,9 @@ describe('CozyBaseAcpServer', () => {
     await server.cancel({ sessionId });
     expect(socket.sent.map((entry) => JSON.parse(entry))).toContainEqual({ type: 'chat:cancel' });
 
+    socket.receive({ type: 'lifecycle.started', lifecycleId: 'lifecycle-1' });
     socket.receive({ type: 'conversation.run.completed', sessionId: 'resume-456' });
+    socket.receive({ type: 'lifecycle.completed', lifecycleId: 'lifecycle-1' });
     await expect(promptPromise).resolves.toEqual({
       stopReason: 'cancelled',
       userMessageId: null,
@@ -231,8 +235,56 @@ describe('CozyBaseAcpServer', () => {
     });
 
     await flushAsyncWork();
+    socket.receive({ type: 'lifecycle.started', lifecycleId: 'lifecycle-1' });
     socket.receive({ type: 'conversation.error', message: 'provider failed' });
+    socket.receive({ type: 'lifecycle.failed', lifecycleId: 'lifecycle-1', message: 'provider failed' });
     await expect(promptPromise).rejects.toThrow('provider failed');
+  });
+
+  test('resolves all waiters attached to the same lifecycle', async () => {
+    const { connection } = createConnectionCollector();
+    const socket = new FakeBridgeSocket();
+    const server = new CozyBaseAcpServer(connection as never, {
+      daemonUrl: 'http://127.0.0.1:8787',
+      workspaceDir: '/tmp/workspace',
+      socketFactory: () => socket,
+    });
+
+    const { sessionId } = await server.newSession({
+      cwd: '/tmp/workspace',
+      mcpServers: [],
+    });
+
+    const firstPrompt = server.prompt({
+      sessionId,
+      messageId: 'message-1',
+      prompt: [{ type: 'text', text: 'first request' }],
+    });
+    await flushAsyncWork();
+    socket.receive({ type: 'lifecycle.started', lifecycleId: 'lifecycle-1' });
+
+    const secondPrompt = server.prompt({
+      sessionId,
+      messageId: 'message-2',
+      prompt: [{ type: 'text', text: 'second request' }],
+    });
+    await flushAsyncWork();
+
+    expect(socket.sent.map((entry) => JSON.parse(entry))).toEqual([
+      { type: 'chat:send', message: 'first request' },
+      { type: 'chat:send', message: 'second request' },
+    ]);
+
+    socket.receive({ type: 'lifecycle.completed', lifecycleId: 'lifecycle-1' });
+
+    await expect(firstPrompt).resolves.toEqual({
+      stopReason: 'end_turn',
+      userMessageId: 'message-1',
+    });
+    await expect(secondPrompt).resolves.toEqual({
+      stopReason: 'end_turn',
+      userMessageId: 'message-2',
+    });
   });
 
   test('reports websocket connection failures during session creation', async () => {

@@ -116,6 +116,7 @@ export class CozyBaseSessionManager {
       },
       eventBus: this.config.eventBus,
       cwd: this.config.agentDir,
+      getTask: (taskId) => this.taskRegistry.getTask(taskId),
     });
     return this.session;
   }
@@ -235,6 +236,7 @@ export class CozyBaseSessionManager {
 
   private enqueueDelegatedTask(task: EnqueueTaskInput): DelegatedToolResult {
     const queuedTask = this.taskRegistry.enqueue(task);
+    this.session?.registerDelegatedTask(queuedTask.taskId);
     return {
       taskId: queuedTask.taskId,
       appSlug: queuedTask.appSlug,

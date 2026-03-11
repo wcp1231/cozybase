@@ -2,6 +2,7 @@
  * Normalized event types for the Cozybase Agent abstraction layer.
  *
  * AgentEvent — emitted during an active agent query (conversation.* events).
+ * LifecycleEvent — emitted by the session-scoped orchestrator (lifecycle.* events).
  * SessionEvent — emitted at the application/WebSocket layer (session.* events).
  */
 
@@ -90,6 +91,34 @@ export type AgentEvent =
   | ConversationRunStartedEvent
   | ConversationRunCompletedEvent
   | ConversationErrorEvent;
+
+// ---------------------------------------------------------------------------
+// LifecycleEvent — session-scoped orchestrator lifecycle events
+// ---------------------------------------------------------------------------
+
+/** A new lifecycle has started for the current CozyBase session. */
+export interface LifecycleStartedEvent {
+  type: 'lifecycle.started';
+  lifecycleId: string;
+}
+
+/** The active lifecycle completed successfully. */
+export interface LifecycleCompletedEvent {
+  type: 'lifecycle.completed';
+  lifecycleId: string;
+}
+
+/** The active lifecycle failed and can no longer make progress. */
+export interface LifecycleFailedEvent {
+  type: 'lifecycle.failed';
+  lifecycleId: string;
+  message: string;
+}
+
+export type LifecycleEvent =
+  | LifecycleStartedEvent
+  | LifecycleCompletedEvent
+  | LifecycleFailedEvent;
 
 // ---------------------------------------------------------------------------
 // SessionEvent — application/WebSocket layer events

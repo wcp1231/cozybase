@@ -1,20 +1,32 @@
 import type {
   AgentEvent,
   AgentQuery,
+  LifecycleEvent,
   SessionEvent,
   StoredMessage,
 } from '@cozybase/ai-runtime';
+import type { DelegatedTask } from '@cozybase/cozybase-agent';
 import { buildCozyBaseSystemPrompt } from '@cozybase/cozybase-agent';
-import type { EventBus, TaskCompletedEvent, TaskFailedEvent } from '../../core/event-bus';
+import type {
+  EventBus,
+  TaskCompletedEvent,
+  TaskFailedEvent,
+  TaskStartedEvent,
+} from '../../core/event-bus';
 import type { RuntimeSessionStore } from '../runtime-session-store';
 import type { CozyBaseRuntimeConfig } from './config';
+import {
+  LifecycleStore,
+  type LifecycleInboxEvent,
+  type LifecycleState,
+} from './lifecycle-store';
 
 interface WebSocketLike {
   send(data: string): void;
   readyState: number;
 }
 
-type WireEvent = AgentEvent | SessionEvent;
+type WireEvent = AgentEvent | LifecycleEvent | SessionEvent;
 
 type ChatInboundMessage =
   | { type: 'chat:send'; message: string }
@@ -27,9 +39,11 @@ interface CozyBaseSessionConfig {
   providerOptionsResolver: (providerKind: CozyBaseRuntimeConfig['providerKind']) => Promise<unknown>;
   eventBus: EventBus;
   cwd: string;
+  getTask: (taskId: string) => DelegatedTask | null;
 }
 
 const COZYBASE_APP_SLUG = '__cozybase__';
+const TASK_POLL_INTERVAL_MS = 500;
 
 export class CozyBaseSession {
   private ws: WebSocketLike | null = null;
@@ -39,17 +53,24 @@ export class CozyBaseSession {
   private resumeSessionId: string | null = null;
   private runtimeProviderKind: string | null = null;
   private history: StoredMessage[] = [];
-  private notificationQueue: string[] = [];
-  private flushPromise: Promise<void> | null = null;
+  private readonly lifecycleStore = new LifecycleStore();
+  private processingPromise: Promise<void> | null = null;
+  private taskPollTimer: ReturnType<typeof setInterval> | null = null;
+  private currentConversationLifecycleId: string | null = null;
+  private lastConversationError: string | null = null;
+  private readonly unsubscribeStarted: () => void;
   private readonly unsubscribeCompleted: () => void;
   private readonly unsubscribeFailed: () => void;
 
   constructor(private readonly config: CozyBaseSessionConfig) {
+    this.unsubscribeStarted = this.config.eventBus.on('task:started', (event) => {
+      this.handleTaskStarted(event);
+    });
     this.unsubscribeCompleted = this.config.eventBus.on('task:completed', (event) => {
-      this.enqueueTaskNotification(buildCompletionNotification(event));
+      this.handleTaskCompleted(event);
     });
     this.unsubscribeFailed = this.config.eventBus.on('task:failed', (event) => {
-      this.enqueueTaskNotification(buildFailureNotification(event));
+      this.handleTaskFailed(event);
     });
   }
 
@@ -115,22 +136,205 @@ export class CozyBaseSession {
   }
 
   async prompt(text: string): Promise<void> {
-    if (this.streaming) {
-      this.sendToWs({ type: 'session.error', message: 'Agent is busy processing a previous message' });
-      return;
-    }
-
     if (!text.trim()) {
       return;
     }
 
+    const { lifecycle, created } = this.lifecycleStore.ensureActiveLifecycle();
+    if (created) {
+      this.sendLifecycleEvent({
+        type: 'lifecycle.started',
+        lifecycleId: lifecycle.lifecycleId,
+      });
+    }
+
+    this.history.push({ role: 'user', content: text });
+    this.lifecycleStore.enqueueEvent(lifecycle.lifecycleId, {
+      kind: 'user_message',
+      text,
+      createdAt: new Date().toISOString(),
+    });
+    this.ensureProcessingLoop();
+  }
+
+  async injectPrompt(text: string): Promise<void> {
+    await this.prompt(text);
+  }
+
+  registerDelegatedTask(taskId: string): void {
+    const lifecycle = this.lifecycleStore.getActiveLifecycle();
+    if (!lifecycle) {
+      return;
+    }
+    this.lifecycleStore.registerTask(lifecycle.lifecycleId, taskId);
+    const task = this.config.getTask(taskId);
+    if (task?.status === 'running') {
+      this.handleTaskStarted({
+        taskId: task.taskId,
+        appSlug: task.appSlug,
+      });
+    } else if (task?.status === 'completed') {
+      this.handleTaskCompleted({
+        taskId: task.taskId,
+        appSlug: task.appSlug,
+        summary: task.summary ?? '',
+      });
+    } else if (task?.status === 'failed') {
+      this.handleTaskFailed({
+        taskId: task.taskId,
+        appSlug: task.appSlug,
+        error: task.error ?? 'Task failed',
+      });
+    }
+    this.ensureTaskPolling();
+  }
+
+  getActiveLifecycleId(): string | null {
+    return this.lifecycleStore.getActiveLifecycle()?.lifecycleId ?? null;
+  }
+
+  shutdown(): void {
+    this.unsubscribeStarted();
+    this.unsubscribeCompleted();
+    this.unsubscribeFailed();
+    this.activeQuery?.close();
+    this.activeQuery = null;
+    this.ws = null;
+    this.streaming = false;
+    this.runEventBuffer = [];
+    this.stopTaskPolling();
+    this.processingPromise = null;
+    this.currentConversationLifecycleId = null;
+    this.lastConversationError = null;
+  }
+
+  private handleTaskStarted(event: TaskStartedEvent): void {
+    const lifecycle = this.lifecycleStore.getLifecycleForTask(event.taskId);
+    if (!lifecycle) {
+      return;
+    }
+    this.lifecycleStore.enqueueEvent(lifecycle.lifecycleId, {
+      kind: 'task_started',
+      taskId: event.taskId,
+      appSlug: event.appSlug,
+      createdAt: new Date().toISOString(),
+    });
+    this.ensureProcessingLoop();
+  }
+
+  private handleTaskCompleted(event: TaskCompletedEvent): void {
+    const lifecycle = this.lifecycleStore.markTaskTerminal(event.taskId);
+    if (!lifecycle) {
+      return;
+    }
+    this.lifecycleStore.enqueueEvent(lifecycle.lifecycleId, {
+      kind: 'task_completed',
+      taskId: event.taskId,
+      appSlug: event.appSlug,
+      summary: event.summary,
+      createdAt: new Date().toISOString(),
+    });
+    this.ensureProcessingLoop();
+  }
+
+  private handleTaskFailed(event: TaskFailedEvent): void {
+    const lifecycle = this.lifecycleStore.markTaskTerminal(event.taskId);
+    if (!lifecycle) {
+      return;
+    }
+    this.lifecycleStore.enqueueEvent(lifecycle.lifecycleId, {
+      kind: 'task_failed',
+      taskId: event.taskId,
+      appSlug: event.appSlug,
+      error: event.error,
+      createdAt: new Date().toISOString(),
+    });
+    this.ensureProcessingLoop();
+  }
+
+  private ensureProcessingLoop(): void {
+    if (this.processingPromise) {
+      return;
+    }
+
+    this.processingPromise = this.processLifecycleQueue()
+      .catch((error) => {
+        const lifecycle = this.lifecycleStore.getActiveLifecycle();
+        if (!lifecycle) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        this.failLifecycle(lifecycle, message);
+      })
+      .finally(() => {
+        this.processingPromise = null;
+        const lifecycle = this.lifecycleStore.getActiveLifecycle();
+        if (lifecycle && lifecycle.events.length > 0 && !lifecycle.activeConversationId) {
+          this.ensureProcessingLoop();
+        }
+      });
+  }
+
+  private async processLifecycleQueue(): Promise<void> {
+    while (true) {
+      const lifecycle = this.lifecycleStore.getActiveLifecycle();
+      if (!lifecycle) {
+        this.stopTaskPolling();
+        return;
+      }
+
+      if (lifecycle.activeConversationId) {
+        return;
+      }
+
+      const next = this.lifecycleStore.shiftEvent(lifecycle.lifecycleId);
+      if (!next) {
+        if (this.lifecycleStore.canComplete(lifecycle.lifecycleId)) {
+          this.lifecycleStore.completeLifecycle(lifecycle.lifecycleId);
+          this.sendLifecycleEvent({
+            type: 'lifecycle.completed',
+            lifecycleId: lifecycle.lifecycleId,
+          });
+          this.stopTaskPolling();
+          this.persistSnapshot();
+        } else if (lifecycle.pendingTaskIds.length > 0) {
+          this.ensureTaskPolling();
+        } else {
+          this.stopTaskPolling();
+        }
+        return;
+      }
+
+      const promptText = this.buildConversationInput(next);
+      if (!promptText) {
+        continue;
+      }
+
+      if (!this.lifecycleStore.startConversation(lifecycle.lifecycleId)) {
+        return;
+      }
+
+      try {
+        await this.runConversation(lifecycle.lifecycleId, promptText);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.failLifecycle(lifecycle, message);
+        return;
+      } finally {
+        this.lifecycleStore.finishConversation(lifecycle.lifecycleId);
+      }
+    }
+  }
+
+  private async runConversation(lifecycleId: string, text: string): Promise<void> {
     const runtime = this.config.runtimeResolver();
     const providerOptions = await this.config.providerOptionsResolver(runtime.providerKind);
 
     this.streaming = true;
     this.runEventBuffer = [];
-    this.history.push({ role: 'user', content: text });
     this.runtimeProviderKind = runtime.providerKind;
+    this.currentConversationLifecycleId = lifecycleId;
+    this.lastConversationError = null;
 
     try {
       const query = runtime.agentProvider.createQuery({
@@ -151,59 +355,20 @@ export class CozyBaseSession {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const event: AgentEvent = { type: 'conversation.error', message };
+      this.handleRuntimeEvent(event);
       this.runEventBuffer.push(event);
       this.sendToWs(event);
     } finally {
       this.activeQuery = null;
+      this.currentConversationLifecycleId = null;
       this.streaming = false;
       this.runEventBuffer = [];
       this.persistSnapshot();
-      void this.flushNotifications();
-    }
-  }
-
-  async injectPrompt(text: string): Promise<void> {
-    await this.prompt(text);
-  }
-
-  shutdown(): void {
-    this.unsubscribeCompleted();
-    this.unsubscribeFailed();
-    this.activeQuery?.close();
-    this.activeQuery = null;
-    this.ws = null;
-    this.streaming = false;
-    this.runEventBuffer = [];
-    this.notificationQueue = [];
-    this.flushPromise = null;
-  }
-
-  private enqueueTaskNotification(message: string): void {
-    this.notificationQueue.push(message);
-    void this.flushNotifications();
-  }
-
-  private async flushNotifications(): Promise<void> {
-    if (this.flushPromise) {
-      return this.flushPromise;
     }
 
-    const run = async () => {
-      while (!this.streaming && this.notificationQueue.length > 0) {
-        const message = this.notificationQueue.shift();
-        if (!message) {
-          continue;
-        }
-        await this.injectPrompt(message);
-      }
-    };
-
-    this.flushPromise = run().finally(() => {
-      if (this.flushPromise) {
-        this.flushPromise = null;
-      }
-    });
-    return this.flushPromise;
+    if (this.lastConversationError) {
+      throw new Error(this.lastConversationError);
+    }
   }
 
   private handleRuntimeEvent(event: AgentEvent): void {
@@ -230,10 +395,95 @@ export class CozyBaseSession {
         break;
       case 'conversation.error':
         this.streaming = false;
+        this.lastConversationError = event.message;
         break;
       default:
         break;
     }
+  }
+
+  private buildConversationInput(event: LifecycleInboxEvent): string | null {
+    switch (event.kind) {
+      case 'user_message':
+        return event.text;
+      case 'task_completed':
+        return buildCompletionNotification({
+          taskId: event.taskId,
+          appSlug: event.appSlug,
+          summary: event.summary,
+        });
+      case 'task_failed':
+        return buildFailureNotification({
+          taskId: event.taskId,
+          appSlug: event.appSlug,
+          error: event.error,
+        });
+      case 'system_notice':
+        return event.message;
+      case 'task_started':
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  private ensureTaskPolling(): void {
+    if (this.taskPollTimer) {
+      return;
+    }
+
+    this.taskPollTimer = setInterval(() => {
+      void this.pollPendingTasks();
+    }, TASK_POLL_INTERVAL_MS);
+  }
+
+  private stopTaskPolling(): void {
+    if (!this.taskPollTimer) {
+      return;
+    }
+    clearInterval(this.taskPollTimer);
+    this.taskPollTimer = null;
+  }
+
+  private async pollPendingTasks(): Promise<void> {
+    const lifecycle = this.lifecycleStore.getActiveLifecycle();
+    if (!lifecycle || lifecycle.pendingTaskIds.length === 0) {
+      this.stopTaskPolling();
+      return;
+    }
+
+    for (const taskId of [...lifecycle.pendingTaskIds]) {
+      const task = this.config.getTask(taskId);
+      if (!task) {
+        continue;
+      }
+      if (task.status === 'completed') {
+        this.handleTaskCompleted({
+          taskId: task.taskId,
+          appSlug: task.appSlug,
+          summary: task.summary ?? '',
+        });
+        continue;
+      }
+      if (task.status === 'failed') {
+        this.handleTaskFailed({
+          taskId: task.taskId,
+          appSlug: task.appSlug,
+          error: task.error ?? 'Task failed',
+        });
+      }
+    }
+  }
+
+  private failLifecycle(lifecycle: LifecycleState, message: string): void {
+    this.lifecycleStore.failLifecycle(lifecycle.lifecycleId, message);
+    this.sendLifecycleEvent({
+      type: 'lifecycle.failed',
+      lifecycleId: lifecycle.lifecycleId,
+      message,
+    });
+    this.stopTaskPolling();
+    this.persistSnapshot();
   }
 
   private persistSnapshot(): void {
@@ -269,6 +519,10 @@ export class CozyBaseSession {
     this.resumeSessionId = null;
     this.history = [];
     return false;
+  }
+
+  private sendLifecycleEvent(event: LifecycleEvent): void {
+    this.sendToWs(event);
   }
 
   private sendToWs(data: WireEvent | { type: 'session.error'; message: string }): void {
