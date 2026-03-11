@@ -49,6 +49,23 @@ interface OpenClawStatus {
   acpxConfigIssue: string | null;
 }
 
+interface AgentSettingsBundle {
+  builder: {
+    data: AgentConfig;
+    meta: AgentMeta;
+  };
+  operator: {
+    data: AdvancedAgentConfig;
+    meta: AdvancedAgentMeta;
+  };
+  cozybase: {
+    data: AdvancedAgentConfig;
+    meta: AdvancedAgentMeta;
+  };
+}
+
+type AgentKind = keyof AgentSettingsBundle;
+
 interface AgentSettingsCardProps<TConfig extends AgentConfig> {
   title: string;
   description: string;
@@ -75,7 +92,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 const SETTINGS_TABS: SettingsTab[] = [
   { id: 'general', label: '通用设置' },
   { id: 'openclaw', label: 'OpenClaw' },
-  { id: 'agent', label: 'Agent' },
+  { id: 'agent', label: 'Agents' },
 ];
 
 export function SettingsPage() {
@@ -139,25 +156,16 @@ export function SettingsPage() {
     setAgentLoading(true);
     setAgentError(null);
     try {
-      const [builderRes, operatorRes, cozybaseRes] = await Promise.all([
-        fetch('/api/v1/settings/agent'),
-        fetch('/api/v1/settings/operator-agent'),
-        fetch('/api/v1/settings/cozybase-agent'),
-      ]);
-      if (!builderRes.ok) throw new Error(`HTTP ${builderRes.status}`);
-      if (!operatorRes.ok) throw new Error(`HTTP ${operatorRes.status}`);
-      if (!cozybaseRes.ok) throw new Error(`HTTP ${cozybaseRes.status}`);
+      const res = await fetch('/api/v1/settings/agents');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const builderJson = await builderRes.json();
-      const operatorJson = await operatorRes.json();
-      const cozybaseJson = await cozybaseRes.json();
-
-      setBuilderConfig(builderJson.data);
-      setBuilderMeta(builderJson.meta);
-      setOperatorConfig(operatorJson.data);
-      setOperatorMeta(operatorJson.meta);
-      setCozybaseConfig(cozybaseJson.data);
-      setCozybaseMeta(cozybaseJson.meta);
+      const json = await res.json() as { data: AgentSettingsBundle };
+      setBuilderConfig(json.data.builder.data);
+      setBuilderMeta(json.data.builder.meta);
+      setOperatorConfig(json.data.operator.data);
+      setOperatorMeta(json.data.operator.meta);
+      setCozybaseConfig(json.data.cozybase.data);
+      setCozybaseMeta(json.data.cozybase.meta);
     } catch (err) {
       setAgentError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -212,7 +220,7 @@ export function SettingsPage() {
   }
 
   async function saveSettings<TConfig extends AgentConfig, TMeta extends AgentMeta | AdvancedAgentMeta>(
-    path: string,
+    kind: AgentKind,
     updates: Partial<TConfig>,
     setSaving: Dispatch<SetStateAction<boolean>>,
     setSaveSuccess: Dispatch<SetStateAction<boolean>>,
@@ -223,19 +231,19 @@ export function SettingsPage() {
     setSaveSuccess(false);
     setAgentError(null);
     try {
-      const res = await fetch(path, {
+      const res = await fetch('/api/v1/settings/agents', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify({ [kind]: updates }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => null);
         throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
       }
 
-      const json = await res.json();
-      setConfig(json.data);
-      setMeta(json.meta);
+      const json = await res.json() as { data: AgentSettingsBundle };
+      setConfig(json.data[kind].data as TConfig);
+      setMeta(json.data[kind].meta as TMeta);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
@@ -276,7 +284,7 @@ export function SettingsPage() {
     if (!builderMeta) return;
     const models = builderMeta.models[provider] ?? [];
     void saveSettings<AgentConfig, AgentMeta>(
-      '/api/v1/settings/agent',
+      'builder',
       { provider, model: models[0] ?? '' },
       setSavingBuilder,
       setBuilderSaveSuccess,
@@ -287,7 +295,7 @@ export function SettingsPage() {
 
   function handleBuilderModelChange(model: string) {
     void saveSettings<AgentConfig, AgentMeta>(
-      '/api/v1/settings/agent',
+      'builder',
       { model },
       setSavingBuilder,
       setBuilderSaveSuccess,
@@ -300,7 +308,7 @@ export function SettingsPage() {
     if (!operatorMeta) return;
     const models = operatorMeta.models[provider] ?? [];
     void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
-      '/api/v1/settings/operator-agent',
+      'operator',
       {
         provider,
         modelProvider: provider === 'pi-agent-core' ? operatorMeta.modelProviders[0] ?? 'anthropic' : null,
@@ -316,7 +324,7 @@ export function SettingsPage() {
   function handleOperatorModelProviderChange(modelProvider: string) {
     if (!operatorConfig) return;
     void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
-      '/api/v1/settings/operator-agent',
+      'operator',
       { modelProvider, model: operatorConfig.model },
       setSavingOperator,
       setOperatorSaveSuccess,
@@ -327,7 +335,7 @@ export function SettingsPage() {
 
   function handleOperatorModelChange(model: string) {
     void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
-      '/api/v1/settings/operator-agent',
+      'operator',
       { model },
       setSavingOperator,
       setOperatorSaveSuccess,
@@ -340,7 +348,7 @@ export function SettingsPage() {
     if (!cozybaseMeta) return;
     const models = cozybaseMeta.models[provider] ?? [];
     void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
-      '/api/v1/settings/cozybase-agent',
+      'cozybase',
       { provider, model: models[0] ?? '' },
       setSavingCozybase,
       setCozybaseSaveSuccess,
@@ -351,7 +359,7 @@ export function SettingsPage() {
 
   function handleCozybaseModelChange(model: string) {
     void saveSettings<AdvancedAgentConfig, AdvancedAgentMeta>(
-      '/api/v1/settings/cozybase-agent',
+      'cozybase',
       { model },
       setSavingCozybase,
       setCozybaseSaveSuccess,

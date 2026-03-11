@@ -181,6 +181,77 @@ describe('Settings API (/api/v1/settings)', () => {
     });
   });
 
+  test('returns aggregated agent settings in a single response', async () => {
+    handle = createTestWorkspace();
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request('/api/v1/settings/agents');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        builder: {
+          data: {
+            provider: 'claude',
+            model: 'claude-sonnet-4-6',
+          },
+        },
+        operator: {
+          data: {
+            provider: 'pi-agent-core',
+            modelProvider: 'anthropic',
+            model: 'claude-sonnet-4-20250514',
+          },
+        },
+        cozybase: {
+          data: {
+            provider: 'claude-code',
+            modelProvider: 'anthropic',
+            model: 'claude-sonnet-4-6',
+          },
+        },
+      },
+    });
+  });
+
+  test('updates aggregated agent settings in a single request', async () => {
+    handle = createTestWorkspace();
+    const { app, workspace } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request(
+      jsonReq('/api/v1/settings/agents', 'PUT', {
+        builder: { provider: 'codex' },
+        cozybase: { provider: 'codex' },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        builder: {
+          data: {
+            provider: 'codex',
+            model: 'gpt-5.3-codex',
+          },
+        },
+        operator: {
+          data: {
+            provider: 'pi-agent-core',
+          },
+        },
+        cozybase: {
+          data: {
+            provider: 'codex',
+            model: 'gpt-5.4',
+          },
+        },
+      },
+    });
+
+    expect(workspace.getPlatformRepo().settings.get('agent.provider')).toBe('codex');
+    expect(workspace.getPlatformRepo().settings.get('cozybase_agent.agent_provider')).toBe('codex');
+    expect(workspace.getPlatformRepo().settings.get('operator.agent_provider')).toBeNull();
+  });
+
   test('cozybase agent falls back from legacy claude-haiku to the supported default model', async () => {
     handle = createTestWorkspace();
     const { app, workspace } = createServer(createTestConfig(handle.root));

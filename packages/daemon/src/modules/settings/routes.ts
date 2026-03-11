@@ -32,268 +32,107 @@ import {
   readOpenClawStatus,
 } from './openclaw';
 
+class SettingsValidationError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+  }
+}
+
 export function createSettingsRoutes(platformRepo: PlatformRepository) {
   const app = new Hono();
 
   app.get('/settings/agent', (c) => {
-    const { provider, model } = readAgentConfig(platformRepo);
+    return c.json(readBuilderAgentSettingsResponse(platformRepo));
+  });
+
+  app.get('/settings/agents', (c) => {
     return c.json({
-      data: { provider, model },
-      meta: {
-        providers: VALID_AGENT_PROVIDERS,
-        models: VALID_MODELS,
+      data: {
+        builder: readBuilderAgentSettingsResponse(platformRepo),
+        operator: readOperatorAgentSettingsResponse(platformRepo),
+        cozybase: readCozyBaseAgentSettingsResponse(platformRepo),
+      },
+    });
+  });
+
+  app.put('/settings/agents', async (c) => {
+    const body = await c.req.json<{
+      builder?: { provider?: string; model?: string };
+      operator?: { provider?: string; modelProvider?: string | null; model?: string };
+      cozybase?: { provider?: string; modelProvider?: string | null; model?: string };
+    }>();
+
+    try {
+      if (body.builder) {
+        updateBuilderAgentSettings(platformRepo, body.builder);
+      }
+      if (body.operator) {
+        updateOperatorAgentSettings(platformRepo, body.operator);
+      }
+      if (body.cozybase) {
+        updateCozyBaseAgentSettings(platformRepo, body.cozybase);
+      }
+    } catch (error) {
+      if (error instanceof SettingsValidationError) {
+        return c.json({ error: { code: error.code, message: error.message } }, 400);
+      }
+      throw error;
+    }
+
+    return c.json({
+      data: {
+        builder: readBuilderAgentSettingsResponse(platformRepo),
+        operator: readOperatorAgentSettingsResponse(platformRepo),
+        cozybase: readCozyBaseAgentSettingsResponse(platformRepo),
       },
     });
   });
 
   app.put('/settings/agent', async (c) => {
     const body = await c.req.json<{ provider?: string; model?: string }>();
-    const current = readAgentConfig(platformRepo);
-
-    if (body.provider !== undefined) {
-      if (typeof body.provider !== 'string' || !isValidAgentProvider(body.provider)) {
-        return c.json(
-          { error: { code: 'INVALID_PROVIDER', message: `Invalid provider. Must be one of: ${VALID_AGENT_PROVIDERS.join(', ')}` } },
-          400,
-        );
+    try {
+      updateBuilderAgentSettings(platformRepo, body);
+      return c.json(readBuilderAgentSettingsResponse(platformRepo));
+    } catch (error) {
+      if (error instanceof SettingsValidationError) {
+        return c.json({ error: { code: error.code, message: error.message } }, 400);
       }
+      throw error;
     }
-
-    if (body.model !== undefined && typeof body.model !== 'string') {
-      return c.json(
-        { error: { code: 'INVALID_MODEL', message: 'Model must be a non-empty string' } },
-        400,
-      );
-    }
-
-    const provider = body.provider ?? current.provider;
-    const model =
-      body.model !== undefined
-        ? body.model.trim()
-        : body.provider !== undefined && body.provider !== current.provider
-          ? getDefaultAgentModel(provider)
-          : current.model;
-
-    if (!model || !isValidModelForProvider(provider, model)) {
-      return c.json(
-        { error: { code: 'INVALID_MODEL', message: `Invalid model for provider '${provider}'. Must be one of: ${VALID_MODELS[provider].join(', ')}` } },
-        400,
-      );
-    }
-
-    platformRepo.transaction(() => {
-      platformRepo.settings.set('agent.provider', provider);
-      platformRepo.settings.set('agent.model', model);
-    });
-
-    return c.json({
-      data: { provider, model },
-      meta: {
-        providers: VALID_AGENT_PROVIDERS,
-        models: VALID_MODELS,
-      },
-    });
   });
 
   app.get('/settings/operator-agent', (c) => {
-    const { agentProvider, modelProvider, model } = readOperatorAgentConfig(platformRepo);
-    return c.json({
-      data: { provider: agentProvider, modelProvider, model },
-      meta: getOperatorProviderMeta(),
-    });
+    return c.json(readOperatorAgentSettingsResponse(platformRepo));
   });
 
   app.put('/settings/operator-agent', async (c) => {
     const body = await c.req.json<{ provider?: string; modelProvider?: string | null; model?: string }>();
-    const current = readOperatorAgentConfig(platformRepo);
-
-    if (body.provider !== undefined && !normalizeOperatorAgentProvider(body.provider)) {
-      const meta = getOperatorProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_PROVIDER',
-            message: `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
-          },
-        },
-        400,
-      );
-    }
-
-    if (
-      body.modelProvider !== undefined &&
-      body.modelProvider !== null &&
-      !normalizeOperatorModelProvider(body.modelProvider)
-    ) {
-      const meta = getOperatorProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_MODEL_PROVIDER',
-            message: `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
-          },
-        },
-        400,
-      );
-    }
-
-    if (body.model !== undefined && typeof body.model !== 'string') {
-      return c.json(
-        { error: { code: 'INVALID_MODEL', message: 'Model must be a non-empty string' } },
-        400,
-      );
-    }
-
-    const provider = normalizeOperatorAgentProvider(body.provider) ?? current.agentProvider;
-    const providerChanged = provider !== current.agentProvider;
-    const modelProvider =
-      provider === 'pi-agent-core'
-        ? normalizeOperatorModelProvider(body.modelProvider ?? undefined) ??
-          (providerChanged ? null : current.modelProvider)
-        : null;
-    const candidateModel =
-      body.model !== undefined
-        ? body.model.trim()
-        : providerChanged
-          ? getDefaultOperatorModel(provider)
-          : current.model;
-
-    if (provider === 'pi-agent-core') {
-      const resolvedModelProvider = modelProvider ?? current.modelProvider ?? 'anthropic';
-      if (!candidateModel || !isValidPiAgentModel(resolvedModelProvider, candidateModel)) {
-        return c.json(
-          {
-            error: {
-              code: 'INVALID_MODEL',
-              message:
-                `Invalid model for provider '${provider}' and model provider '${resolvedModelProvider}'.`,
-            },
-          },
-          400,
-        );
+    try {
+      updateOperatorAgentSettings(platformRepo, body);
+      return c.json(readOperatorAgentSettingsResponse(platformRepo));
+    } catch (error) {
+      if (error instanceof SettingsValidationError) {
+        return c.json({ error: { code: error.code, message: error.message } }, 400);
       }
-
-      platformRepo.transaction(() => {
-        platformRepo.settings.set('operator.agent_provider', provider);
-        platformRepo.settings.set('operator.model_provider', resolvedModelProvider);
-        platformRepo.settings.set('operator.model', candidateModel);
-      });
-
-      return c.json({
-        data: { provider, modelProvider: resolvedModelProvider, model: candidateModel },
-        meta: getOperatorProviderMeta(),
-      });
+      throw error;
     }
-
-    if (!candidateModel || !isValidOperatorModelForProvider(provider, candidateModel)) {
-      const meta = getOperatorProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_MODEL',
-            message: `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
-          },
-        },
-        400,
-      );
-    }
-
-    platformRepo.transaction(() => {
-      platformRepo.settings.set('operator.agent_provider', provider);
-      platformRepo.settings.delete('operator.model_provider');
-      platformRepo.settings.set('operator.model', candidateModel);
-    });
-
-    return c.json({
-      data: { provider, modelProvider: null, model: candidateModel },
-      meta: getOperatorProviderMeta(),
-    });
   });
 
   app.get('/settings/cozybase-agent', (c) => {
-    const { agentProvider, modelProvider, model } = readCozyBaseAgentConfig(platformRepo);
-    return c.json({
-      data: { provider: agentProvider, modelProvider, model },
-      meta: getCozyBaseProviderMeta(),
-    });
+    return c.json(readCozyBaseAgentSettingsResponse(platformRepo));
   });
 
   app.put('/settings/cozybase-agent', async (c) => {
     const body = await c.req.json<{ provider?: string; modelProvider?: string | null; model?: string }>();
-    const current = readCozyBaseAgentConfig(platformRepo);
-
-    if (body.provider !== undefined && !normalizeCozyBaseAgentProvider(body.provider)) {
-      const meta = getCozyBaseProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_PROVIDER',
-            message: `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
-          },
-        },
-        400,
-      );
+    try {
+      updateCozyBaseAgentSettings(platformRepo, body);
+      return c.json(readCozyBaseAgentSettingsResponse(platformRepo));
+    } catch (error) {
+      if (error instanceof SettingsValidationError) {
+        return c.json({ error: { code: error.code, message: error.message } }, 400);
+      }
+      throw error;
     }
-
-    if (
-      body.modelProvider !== undefined &&
-      body.modelProvider !== null &&
-      !normalizeCozyBaseModelProvider(body.modelProvider)
-    ) {
-      const meta = getCozyBaseProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_MODEL_PROVIDER',
-            message: `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
-          },
-        },
-        400,
-      );
-    }
-
-    if (body.model !== undefined && typeof body.model !== 'string') {
-      return c.json(
-        { error: { code: 'INVALID_MODEL', message: 'Model must be a non-empty string' } },
-        400,
-      );
-    }
-
-    const provider = normalizeCozyBaseAgentProvider(body.provider) ?? current.agentProvider;
-    const modelProvider =
-      normalizeCozyBaseModelProvider(body.modelProvider ?? undefined)
-      ?? current.modelProvider
-      ?? 'anthropic';
-    const candidateModel =
-      body.model !== undefined
-        ? body.model.trim()
-        : body.provider !== undefined && provider !== current.agentProvider
-          ? getDefaultCozyBaseModel(provider)
-          : current.model;
-
-    if (!candidateModel || !isValidCozyBaseModelForProvider(provider, candidateModel)) {
-      const meta = getCozyBaseProviderMeta();
-      return c.json(
-        {
-          error: {
-            code: 'INVALID_MODEL',
-            message: `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
-          },
-        },
-        400,
-      );
-    }
-
-    platformRepo.transaction(() => {
-      platformRepo.settings.set('cozybase_agent.agent_provider', provider);
-      platformRepo.settings.set('cozybase_agent.model_provider', modelProvider);
-      platformRepo.settings.set('cozybase_agent.model', candidateModel);
-    });
-
-    return c.json({
-      data: { provider, modelProvider, model: candidateModel },
-      meta: getCozyBaseProviderMeta(),
-    });
   });
 
   app.get('/settings/openclaw', (c) => {
@@ -402,5 +241,205 @@ function readOpenClawSettings(platformRepo: PlatformRepository): OpenClawStatus 
   return {
     enabled: platformRepo.settings.get('openclaw.enabled') === 'true',
     ...readOpenClawStatus(),
+  };
+}
+
+function updateBuilderAgentSettings(
+  platformRepo: PlatformRepository,
+  body: { provider?: string; model?: string },
+) {
+  const current = readAgentConfig(platformRepo);
+
+  if (body.provider !== undefined) {
+    if (typeof body.provider !== 'string' || !isValidAgentProvider(body.provider)) {
+      throw new SettingsValidationError(
+        'INVALID_PROVIDER',
+        `Invalid provider. Must be one of: ${VALID_AGENT_PROVIDERS.join(', ')}`,
+      );
+    }
+  }
+
+  if (body.model !== undefined && typeof body.model !== 'string') {
+    throw new SettingsValidationError('INVALID_MODEL', 'Model must be a non-empty string');
+  }
+
+  const provider = body.provider ?? current.provider;
+  const model =
+    body.model !== undefined
+      ? body.model.trim()
+      : body.provider !== undefined && body.provider !== current.provider
+        ? getDefaultAgentModel(provider)
+        : current.model;
+
+  if (!model || !isValidModelForProvider(provider, model)) {
+    throw new SettingsValidationError(
+      'INVALID_MODEL',
+      `Invalid model for provider '${provider}'. Must be one of: ${VALID_MODELS[provider].join(', ')}`,
+    );
+  }
+
+  platformRepo.transaction(() => {
+    platformRepo.settings.set('agent.provider', provider);
+    platformRepo.settings.set('agent.model', model);
+  });
+}
+
+function updateOperatorAgentSettings(
+  platformRepo: PlatformRepository,
+  body: { provider?: string; modelProvider?: string | null; model?: string },
+) {
+  const current = readOperatorAgentConfig(platformRepo);
+
+  if (body.provider !== undefined && !normalizeOperatorAgentProvider(body.provider)) {
+    const meta = getOperatorProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_PROVIDER',
+      `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
+    );
+  }
+
+  if (
+    body.modelProvider !== undefined &&
+    body.modelProvider !== null &&
+    !normalizeOperatorModelProvider(body.modelProvider)
+  ) {
+    const meta = getOperatorProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_MODEL_PROVIDER',
+      `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
+    );
+  }
+
+  if (body.model !== undefined && typeof body.model !== 'string') {
+    throw new SettingsValidationError('INVALID_MODEL', 'Model must be a non-empty string');
+  }
+
+  const provider = normalizeOperatorAgentProvider(body.provider) ?? current.agentProvider;
+  const providerChanged = provider !== current.agentProvider;
+  const modelProvider =
+    provider === 'pi-agent-core'
+      ? normalizeOperatorModelProvider(body.modelProvider ?? undefined) ??
+        (providerChanged ? null : current.modelProvider)
+      : null;
+  const candidateModel =
+    body.model !== undefined
+      ? body.model.trim()
+      : providerChanged
+        ? getDefaultOperatorModel(provider)
+        : current.model;
+
+  if (provider === 'pi-agent-core') {
+    const resolvedModelProvider = modelProvider ?? current.modelProvider ?? 'anthropic';
+    if (!candidateModel || !isValidPiAgentModel(resolvedModelProvider, candidateModel)) {
+      throw new SettingsValidationError(
+        'INVALID_MODEL',
+        `Invalid model for provider '${provider}' and model provider '${resolvedModelProvider}'.`,
+      );
+    }
+
+    platformRepo.transaction(() => {
+      platformRepo.settings.set('operator.agent_provider', provider);
+      platformRepo.settings.set('operator.model_provider', resolvedModelProvider);
+      platformRepo.settings.set('operator.model', candidateModel);
+    });
+    return;
+  }
+
+  if (!candidateModel || !isValidOperatorModelForProvider(provider, candidateModel)) {
+    const meta = getOperatorProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_MODEL',
+      `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
+    );
+  }
+
+  platformRepo.transaction(() => {
+    platformRepo.settings.set('operator.agent_provider', provider);
+    platformRepo.settings.delete('operator.model_provider');
+    platformRepo.settings.set('operator.model', candidateModel);
+  });
+}
+
+function updateCozyBaseAgentSettings(
+  platformRepo: PlatformRepository,
+  body: { provider?: string; modelProvider?: string | null; model?: string },
+) {
+  const current = readCozyBaseAgentConfig(platformRepo);
+
+  if (body.provider !== undefined && !normalizeCozyBaseAgentProvider(body.provider)) {
+    const meta = getCozyBaseProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_PROVIDER',
+      `Invalid provider. Must be one of: ${meta.providers.join(', ')}`,
+    );
+  }
+
+  if (
+    body.modelProvider !== undefined &&
+    body.modelProvider !== null &&
+    !normalizeCozyBaseModelProvider(body.modelProvider)
+  ) {
+    const meta = getCozyBaseProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_MODEL_PROVIDER',
+      `Invalid model provider. Must be one of: ${meta.modelProviders.join(', ')}`,
+    );
+  }
+
+  if (body.model !== undefined && typeof body.model !== 'string') {
+    throw new SettingsValidationError('INVALID_MODEL', 'Model must be a non-empty string');
+  }
+
+  const provider = normalizeCozyBaseAgentProvider(body.provider) ?? current.agentProvider;
+  const modelProvider =
+    normalizeCozyBaseModelProvider(body.modelProvider ?? undefined)
+    ?? current.modelProvider
+    ?? 'anthropic';
+  const candidateModel =
+    body.model !== undefined
+      ? body.model.trim()
+      : body.provider !== undefined && provider !== current.agentProvider
+        ? getDefaultCozyBaseModel(provider)
+        : current.model;
+
+  if (!candidateModel || !isValidCozyBaseModelForProvider(provider, candidateModel)) {
+    const meta = getCozyBaseProviderMeta();
+    throw new SettingsValidationError(
+      'INVALID_MODEL',
+      `Invalid model for provider '${provider}'. Must be one of: ${meta.models[provider].join(', ')}`,
+    );
+  }
+
+  platformRepo.transaction(() => {
+    platformRepo.settings.set('cozybase_agent.agent_provider', provider);
+    platformRepo.settings.set('cozybase_agent.model_provider', modelProvider);
+    platformRepo.settings.set('cozybase_agent.model', candidateModel);
+  });
+}
+
+function readBuilderAgentSettingsResponse(platformRepo: PlatformRepository) {
+  const { provider, model } = readAgentConfig(platformRepo);
+  return {
+    data: { provider, model },
+    meta: {
+      providers: VALID_AGENT_PROVIDERS,
+      models: VALID_MODELS,
+    },
+  };
+}
+
+function readOperatorAgentSettingsResponse(platformRepo: PlatformRepository) {
+  const { agentProvider, modelProvider, model } = readOperatorAgentConfig(platformRepo);
+  return {
+    data: { provider: agentProvider, modelProvider, model },
+    meta: getOperatorProviderMeta(),
+  };
+}
+
+function readCozyBaseAgentSettingsResponse(platformRepo: PlatformRepository) {
+  const { agentProvider, modelProvider, model } = readCozyBaseAgentConfig(platformRepo);
+  return {
+    data: { provider: agentProvider, modelProvider, model },
+    meta: getCozyBaseProviderMeta(),
   };
 }
