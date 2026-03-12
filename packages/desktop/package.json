@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "bun run prepare:resources && bun run prepare:sidecar",
+    "prepare:app": "bun run prepare:resources && bun run prepare:sidecar",
     "dev": "bun run dev:app",
     "dev:app": "bunx tauri dev",
     "build": "bun run build:app",

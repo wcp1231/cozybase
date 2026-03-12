@@ -24,7 +24,7 @@ export async function prepareDesktopArtifacts() {
   await buildWebArtifacts();
   await runCommand({
     label: 'desktop',
-    cmd: workspaceScript('@cozybase/desktop', 'prepare'),
+    cmd: workspaceScript('@cozybase/desktop', 'prepare:app'),
     cwd: repoRoot,
   });
 }
