@@ -33,10 +33,10 @@ function useActionContext() {
 // ============================================================
 
 const variantClasses: Record<string, string> = {
-  primary: 'bg-primary text-white border-0',
-  secondary: 'bg-secondary text-white border-0',
-  danger: 'bg-danger text-white border-0',
-  ghost: 'bg-transparent text-text-secondary border border-border-strong',
+  primary: 'bg-primary text-white border-transparent',
+  secondary: 'bg-secondary text-white border-transparent',
+  danger: 'bg-danger text-white border-transparent',
+  ghost: 'bg-transparent text-text-secondary border-border-strong',
 };
 
 function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
@@ -76,7 +76,7 @@ function ButtonRenderer({ schema, exprContext }: SchemaComponentProps) {
         handleClick();
       }}
       className={clsx(
-        'px-4 py-2 text-sm font-medium rounded-sm inline-flex items-center gap-1.5 transition-opacity',
+        'px-4 py-2 text-sm font-medium rounded-sm border inline-flex items-center justify-center gap-1.5 transition-opacity shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
         variantClasses[variant] ?? variantClasses.primary,
         isDisabled && 'opacity-60 cursor-not-allowed',
         !isDisabled && 'cursor-pointer',
@@ -111,7 +111,7 @@ function LinkRenderer({ schema, exprContext }: SchemaComponentProps) {
     <a
       href="#"
       onClick={handleClick}
-      className={clsx('text-primary no-underline text-sm cursor-pointer hover:underline', s.className)}
+      className={clsx('text-primary no-underline text-sm font-medium cursor-pointer hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm', s.className)}
       style={s.style}
     >
       {String(resolvedText ?? '')}

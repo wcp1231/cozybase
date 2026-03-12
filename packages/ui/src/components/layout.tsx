@@ -25,7 +25,7 @@ function PageComp({ schema, renderChild }: SchemaComponentProps) {
 
   return (
     <div
-      className={clsx('w-full flex flex-col gap-4', s.className)}
+      className={clsx('w-full min-w-0 flex flex-col gap-4', s.className)}
       style={s.style}
     >
       {s.children?.map((child: ComponentSchema, i: number) =>

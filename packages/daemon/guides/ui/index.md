@@ -44,6 +44,8 @@ When an Agent edits UI:
 
 Each element in `body` is a component object, identified by its `type` field.
 
+All built-in components ship with a default visual baseline. If you omit `style` and `className`, the renderer still applies basic spacing, typography, container, and input visuals at runtime. These runtime defaults are **not** written back into `ui/pages.json`.
+
 26 built-in component types:
 
 | Category | Components |
@@ -96,3 +98,14 @@ Custom component instances also support:
 | `props` | object | Props passed into a custom component template and exposed as `${props.xxx}` inside that template. |
 
 See `get_guide("ui/common-properties")` for full semantics and `get_guide("ui/styling")` for supported style keys and examples.
+
+## Recommended Styling Order
+
+When you want a UI that looks good with minimal schema:
+
+1. Rely on the built-in default visual baseline first
+2. Use component-specific props such as `gap`, `padding`, `variant`, `color`, `width`, `layout`
+3. Use `style` for root-level adjustments not covered by schema props
+4. Use `className` only when you intentionally want to couple the schema to external CSS or Tailwind utility classes
+
+Do not add repetitive baseline styles such as generic card borders, default text colors, or standard input chrome unless you are intentionally overriding the defaults.

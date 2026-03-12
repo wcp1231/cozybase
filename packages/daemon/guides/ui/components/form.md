@@ -2,6 +2,8 @@
 
 Form component for collecting user input and submitting to an API.
 
+`form` and its built-in field types already render with a usable default visual baseline, including container styling, labels, input chrome, and submit button styling. Start with schema structure first; add custom `style` only when you need a specific layout or branded treatment.
+
 ## Basic Usage
 
 ```json
@@ -21,6 +23,8 @@ Form component for collecting user input and submitting to an API.
   ]
 }
 ```
+
+In many CRUD screens, the default form look is sufficient without extra `style`.
 
 ## Properties
 
@@ -106,6 +110,8 @@ Forms are commonly used with Dialog Actions to create modal forms:
   }
 }
 ```
+
+The default form baseline also works well inside dialogs, so avoid repeating generic card-like borders or input styles unless you need a deliberate override.
 
 ## Edit Form (with Initial Values)
 

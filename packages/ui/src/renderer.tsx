@@ -14,6 +14,7 @@ import {
 } from './engine/context';
 import { resolveExpression, resolveStyleExpressions } from './engine/expression';
 import { builtinRegistry } from './engine/registry';
+import { applyBuiltinSchemaDefaults } from './default-styling';
 import {
   CzDialog,
   CzDialogContent,
@@ -196,7 +197,7 @@ export function NodeRenderer({
     if (visible === false || visible === 'false') return null;
   }
 
-  const resolvedSchema = resolveSchemaBaseProps(schema, exprCtx);
+  const resolvedSchema = applyBuiltinSchemaDefaults(resolveSchemaBaseProps(schema, exprCtx));
 
   // Check if it's a custom component that needs template expansion
   const schemaType = resolvedSchema.type;

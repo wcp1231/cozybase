@@ -64,8 +64,8 @@ function useRegisterValue(id: string | undefined, value: unknown) {
   }, [value]);
 }
 
-const labelClass = 'block mb-1 text-sm font-medium text-text-secondary';
-const baseInputClass = 'block w-full px-2.5 py-1.5 text-sm border border-border-strong rounded-sm outline-none box-border';
+const labelClass = 'block mb-1 text-sm font-medium text-text';
+const baseInputClass = 'block w-full px-3 py-2 text-sm bg-bg text-text border border-border-strong rounded-sm outline-none box-border shadow-sm placeholder:text-text-placeholder focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2';
 const errorClass = 'text-danger text-xs mt-0.5';
 
 // ============================================================
@@ -230,7 +230,7 @@ function FormRenderer({ schema, exprContext }: SchemaComponentProps) {
           type="submit"
           disabled={submitting}
           className={clsx(
-            'px-5 py-2 text-sm font-medium text-white border-0 rounded-sm',
+            'inline-flex items-center justify-center px-5 py-2 text-sm font-medium text-white rounded-sm border border-transparent shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
             submitting
               ? 'bg-primary-light cursor-not-allowed'
               : 'bg-primary cursor-pointer',

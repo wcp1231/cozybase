@@ -167,6 +167,12 @@ describe('getNode', () => {
     expect((node as Record<string, unknown>).type).toBe('text');
   });
 
+  test('returns the persisted schema without runtime default styling fields', () => {
+    const node = getNode(getCtx(), 'text-hello') as Record<string, unknown>;
+    expect(node.style).toBeUndefined();
+    expect(node.className).toBeUndefined();
+  });
+
   test('returns a nested node', () => {
     const node = getNode(getCtx(), 'btn-save');
     expect((node as Record<string, unknown>).id).toBe('btn-save');

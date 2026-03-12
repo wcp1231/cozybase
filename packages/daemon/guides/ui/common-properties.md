@@ -18,7 +18,6 @@ Custom component instances support one additional field:
 <!-- AUTO-GENERATED-PROPS:START -->
 | Field | Type | Required | Description |
 |----------|------|----------|-------------|
-| `props` | `object` | No | Props passed into the custom component template and exposed inside it as `${props.xxx}`. |
 <!-- AUTO-GENERATED-PROPS:END -->
 
 ## `type`

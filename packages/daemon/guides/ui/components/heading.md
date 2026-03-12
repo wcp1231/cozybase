@@ -2,6 +2,8 @@
 
 Displays a heading (h1–h6).
 
+`heading` ships with level-aware default typography. In most cases, setting `level` is enough; you only need extra styling for special marketing or editorial treatments.
+
 ## Properties
 
 <!-- AUTO-GENERATED-PROPS:START -->
@@ -21,4 +23,10 @@ With expression:
 
 ```json
 { "type": "heading", "text": "Hello, ${row.name}", "level": 3 }
+```
+
+Prefer semantic levels over manual font sizing:
+
+```json
+{ "type": "heading", "text": "Section Title", "level": 4 }
 ```

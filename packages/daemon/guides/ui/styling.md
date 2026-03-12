@@ -5,7 +5,13 @@ JSON-to-UI provides two generic styling hooks on every component:
 - `style`: inline style object
 - `className`: extra CSS classes on the component root
 
-For most generated UI, prefer schema-level props first (`gap`, `padding`, `variant`, `color`, `width`, etc.), then use `style` for one-off adjustments.
+Built-in components already provide a runtime default visual baseline for common spacing, typography, containers, and form chrome. For most generated UI, prefer schema-level props first (`gap`, `padding`, `variant`, `color`, `width`, etc.), then use `style` for one-off adjustments.
+
+Important:
+
+- Runtime default styling is applied during rendering only
+- Those defaults are **not** persisted into `ui/pages.json`
+- If a component already looks acceptable without `style`, avoid adding redundant baseline CSS
 
 ## `style` Object Contract
 
@@ -163,6 +169,14 @@ Examples of what this means:
 
 When choosing how to control appearance:
 
-1. Use component-specific props first, such as `gap`, `padding`, `variant`, `color`, `width`, `alertType`
-2. Use `style` for root-level visual tweaks that are not covered by schema props
-3. Use `className` only when you control external CSS and want that coupling
+1. Start with the built-in default visual baseline
+2. Use component-specific props such as `gap`, `padding`, `variant`, `color`, `width`, `alertType`
+3. Use `style` for root-level visual tweaks that are not covered by schema props
+4. Use `className` only when you control external CSS and want that coupling
+
+Examples of when you usually do **not** need extra styling:
+
+- Plain `page` / `row` / `col` layout spacing
+- Standard `heading` and `text` typography
+- Default `form`, `input`, `select`, `button`, `tabs` presentation
+- Basic `card`, `table`, `empty`, and `alert` appearance

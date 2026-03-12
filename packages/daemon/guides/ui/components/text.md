@@ -2,6 +2,8 @@
 
 Displays a text string. Supports expressions.
 
+By default, `text` renders with the built-in typography baseline for body copy. Only add `style` when you need to override the default text tone, size, or spacing.
+
 ## Properties
 
 <!-- AUTO-GENERATED-PROPS:START -->
@@ -31,5 +33,18 @@ Conditional visibility:
   "type": "text",
   "text": "This item is overdue.",
   "visible": "${row.status === 'overdue'}"
+}
+```
+
+Override the default typography only when needed:
+
+```json
+{
+  "type": "text",
+  "text": "Quiet secondary note",
+  "style": {
+    "fontSize": 12,
+    "color": "var(--cz-text-muted)"
+  }
 }
 ```

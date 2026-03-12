@@ -2,6 +2,8 @@
 
 Tab switcher for data filtering or content grouping.
 
+`tabs` includes a default container and tab-list baseline. In most apps, you only need to define `items` and optionally `defaultValue`.
+
 ## Properties
 
 <!-- AUTO-GENERATED-PROPS:START -->
@@ -70,3 +72,5 @@ Use `body` on tab items to display different content per tab:
   ]
 }
 ```
+
+Avoid adding redundant wrapper borders, padding, or tab-label typography unless you are intentionally overriding the default tabs presentation.
