@@ -32,7 +32,14 @@ function useApiData(
   expressionContext: ExpressionContext,
   extraParams?: Record<string, string | number>,
 ) {
+  type ApiMeta = {
+    total?: number;
+    limit?: number;
+    offset?: number;
+  };
+
   const [data, setData] = useState<Record<string, unknown>[]>([]);
+  const [meta, setMeta] = useState<ApiMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,12 +90,21 @@ function useApiData(
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      const json = (await response.json()) as { data?: unknown };
+      const json = (await response.json()) as { data?: unknown; meta?: ApiMeta | null };
       const items = Array.isArray(json.data)
         ? (json.data as Record<string, unknown>[])
         : [];
+      const nextMeta = json.meta && typeof json.meta === 'object'
+        ? {
+            total: typeof json.meta.total === 'number' ? json.meta.total : undefined,
+            limit: typeof json.meta.limit === 'number' ? json.meta.limit : undefined,
+            offset: typeof json.meta.offset === 'number' ? json.meta.offset : undefined,
+          }
+        : null;
       setData(items);
+      setMeta(nextMeta);
     } catch (err) {
+      setMeta(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
@@ -100,7 +116,7 @@ function useApiData(
     fetchData();
   }, [fetchData]);
 
-  return { data, loading, error, refetch: fetchData };
+  return { data, meta, loading, error, refetch: fetchData };
 }
 
 // ============================================================
@@ -233,7 +249,7 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
       ? { limit: pageSize, offset: currentPage * pageSize }
       : undefined;
 
-  const { data, loading, error, refetch } = useApiData(
+  const { data, meta, loading, error, refetch } = useApiData(
     s.api,
     ctx.baseUrl,
     exprCtx,
@@ -286,6 +302,44 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
     [ctx.baseUrl, exprCtx],
   );
 
+  const rows = data;
+  const columns = toArray<ColumnSchema>(s.columns);
+  const hasRowActions = s.rowActions && s.rowActions.length > 0;
+  const totalColumns = columns.length + (hasRowActions ? 1 : 0);
+  const totalRows = meta?.total;
+  const totalPages = typeof totalRows === 'number'
+    ? Math.max(1, Math.ceil(totalRows / pageSize))
+    : (rows.length > 0 ? currentPage + 2 : currentPage + 1);
+  const shouldShowPagination = paginationEnabled
+    && (
+      typeof totalRows === 'number'
+        ? totalRows > pageSize
+        : rows.length >= pageSize
+    );
+  const isNextDisabled = typeof totalRows === 'number'
+    ? currentPage >= totalPages - 1
+    : rows.length < pageSize;
+  const isPrevDisabled = currentPage === 0;
+
+  useEffect(() => {
+    if (!paginationEnabled) {
+      if (currentPage !== 0) setCurrentPage(0);
+      return;
+    }
+
+    if (typeof totalRows === 'number') {
+      const lastPage = Math.max(0, Math.ceil(totalRows / pageSize) - 1);
+      if (currentPage > lastPage) {
+        setCurrentPage(lastPage);
+      }
+      return;
+    }
+
+    if (currentPage > 0 && rows.length === 0) {
+      setCurrentPage(0);
+    }
+  }, [currentPage, pageSize, paginationEnabled, rows.length, totalRows]);
+
   if (loading) {
     return <div className="p-4 text-text-muted">加载中...</div>;
   }
@@ -298,15 +352,42 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
     );
   }
 
-  const rows = data;
-  const columns = toArray<ColumnSchema>(s.columns);
-  const hasRowActions = s.rowActions && s.rowActions.length > 0;
-  const totalColumns = columns.length + (hasRowActions ? 1 : 0);
-  const isNextDisabled = rows.length < pageSize;
-  const isPrevDisabled = currentPage === 0;
-
   return (
     <div className={s.className} style={s.style}>
+      {shouldShowPagination && (
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle/40 px-3 py-3 text-[13px]">
+          <div className="flex-1" />
+          <div className="flex items-center gap-2 text-text-muted">
+            <span>
+              第 {currentPage + 1} / {totalPages} 页
+            </span>
+            <button
+              disabled={isPrevDisabled}
+              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              className={clsx(
+                'px-3 py-1 border border-border-strong rounded-sm',
+                isPrevDisabled
+                  ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
+                  : 'bg-bg text-text-secondary cursor-pointer',
+              )}
+            >
+              上一页
+            </button>
+            <button
+              disabled={isNextDisabled}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className={clsx(
+                'px-3 py-1 border border-border-strong rounded-sm',
+                isNextDisabled
+                  ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
+                  : 'bg-bg text-text-secondary cursor-pointer',
+              )}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
@@ -392,36 +473,6 @@ function TableComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps)
           )}
         </tbody>
       </table>
-
-      {paginationEnabled && (
-        <div className="flex justify-end items-center gap-2 py-3 text-[13px]">
-          <button
-            disabled={isPrevDisabled}
-            onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-            className={clsx(
-              'px-3 py-1 border border-border-strong rounded-sm',
-              isPrevDisabled
-                ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
-                : 'bg-bg text-text-secondary cursor-pointer',
-            )}
-          >
-            上一页
-          </button>
-          <span className="text-text-muted">第 {currentPage + 1} 页</span>
-          <button
-            disabled={isNextDisabled}
-            onClick={() => setCurrentPage((p) => p + 1)}
-            className={clsx(
-              'px-3 py-1 border border-border-strong rounded-sm',
-              isNextDisabled
-                ? 'bg-bg-muted text-text-placeholder cursor-not-allowed'
-                : 'bg-bg text-text-secondary cursor-pointer',
-            )}
-          >
-            下一页
-          </button>
-        </div>
-      )}
     </div>
   );
 }

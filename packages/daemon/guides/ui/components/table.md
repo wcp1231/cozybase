@@ -15,6 +15,21 @@ The Table component expects the API to return a JSON object with a `data` array:
 }
 ```
 
+If the API also returns pagination metadata, the table uses it to decide whether the top pagination toolbar should be shown:
+
+```json
+{
+  "data": [
+    { "id": 1, "title": "Task A", "created_at": "2024-01-01" }
+  ],
+  "meta": {
+    "total": 12,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
 The built-in CRUD API (`/fn/_db/tables/{table}`) returns this format automatically. When using a custom function as data source, you **must** wrap the query result in `{ data: rows }`:
 
 ```typescript
@@ -31,6 +46,8 @@ export function GET(ctx) {
 ```
 
 > **If the API returns a plain array or any other structure without a `data` array, the table will display no data.**
+>
+> When `meta.total` is available, the table only shows pagination controls if `total > pageSize`. Smaller result sets render directly without pagination controls.
 
 ## Basic Usage
 
@@ -59,7 +76,7 @@ export function GET(ctx) {
 | `api` | `ApiConfig` | Yes | Data source configuration |
 | `columns` | `Column[][]` | Yes | Column definitions |
 | `rowActions` | `RowAction[][]` | No | Row action buttons |
-| `pagination` | `boolean` | No | Enable pagination |
+| `pagination` | `boolean` | No | Enable pagination. When enabled, controls appear in the table top toolbar only if the result exceeds `pageSize`. |
 | `pageSize` | `number` | No | Rows per page |
 <!-- AUTO-GENERATED-PROPS:END -->
 

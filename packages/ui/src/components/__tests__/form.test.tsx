@@ -387,6 +387,170 @@ describe('params expression resolution', () => {
     expect(calledUrl).not.toContain('${params.parent_id}');
   });
 
+  test('table without pagination does not append limit or offset params', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [{ id: 1, name: 'Solo item' }] }), { status: 200 }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'table',
+          api: { url: '/fn/_db/tables/items' },
+          columns: [{ name: 'name', label: 'Name' }],
+          pagination: false,
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).not.toContain('limit=');
+    expect(calledUrl).not.toContain('offset=');
+    expect(container.textContent).not.toContain('上一页');
+    expect(container.textContent).not.toContain('下一页');
+  });
+
+  test('table hides pagination controls when total rows do not exceed page size', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({
+          data: [
+            { id: 1, name: 'Alpha' },
+            { id: 2, name: 'Beta' },
+          ],
+          meta: { total: 2, limit: 20, offset: 0 },
+        }), { status: 200 }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'table',
+          api: { url: '/fn/_db/tables/items' },
+          columns: [{ name: 'name', label: 'Name' }],
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Alpha');
+    expect(container.textContent).toContain('Beta');
+    expect(container.textContent).not.toContain('上一页');
+    expect(container.textContent).not.toContain('下一页');
+    expect(container.textContent).not.toContain('第 1 /');
+  });
+
+  test('table shows top-only pagination controls and advances offset when changing page', async () => {
+    let callIndex = 0;
+    const responses = [
+      {
+        data: [
+          { id: 1, name: 'Alpha' },
+          { id: 2, name: 'Beta' },
+        ],
+        meta: { total: 5, limit: 2, offset: 0 },
+      },
+      {
+        data: [
+          { id: 3, name: 'Gamma' },
+          { id: 4, name: 'Delta' },
+        ],
+        meta: { total: 5, limit: 2, offset: 2 },
+      },
+    ];
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify(responses[callIndex++] ?? responses[responses.length - 1]), { status: 200 }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'table',
+          api: { url: '/fn/_db/tables/items' },
+          columns: [{ name: 'name', label: 'Name' }],
+          pageSize: 2,
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('第 1 / 3 页');
+    expect(container.querySelectorAll('button')).toHaveLength(2);
+
+    const nextButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '下一页',
+    ) as HTMLButtonElement | undefined;
+    expect(nextButton).toBeDefined();
+
+    await act(async () => {
+      nextButton!.click();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondUrl = fetchMock.mock.calls[1][0] as string;
+    expect(secondUrl).toContain('limit=2');
+    expect(secondUrl).toContain('offset=2');
+    expect(container.textContent).toContain('第 2 / 3 页');
+    expect(container.textContent).toContain('Gamma');
+    expect(container.textContent).toContain('Delta');
+  });
+
+  test('table remains compatible with data-only responses when pagination metadata is missing', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({
+          data: [
+            { id: 1, name: 'Plain A' },
+            { id: 2, name: 'Plain B' },
+          ],
+        }), { status: 200 }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'table',
+          api: { url: '/fn/custom-items' },
+          columns: [{ name: 'name', label: 'Name' }],
+          pageSize: 5,
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Plain A');
+    expect(container.textContent).toContain('Plain B');
+    expect(container.textContent).not.toContain('上一页');
+    expect(container.textContent).not.toContain('下一页');
+  });
+
   test('form defaultValue resolves ${params.xxx} when params are provided', async () => {
     const schema: PageSchema = {
       path: 'test',
