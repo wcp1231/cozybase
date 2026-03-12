@@ -229,4 +229,54 @@ describe('validatePagesJson — missing required fields', () => {
       expect(result.errors.some((e) => e.message.includes('duplicated'))).toBe(true);
     }
   });
+
+  it('rejects a parameterized detail page when its static parent page is missing', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'home', title: 'Home', body: [] },
+      { path: 'tasks/:taskId', title: 'Task Detail', body: [] },
+    ]));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes('must have at least one ancestor page'))).toBe(true);
+    }
+  });
+
+  it('accepts a parameterized detail page when its static parent page exists', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'home', title: 'Home', body: [] },
+      { path: 'tasks', title: 'Tasks', body: [] },
+      { path: 'tasks/:taskId', title: 'Task Detail', body: [] },
+    ]));
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts a nested parameterized detail page when an earlier ancestor page can match the breadcrumb chain', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'users', title: 'Users', body: [] },
+      { path: 'users/:userId', title: 'User Detail', body: [] },
+      { path: 'users/:userId/tasks/:taskId', title: 'Task Detail', body: [] },
+    ]));
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts a deeper detail page when each parameterized branch has a navigable ancestor page', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'users', title: 'Users', body: [] },
+      { path: 'users/:userId', title: 'User Detail', body: [] },
+      { path: 'users/:userId/tasks', title: 'User Tasks', body: [] },
+      { path: 'users/:userId/tasks/:taskId', title: 'Task Detail', body: [] },
+    ]));
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a parameterized detail page when no existing page can structurally match any breadcrumb ancestor', () => {
+    const result = validatePagesJson(makeDoc([
+      { path: 'home', title: 'Home', body: [] },
+      { path: 'reports/:reportId/charts/:chartId', title: 'Chart Detail', body: [] },
+    ]));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes('must have at least one ancestor page'))).toBe(true);
+    }
+  });
 });

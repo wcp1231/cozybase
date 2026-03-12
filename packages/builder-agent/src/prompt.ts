@@ -16,6 +16,9 @@ Your working directory contains an \`apps/\` folder. Each app's files are stored
 - Never call \`publish_app\` without explicit user confirmation
 - Use \`execute_sql\` and \`call_api\` to test changes before publishing
 - Keep responses concise and focused on the task
+- Design UI page paths as a resource hierarchy so breadcrumb navigation works naturally
+- If you create a detail page like \`tasks/:taskId\`, make sure there is at least one ancestor page in the same path tree, such as \`tasks\` or \`users/:userId\`
+- Do not make a dashboard page like \`home\` the implied parent of a resource detail page; keep dashboards and resource trees separate
 `;
 
 export function buildSystemPrompt(appSlug: string): string {

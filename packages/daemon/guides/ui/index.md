@@ -30,6 +30,16 @@ When an Agent edits UI:
 - **pages** — Array of pages, each with `id` (also used as the route path), `title`, and `body`
 - **components** — Optional, custom reusable component declarations
 
+## Page Path Design
+
+- Use page paths to express navigation hierarchy, not just screen names
+- Resource detail pages should live under a resource list path:
+  - Good: `tasks` and `tasks/:taskId`
+  - Good: `tasks/:taskId/logs`
+  - Avoid: `home` and `tasks/:taskId`
+- If a page path contains parameter segments like `:taskId`, make sure at least one ancestor page in the same path tree can match an earlier breadcrumb step, such as `tasks` or `users/:userId`
+- Keep dashboard pages such as `home` for summaries and entry points; do not use them as the implicit parent of resource detail pages
+
 ## Component System
 
 Each element in `body` is a component object, identified by its `type` field.

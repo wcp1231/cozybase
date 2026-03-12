@@ -59,6 +59,7 @@ export function validatePagesJson(data: unknown): ValidationOutcome {
 function runSemanticChecks(pages: PagesJson): ValidationError[] {
   const errors: ValidationError[] = [];
   const pagePaths = new Set<string>();
+  const allPagePaths = new Set(pages.pages.map((page) => page.path));
 
   // Global ID uniqueness across all pages (node_id lookups are document-wide)
   const globalIds = new Set<string>();
@@ -83,6 +84,8 @@ function runSemanticChecks(pages: PagesJson): ValidationError[] {
     } else {
       pagePaths.add(page.path);
     }
+
+    errors.push(...validateParameterizedPageAncestors(page.path, allPagePaths, `${pageEntryPath}.path`));
 
     const collector = new PageSemanticChecker(page.path);
     collector.collectBodyIds(page.body, `${pageEntryPath}.body`);
@@ -117,6 +120,62 @@ export function isValidPagePath(path: string): boolean {
     STATIC_PATH_SEGMENT_PATTERN.test(segment) ||
     PARAM_PATH_SEGMENT_PATTERN.test(segment)
   ));
+}
+
+function validateParameterizedPageAncestors(
+  path: string,
+  knownPaths: ReadonlySet<string>,
+  errorPath: string,
+): ValidationError[] {
+  const segments = path.split('/').filter(Boolean);
+  if (!segments.some((segment) => segment.startsWith(':'))) {
+    return [];
+  }
+
+  if (segments[0]?.startsWith(':')) {
+    return [{
+      path: errorPath,
+      message:
+        `Parameterized page path "${path}" must start with a static resource segment. ` +
+        'Use a path like "tasks/:taskId" instead of a top-level parameter page.',
+    }];
+  }
+
+  for (const candidate of knownPaths) {
+    if (candidate === path) {
+      continue;
+    }
+    if (isStructurallyPrefixCompatible(candidate, path)) {
+      return [];
+    }
+  }
+
+  return [{
+    path: errorPath,
+    message:
+      `Parameterized page path "${path}" must have at least one ancestor page with a compatible path prefix ` +
+      'so breadcrumb navigation can resolve correctly.',
+  }];
+}
+
+function isStructurallyPrefixCompatible(ancestorPath: string, currentPath: string): boolean {
+  const ancestorSegments = ancestorPath.split('/').filter(Boolean);
+  const currentSegments = currentPath.split('/').filter(Boolean);
+
+  if (ancestorSegments.length === 0 || ancestorSegments.length >= currentSegments.length) {
+    return false;
+  }
+
+  return ancestorSegments.every((ancestorSegment, index) => {
+    const currentSegment = currentSegments[index];
+    if (currentSegment === undefined) {
+      return false;
+    }
+    if (ancestorSegment.startsWith(':')) {
+      return true;
+    }
+    return ancestorSegment === currentSegment;
+  });
 }
 
 class PageSemanticChecker {
