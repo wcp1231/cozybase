@@ -254,7 +254,7 @@ describe('End-to-end Rebuilder Scenarios', () => {
 
       // Step 2: Insert canary row into stable DB
       const appCtx = handle.workspace.getOrCreateApp('todos')!;
-      appCtx.stableDb.exec("INSERT INTO todos (id, title) VALUES (999, 'canary')");
+      appCtx.stableDb.run("INSERT INTO todos (id, title) VALUES (999, 'canary')");
       appCtx.closeStable();
 
       // Step 3: Add bad migration

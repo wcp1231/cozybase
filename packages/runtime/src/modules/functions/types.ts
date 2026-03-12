@@ -5,7 +5,6 @@ import type { PlatformClient } from '../../platform-client';
 export interface DatabaseClient {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
   run(sql: string, params?: unknown[]): { changes: number; lastInsertRowid: number };
-  exec(sql: string): void;
 }
 
 // --- Logger ---

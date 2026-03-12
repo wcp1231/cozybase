@@ -50,7 +50,7 @@ export class Publisher {
     // 1. Backup stable database (skip for new apps)
     if (!isNewApp && existsSync(appContext.stableDbPath)) {
       // WAL checkpoint before backup
-      appContext.stableDb.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      appContext.stableDb.run('PRAGMA wal_checkpoint(TRUNCATE)');
       appContext.closeStable();
       copyFileSync(appContext.stableDbPath, backupPath);
     }

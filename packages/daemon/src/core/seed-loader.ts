@@ -35,7 +35,7 @@ export class SeedLoader {
 
       try {
         if (filename.endsWith('.sql')) {
-          db.exec(record.content);
+          db.run(record.content);
           loaded.push(filename);
         } else if (filename.endsWith('.json')) {
           const parsed = JSON.parse(record.content);
@@ -72,7 +72,7 @@ export class SeedLoader {
       try {
         if (filename.endsWith('.sql')) {
           const sql = readFileSync(filePath, 'utf-8');
-          db.exec(sql);
+          db.run(sql);
           loaded.push(filename);
         } else if (filename.endsWith('.json')) {
           const content = readFileSync(filePath, 'utf-8');

@@ -778,13 +778,13 @@ export class PlatformRepository {
    * Execute a function within a transaction
    */
   transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN');
+    this.db.run('BEGIN');
     try {
       const result = fn();
-      this.db.exec('COMMIT');
+      this.db.run('COMMIT');
       return result;
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      this.db.run('ROLLBACK');
       throw err;
     }
   }

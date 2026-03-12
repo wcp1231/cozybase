@@ -170,8 +170,8 @@ export class Workspace {
     if (!this._platformDb) {
       const dbPath = join(this.root, 'platform.sqlite');
       this._platformDb = new Database(dbPath);
-      this._platformDb.exec('PRAGMA journal_mode = WAL');
-      this._platformDb.exec('PRAGMA foreign_keys = ON');
+      this._platformDb.run('PRAGMA journal_mode = WAL');
+      this._platformDb.run('PRAGMA foreign_keys = ON');
       runPlatformMigrations(this._platformDb);
       this._platformRepo = new PlatformRepository(this._platformDb);
     }

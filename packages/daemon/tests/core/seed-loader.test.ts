@@ -15,7 +15,7 @@ describe('SeedLoader', () => {
     loader = new SeedLoader();
     tempDir = mkdtempSync(join(tmpdir(), 'sl-test-'));
     db = new Database(':memory:');
-    db.exec(MIGRATION_CREATE_TODOS);
+    db.run(MIGRATION_CREATE_TODOS);
   });
 
   afterEach(() => {

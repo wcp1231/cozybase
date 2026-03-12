@@ -79,7 +79,7 @@ schedules:
 
   test('loads app.yaml from platform repository', () => {
     const db = new Database(':memory:');
-    db.exec('PRAGMA foreign_keys = ON');
+    db.run('PRAGMA foreign_keys = ON');
     runPlatformMigrations(db);
     const repo = new PlatformRepository(db);
 

@@ -43,7 +43,7 @@ describe('AppContext', () => {
 
   test('resetDraft closes connection and deletes database files', () => {
     // Trigger creation
-    ctx.draftDb.exec('CREATE TABLE test (id INTEGER PRIMARY KEY)');
+    ctx.draftDb.run('CREATE TABLE test (id INTEGER PRIMARY KEY)');
     expect(existsSync(ctx.draftDbPath)).toBe(true);
 
     ctx.resetDraft();
@@ -62,8 +62,8 @@ describe('AppContext', () => {
 
   test('resetDraft cleans up WAL and SHM files', () => {
     // Trigger creation and write to generate WAL
-    ctx.draftDb.exec('CREATE TABLE test (id INTEGER PRIMARY KEY)');
-    ctx.draftDb.exec('INSERT INTO test (id) VALUES (1)');
+    ctx.draftDb.run('CREATE TABLE test (id INTEGER PRIMARY KEY)');
+    ctx.draftDb.run('INSERT INTO test (id) VALUES (1)');
 
     const walPath = ctx.draftDbPath + '-wal';
     const shmPath = ctx.draftDbPath + '-shm';
@@ -77,8 +77,8 @@ describe('AppContext', () => {
 
   test('closeStable only closes stable connection', () => {
     // Access both
-    ctx.stableDb.exec('CREATE TABLE s (id INTEGER PRIMARY KEY)');
-    ctx.draftDb.exec('CREATE TABLE d (id INTEGER PRIMARY KEY)');
+    ctx.stableDb.run('CREATE TABLE s (id INTEGER PRIMARY KEY)');
+    ctx.draftDb.run('CREATE TABLE d (id INTEGER PRIMARY KEY)');
 
     ctx.closeStable();
 
@@ -94,8 +94,8 @@ describe('AppContext', () => {
   });
 
   test('close shuts down both connections', () => {
-    ctx.stableDb.exec('CREATE TABLE s (id INTEGER PRIMARY KEY)');
-    ctx.draftDb.exec('CREATE TABLE d (id INTEGER PRIMARY KEY)');
+    ctx.stableDb.run('CREATE TABLE s (id INTEGER PRIMARY KEY)');
+    ctx.draftDb.run('CREATE TABLE d (id INTEGER PRIMARY KEY)');
 
     ctx.close();
 

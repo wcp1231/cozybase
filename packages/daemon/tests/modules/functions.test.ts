@@ -613,7 +613,7 @@ describe('createServer() draft runtime startup for materialized draft state', ()
     });
 
     const appContext = handle.workspace.getOrCreateApp('myapp')!;
-    appContext.draftDb.exec('CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, executed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
+    appContext.draftDb.run('CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, executed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
     appContext.close();
 
     mkdirSync(join(handle.root, 'draft', 'myapp', 'ui'), { recursive: true });

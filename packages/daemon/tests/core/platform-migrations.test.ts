@@ -6,7 +6,7 @@ import { PlatformRepository } from '../../src/core/platform-repository';
 
 function createMigratedDb(): Database {
   const db = new Database(':memory:');
-  db.exec('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA foreign_keys = ON');
   runPlatformMigrations(db);
   return db;
 }
@@ -76,6 +76,63 @@ describe('Platform migrations', () => {
 
     const rows = db.query('SELECT version FROM _platform_migrations ORDER BY version').all() as { version: number }[];
     expect(rows.map((r) => r.version)).toEqual(PLATFORM_MIGRATIONS.map((migration) => migration.version));
+
+    db.close();
+  });
+
+  test('refreshes older platform schema to the current MVP shape', () => {
+    const db = new Database(':memory:');
+    db.run('PRAGMA foreign_keys = ON');
+    db.run(`
+      CREATE TABLE apps (
+        slug TEXT PRIMARY KEY
+      );
+
+      CREATE TABLE agent_sessions (
+        app_slug TEXT PRIMARY KEY REFERENCES apps(slug) ON DELETE CASCADE,
+        sdk_session_id TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE agent_runtime_sessions (
+        usage_type TEXT NOT NULL,
+        app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
+        provider_kind TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (usage_type, app_slug)
+      );
+
+      CREATE TABLE _platform_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        executed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(1, 'initial_schema');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(2, 'agent_session_provider_kind');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(3, 'schedule_runs');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(4, 'platform_settings');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(5, 'app_error_logs');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(6, 'operator_sessions');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(7, 'agent_runtime_sessions');
+    db.query('INSERT INTO _platform_migrations (version, name) VALUES (?, ?)').run(8, 'agent_runtime_sessions_remove_app_fk');
+
+    runPlatformMigrations(db);
+
+    const sessionColumns = db.query('PRAGMA table_info(agent_sessions)').all() as { name: string }[];
+    expect(sessionColumns.map((column) => column.name)).toContain('provider_kind');
+
+    const foreignKeys = db.query('PRAGMA foreign_key_list(agent_runtime_sessions)').all() as { table: string }[];
+    expect(foreignKeys.some((foreignKey) => foreignKey.table === 'apps')).toBe(false);
+
+    const scheduleRuns = db
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schedule_runs'")
+      .get() as { name: string } | null;
+    expect(scheduleRuns?.name).toBe('schedule_runs');
+
+    const rows = db.query('SELECT version FROM _platform_migrations ORDER BY version').all() as { version: number }[];
+    expect(rows.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     db.close();
   });

@@ -214,16 +214,16 @@ export function createStableDb(handle: TestWorkspaceHandle, appName: string, mig
   const stableDir = join(root, 'stable', appName);
   mkdirSync(stableDir, { recursive: true });
   const db = new Database(join(stableDir, 'db.sqlite'));
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA journal_mode = WAL');
+  db.run('PRAGMA foreign_keys = ON');
 
   // Execute migrations
   for (const sql of migrationSqls) {
-    db.exec(sql);
+    db.run(sql);
   }
 
   // Create and populate _migrations table
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS _migrations (
       version INTEGER PRIMARY KEY,
       name TEXT NOT NULL,

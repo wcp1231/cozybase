@@ -91,8 +91,8 @@ export class AppRegistry {
     // Open DB connection
     mkdirSync(dirname(config.dbPath), { recursive: true });
     const db = new Database(config.dbPath);
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA foreign_keys = ON');
+    db.run('PRAGMA journal_mode = WAL');
+    db.run('PRAGMA foreign_keys = ON');
 
     const entry: AppEntry = {
       name,

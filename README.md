@@ -1,8 +1,13 @@
+**Language:** English | [中文](README_CN.md)
+
 # Cozybase
 
 Cozybase is a local Backend-as-a-Service (BaaS) for AI Agents.
 
 It gives an AI Agent a complete app-building runtime: database migrations, TypeScript functions, declarative UI pages, and a safe Draft-to-Stable publish flow. Users describe the app in natural language, the AI Agent builds and tests the app through Cozybase, and Cozybase serves the app locally.
+
+> [!WARNING]
+> Cozybase is currently in alpha. APIs and data formats may still change, and bugs are expected. Use it carefully and avoid relying on it for critical production workloads yet.
 
 ## Features
 

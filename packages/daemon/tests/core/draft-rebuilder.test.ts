@@ -59,7 +59,7 @@ describe('DraftRebuilder', () => {
 
     // Insert an extra row directly into draft DB
     const appContext = handle.workspace.getOrCreateApp('myapp')!;
-    appContext.draftDb.exec("INSERT INTO todos (id, title) VALUES (999, 'Extra row')");
+    appContext.draftDb.run("INSERT INTO todos (id, title) VALUES (999, 'Extra row')");
     const extraRow = appContext.draftDb.query('SELECT * FROM todos WHERE id = 999').get();
     expect(extraRow).toBeDefined();
 
@@ -104,7 +104,7 @@ describe('DraftRebuilder', () => {
     expect(result1.seeds).toContain('01_seed.sql');
 
     const appContext = handle.workspace.getOrCreateApp('myapp')!;
-    appContext.draftDb.exec("INSERT INTO todos (id, title) VALUES (999, 'Local test row')");
+    appContext.draftDb.run("INSERT INTO todos (id, title) VALUES (999, 'Local test row')");
 
     addFunction(
       handle,

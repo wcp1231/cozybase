@@ -566,7 +566,7 @@ export class AppManager {
     let stableDirRenamed = false;
     let draftDirRenamed = false;
 
-    db.exec('BEGIN');
+    db.run('BEGIN');
     try {
       db.query(`
         INSERT INTO apps (
@@ -607,7 +607,7 @@ export class AppManager {
         draftDirRenamed = true;
       }
 
-      db.exec('COMMIT');
+      db.run('COMMIT');
     } catch (err) {
       if (draftDirRenamed && existsSync(newDraftDir)) {
         renameSync(newDraftDir, oldDraftDir);
@@ -615,7 +615,7 @@ export class AppManager {
       if (stableDirRenamed && existsSync(newStableDir)) {
         renameSync(newStableDir, oldStableDir);
       }
-      db.exec('ROLLBACK');
+      db.run('ROLLBACK');
       throw err;
     }
 

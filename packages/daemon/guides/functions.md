@@ -69,7 +69,7 @@ const result = ctx.db.run(
 // result.changes = 1, result.lastInsertRowid = 5
 
 // Execute multiple statements (no return value)
-ctx.db.exec(`
+ctx.db.run(`
   UPDATE todo SET completed = 1 WHERE id = 1;
   UPDATE todo SET completed = 1 WHERE id = 2;
 `);

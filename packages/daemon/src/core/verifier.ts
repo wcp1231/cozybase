@@ -76,7 +76,7 @@ export class Verifier {
       mkdirSync(appContext.draftDataDir, { recursive: true });
 
       // Checkpoint to ensure WAL is flushed
-      appContext.stableDb.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      appContext.stableDb.run('PRAGMA wal_checkpoint(TRUNCATE)');
 
       // Close stable connection before copying
       appContext.closeStable();
@@ -86,8 +86,8 @@ export class Verifier {
 
       // 4. Execute pending migrations on temp DB
       const tempDb = new Database(tempDbPath);
-      tempDb.exec('PRAGMA journal_mode = WAL');
-      tempDb.exec('PRAGMA foreign_keys = ON');
+      tempDb.run('PRAGMA journal_mode = WAL');
+      tempDb.run('PRAGMA foreign_keys = ON');
 
       try {
         const result = this.migrationRunner.executeMigrations(tempDb, pendingMigrations);

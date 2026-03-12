@@ -1,8 +1,13 @@
+**Language:** [English](README.md) | 中文
+
 # Cozybase
 
 Cozybase 是一个面向 AI Agent 的本地 BaaS（Backend-as-a-Service）平台。
 
 它为 AI Agent 提供完整的应用构建运行时：数据库迁移、TypeScript 函数、声明式 UI 页面，以及安全的 Draft-to-Stable 发布流程。用户用自然语言描述应用，AI Agent 通过 Cozybase 构建和测试应用，Cozybase 在本地提供服务。
+
+> [!WARNING]
+> Cozybase 当前仍处于 Alpha 阶段。接口和数据格式等后续仍可能调整，Bug 也会相对较多。请谨慎使用，暂时不要将其用于关键生产场景。
 
 ## Features
 

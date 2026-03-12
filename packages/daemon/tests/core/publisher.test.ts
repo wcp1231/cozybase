@@ -150,7 +150,7 @@ describe('Publisher', () => {
 
       // Insert canary row
       const appCtx = handle.workspace.getOrCreateApp('myapp')!;
-      appCtx.stableDb.exec("INSERT INTO todos (id, title) VALUES (999, 'canary')");
+      appCtx.stableDb.run("INSERT INTO todos (id, title) VALUES (999, 'canary')");
       // Close the stable connection before the next publish attempt
       appCtx.closeStable();
 

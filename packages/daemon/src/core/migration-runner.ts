@@ -104,7 +104,7 @@ export class MigrationRunner {
 
     for (const migration of migrations) {
       try {
-        db.exec(migration.sql);
+        db.run(migration.sql);
         executed.push(migration.filename);
       } catch (err: any) {
         return {
@@ -121,7 +121,7 @@ export class MigrationRunner {
 
   /** Create the _migrations tracking table (for stable databases only) */
   initMigrationsTable(db: Database): void {
-    db.exec(`
+    db.run(`
       CREATE TABLE IF NOT EXISTS _migrations (
         version INTEGER PRIMARY KEY,
         name TEXT NOT NULL,

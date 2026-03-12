@@ -29,8 +29,8 @@ export class AppContext {
     if (!this._stableDb) {
       mkdirSync(dirname(this.stableDbPath), { recursive: true });
       this._stableDb = new Database(this.stableDbPath);
-      this._stableDb.exec('PRAGMA journal_mode = WAL');
-      this._stableDb.exec('PRAGMA foreign_keys = ON');
+      this._stableDb.run('PRAGMA journal_mode = WAL');
+      this._stableDb.run('PRAGMA foreign_keys = ON');
     }
     return this._stableDb;
   }
@@ -40,8 +40,8 @@ export class AppContext {
     if (!this._draftDb) {
       mkdirSync(dirname(this.draftDbPath), { recursive: true });
       this._draftDb = new Database(this.draftDbPath);
-      this._draftDb.exec('PRAGMA journal_mode = WAL');
-      this._draftDb.exec('PRAGMA foreign_keys = ON');
+      this._draftDb.run('PRAGMA journal_mode = WAL');
+      this._draftDb.run('PRAGMA foreign_keys = ON');
     }
     return this._draftDb;
   }

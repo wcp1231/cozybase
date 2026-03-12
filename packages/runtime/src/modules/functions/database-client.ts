@@ -17,8 +17,4 @@ export class SqliteDatabaseClient implements DatabaseClient {
       lastInsertRowid: Number(result.lastInsertRowid),
     };
   }
-
-  exec(sql: string): void {
-    this.db.exec(sql);
-  }
 }
