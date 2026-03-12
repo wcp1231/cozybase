@@ -451,11 +451,14 @@ export class AppManager {
     }
   }
 
-  /** Update app metadata (description only) */
-  update(slug: string, data: { description?: string }): App {
-    const app = this.get(slug);
+  /** Update app metadata */
+  update(slug: string, data: { description?: string; displayName?: string }): App {
+    this.get(slug);
     const repo = this.workspace.getPlatformRepo();
 
+    if (data.displayName !== undefined) {
+      repo.apps.update(slug, { display_name: data.displayName });
+    }
     if (data.description !== undefined) {
       repo.apps.update(slug, { description: data.description });
     }

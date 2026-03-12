@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { findNodeById, getComponentSummary, SchemaRenderer, type ComponentSchema } from '@cozybase/ui';
-import { ActivitySquare, Loader2, Pencil, Play, Rocket, Square } from 'lucide-react';
+import { ActivitySquare, Check, Loader2, Pencil, Rocket, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
 import {
@@ -40,14 +40,26 @@ function serializePagesJson(value: unknown): string {
   return value ? JSON.stringify(value) : '';
 }
 
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { error?: { message?: string } };
+    return payload.error?.message ?? `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
+}
+
 export function AppPageView() {
   const { appName, '*': subPath, mode: modeParam } = useParams<{ appName: string; '*': string; mode: string }>();
   const { app, appLoading, appError, pagesJson, refreshApp, refreshApps, toggleSidebar, sidebarVisible } = useAppContext();
   const mode: AppMode = isAppMode(modeParam) ? modeParam : 'stable';
   const navigate = useNavigate();
   const location = useLocation();
-  const [busyAction, setBusyAction] = useState<'publish' | 'start' | 'stop' | null>(null);
+  const [busyAction, setBusyAction] = useState<'publish' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [displayNameEditing, setDisplayNameEditing] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
   const {
     active: editorActive,
     originalJson,
@@ -129,6 +141,15 @@ export function AppPageView() {
       setPropertyPanelOpen(false);
     }
   }, [editorActive]);
+
+  useEffect(() => {
+    if (displayNameEditing) return;
+    setDisplayNameDraft(app?.displayName ?? '');
+  }, [app?.displayName, displayNameEditing]);
+
+  useEffect(() => {
+    setDisplayNameEditing(false);
+  }, [appName]);
 
   const renderPagesJson = editorActive && draftJson ? draftJson : pagesJson;
   const slotState = resolveContentSlotState({
@@ -542,22 +563,44 @@ export function AppPageView() {
     }
   };
 
-  const handleToggleStable = async () => {
-    if (!appName || !app?.stableStatus) return;
+  const handleStartDisplayNameEdit = () => {
+    setDisplayNameDraft(app?.displayName ?? '');
+    setDisplayNameEditing(true);
+    setActionError(null);
+  };
 
-    const nextAction = app.stableStatus === 'running' ? 'stop' : 'start';
-    setBusyAction(nextAction);
+  const handleCancelDisplayNameEdit = () => {
+    setDisplayNameDraft(app?.displayName ?? '');
+    setDisplayNameEditing(false);
+  };
+
+  const handleSaveDisplayName = async () => {
+    if (!appName) return;
+
+    const nextDisplayName = displayNameDraft.trim();
+    const currentDisplayName = (app?.displayName ?? '').trim();
+    if (nextDisplayName === currentDisplayName) {
+      setDisplayNameEditing(false);
+      return;
+    }
+
+    setDisplayNameSaving(true);
     setActionError(null);
 
     try {
-      const response = await fetch(`/api/v1/apps/${appName}/${nextAction}`, { method: 'POST' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const response = await fetch(`/api/v1/apps/${encodeURIComponent(appName)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: nextDisplayName }),
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response));
 
       await Promise.all([refreshApp(), refreshApps()]);
+      setDisplayNameEditing(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusyAction(null);
+      setDisplayNameSaving(false);
     }
   };
 
@@ -576,6 +619,56 @@ export function AppPageView() {
         breadcrumbs={breadcrumbs}
         toggleSidebar={toggleSidebar}
         sidebarVisible={sidebarVisible}
+        titleAddon={mode === 'draft' ? (
+          displayNameEditing ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              <input
+                value={displayNameDraft}
+                onChange={(event) => setDisplayNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleSaveDisplayName();
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    handleCancelDisplayNameEdit();
+                  }
+                }}
+                placeholder={appName}
+                disabled={displayNameSaving}
+                className="h-8 w-[180px] rounded-lg border border-[#CBD5E1] bg-white px-2.5 text-sm text-[#0F172A] outline-none transition-colors focus:border-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <button
+                type="button"
+                onClick={handleSaveDisplayName}
+                disabled={displayNameSaving}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8] transition-colors hover:bg-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="保存显示名称"
+              >
+                {displayNameSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelDisplayNameEdit}
+                disabled={displayNameSaving}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E8F0] bg-white text-[#64748B] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="取消修改显示名称"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStartDisplayNameEdit}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E8F0] bg-white text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+              aria-label="修改显示名称"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )
+        ) : null}
         actions={
           mode === 'draft' ? (
             <>
@@ -609,23 +702,15 @@ export function AppPageView() {
                 发布
               </button>
             </>
-          ) : app?.stableStatus ? (
-            <button
-              type="button"
-              onClick={handleToggleStable}
-              disabled={busyAction !== null}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+          ) : (
+            <Link
+              to={toAppConsolePath(appName ?? '', mode)}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] no-underline transition-colors hover:bg-[#F8FAFC]"
             >
-              {busyAction ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : app.stableStatus === 'running' ? (
-                <Square className="h-4 w-4" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-              {app.stableStatus === 'running' ? '停止' : '启动'}
-            </button>
-          ) : null
+              <ActivitySquare className="h-4 w-4" />
+              控制台
+            </Link>
+          )
         }
       />
 

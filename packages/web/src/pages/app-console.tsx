@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Database, FileCode2, FolderTree, History, Loader2, Pencil, Play, RefreshCw, Save, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Database, FileCode2, FolderTree, History, Loader2, Pencil, Play, RefreshCw, Save, Square, Trash2, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
-import { getDefaultPagePath, toAppPagePath, type AppMode } from './content-slot';
+import { getDefaultPagePath, toAppListPath, toAppPagePath, type AppMode } from './content-slot';
 import { AppSectionHeader } from '../features/apps/app-section-header';
 
 type ConsoleTab = 'errors' | 'schedules' | 'database' | 'source';
@@ -95,9 +95,11 @@ export function AppConsolePage() {
     appError,
     pagesJson,
     refreshApp,
+    refreshApps,
     toggleSidebar,
     sidebarVisible,
   } = useAppContext();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const appHomeTo = appName
     ? toAppPagePath(appName, getDefaultPagePath(pagesJson?.pages ?? []), mode)
@@ -139,6 +141,8 @@ export function AppConsolePage() {
   const [sourceDraftContent, setSourceDraftContent] = useState('');
   const [sourceSaving, setSourceSaving] = useState(false);
   const [sourceFeedback, setSourceFeedback] = useState<SourceFeedback | null>(null);
+  const [appActionBusy, setAppActionBusy] = useState<'start' | 'stop' | 'delete' | null>(null);
+  const [appActionError, setAppActionError] = useState<string | null>(null);
 
   const tableNames = getVisibleDatabaseTables(dbSchema);
   const selectedSourceFile = sourceFiles.find((file) => file.path === selectedSourcePath) ?? null;
@@ -185,6 +189,61 @@ export function AppConsolePage() {
     setSourceDraftContent(selectedSourceFile.content);
   }, [selectedSourceFile, sourceEditMode]);
 
+  const handleStableLifecycle = async (nextAction: 'start' | 'stop') => {
+    if (!appName) return;
+
+    setAppActionBusy(nextAction);
+    setAppActionError(null);
+
+    try {
+      const response = await fetch(`/api/v1/apps/${encodeURIComponent(appName)}/${nextAction}`, { method: 'POST' });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      await Promise.all([
+        refreshApp(),
+        refreshApps(),
+        loadOverview(appName, mode, setOverview, setOverviewLoading),
+      ]);
+      if (activeTab === 'schedules') {
+        await loadSchedules(appName, mode, setSchedules, setSchedulesLoading, setSelectedSchedule);
+      }
+    } catch (error) {
+      setAppActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppActionBusy(null);
+    }
+  };
+
+  const handleDeleteApp = async () => {
+    if (!appName) return;
+
+    const confirmed = window.confirm(
+      mode === 'draft'
+        ? `确定删除 Draft APP「${app?.displayName || appName}」吗？这会删除整个 APP。`
+        : `确定删除 Stable APP「${app?.displayName || appName}」吗？`,
+    );
+    if (!confirmed) return;
+
+    setAppActionBusy('delete');
+    setAppActionError(null);
+
+    try {
+      const response = await fetch(`/api/v1/apps/${encodeURIComponent(appName)}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      await refreshApps();
+      navigate(toAppListPath(mode));
+    } catch (error) {
+      setAppActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppActionBusy(null);
+    }
+  };
+
   if (!appName) {
     return <ConsoleEmptyState message="缺少 APP 名称。" />;
   }
@@ -208,6 +267,53 @@ export function AppConsolePage() {
         breadcrumbs={[{ label: 'Console' }]}
         toggleSidebar={toggleSidebar}
         sidebarVisible={sidebarVisible}
+        actions={mode === 'stable' ? (
+          <>
+            {app?.stableStatus === 'running' ? (
+              <button
+                type="button"
+                onClick={() => void handleStableLifecycle('stop')}
+                disabled={appActionBusy !== null}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#FECACA] bg-white px-4 text-sm font-semibold text-[#B91C1C] transition-colors hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {appActionBusy === 'stop' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                停止
+              </button>
+            ) : null}
+            {app?.stableStatus === 'stopped' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleStableLifecycle('start')}
+                  disabled={appActionBusy !== null}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {appActionBusy === 'start' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  启动
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteApp()}
+                  disabled={appActionBusy !== null}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#FECACA] bg-white px-4 text-sm font-semibold text-[#B91C1C] transition-colors hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {appActionBusy === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  删除
+                </button>
+              </>
+            ) : null}
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleDeleteApp()}
+            disabled={appActionBusy !== null}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#FECACA] bg-white px-4 text-sm font-semibold text-[#B91C1C] transition-colors hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {appActionBusy === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            删除 APP
+          </button>
+        )}
       />
 
       <div className="flex h-11 items-end gap-4 border-b border-[#E7EBF2] bg-[#F3F5F9] px-4 md:px-8">
@@ -234,6 +340,12 @@ export function AppConsolePage() {
           />
         ) : null}
       </div>
+
+      {appActionError ? (
+        <div className="mx-4 mt-4 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#B91C1C] md:mx-8">
+          {appActionError}
+        </div>
+      ) : null}
 
       <main className="min-h-0 flex-1 overflow-auto bg-white">
         <div className="min-h-full bg-white">
@@ -1098,6 +1210,15 @@ async function loadOverview(
     setOverview(null);
   } finally {
     setLoading(false);
+  }
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { error?: { message?: string } };
+    return payload.error?.message ?? `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
   }
 }
 

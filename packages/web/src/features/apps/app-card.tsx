@@ -1,9 +1,8 @@
 import type { KeyboardEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { MoreHorizontal, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { AppMode } from '../../pages/content-slot';
-import { toAppConsolePath } from '../../pages/content-slot';
 import { getAppInitials, getAppStatusClasses, getAppStatusLabel, getAppTone } from './app-utils';
 import type { AppSummary } from './types';
 
@@ -19,7 +18,7 @@ export function AppCard({
   const navigate = useNavigate();
   const tone = getAppTone(app.slug, app.stableStatus);
   const isStopped = app.stableStatus === 'stopped' && mode === 'stable';
-  const consolePath = toAppConsolePath(app.slug, 'stable');
+  const showStatusBadge = !(mode === 'stable' && app.stableStatus === 'running');
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -41,8 +40,8 @@ export function AppCard({
           : 'border-[#E6EAF1] bg-white hover:border-[#D7DEEA]',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <span
             className={clsx(
               'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] text-[10px] font-bold uppercase',
@@ -53,12 +52,24 @@ export function AppCard({
             {getAppInitials(app.displayName || app.slug)}
           </span>
 
-          <div className="min-w-0 flex-1 flex gap-2">
-            <div className={clsx('truncate font-["Outfit",sans-serif] text-base font-bold', isStopped ? 'text-[#64748B]' : 'text-[#0F172A]')}>
-              {app.displayName || app.slug}
+          <div className="min-w-0 flex-1">
+            <div className={clsx('flex min-w-0 items-start gap-2', mode === 'draft' ? 'justify-between' : undefined)}>
+              <div className={clsx('truncate font-["Outfit",sans-serif] text-base font-bold leading-6', isStopped ? 'text-[#64748B]' : 'text-[#0F172A]')}>
+                {app.displayName || app.slug}
+              </div>
+              {mode === 'draft' && showStatusBadge ? (
+                <span
+                  className={clsx(
+                    'ml-2 inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium tracking-[0.01em]',
+                    getAppStatusClasses(app, mode),
+                  )}
+                >
+                  {getAppStatusLabel(app, mode)}
+                </span>
+              ) : null}
             </div>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {!(mode === 'stable' && app.stableStatus === 'running') && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {mode !== 'draft' && showStatusBadge && (
                 <span
                   className={clsx(
                     'inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-semibold',
@@ -76,30 +87,6 @@ export function AppCard({
             </div>
           </div>
         </div>
-
-        {mode === 'stable' ? (
-          <details className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
-            <summary
-              className="inline-flex h-6 w-[30px] list-none items-center justify-center rounded-md border border-transparent text-[#475569] transition-colors hover:bg-[#F8FAFC]"
-              style={{ listStyle: 'none' }}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </summary>
-            <div className="absolute right-0 top-8 z-10 min-w-[120px] rounded-xl border border-[#E2E8F0] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
-              <Link
-                to={consolePath}
-                onClick={(event) => event.stopPropagation()}
-                className="flex h-9 items-center rounded-lg px-3 text-sm font-medium text-[#334155] no-underline transition-colors hover:bg-[#F8FAFC]"
-              >
-                控制台
-              </Link>
-            </div>
-          </details>
-        ) : (
-          <span className="inline-flex h-6 w-[30px] shrink-0 items-center justify-center rounded-md border border-transparent text-[#475569]">
-            <MoreHorizontal className="h-4 w-4" />
-          </span>
-        )}
       </div>
 
       <p className={clsx('mt-2.5 line-clamp-2 min-h-[36px] text-xs leading-[1.45]', isStopped ? 'text-[#94A3B8]' : 'text-[#64748B]')}>

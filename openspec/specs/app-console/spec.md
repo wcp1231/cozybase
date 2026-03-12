@@ -73,3 +73,25 @@
 - **WHEN** 用户访问 `/draft/apps/my-app/console`
 - **THEN** 页面 SHALL 正常渲染 `Errors`、`Schedules`、`Database` 三个标签页
 - **AND** `Schedules` 标签页 SHALL 不展示自动调度的下次执行时间
+
+### Requirement: Console 承载 APP 生命周期与删除操作
+系统 SHALL 将 Stable APP 的启动、停止和删除操作放在 Stable Console 页面头部，而不是放在普通 Stable APP 页面头部。Stable APP 普通页面右上角 SHALL 显示“控制台”按钮，引导用户进入 Console。Draft Console 页面头部 SHALL 提供删除当前 APP 的入口。
+
+#### Scenario: Stable 普通页面从头部进入 Console
+- **WHEN** 用户访问 `/stable/apps/my-app/...`
+- **THEN** 页面头部右上角 SHALL 显示“控制台”按钮
+- **AND** 页面头部 SHALL 不再直接显示 Stable 的启动或停止按钮
+
+#### Scenario: Stable Console 根据运行状态显示动作
+- **WHEN** 用户访问 `/stable/apps/my-app/console`
+- **AND** APP 的 `stable_status` 为 `running`
+- **THEN** 页面头部 SHALL 显示 `停止` 按钮
+
+#### Scenario: Stable Console 为 stopped APP 提供启动和删除
+- **WHEN** 用户访问 `/stable/apps/my-app/console`
+- **AND** APP 的 `stable_status` 为 `stopped`
+- **THEN** 页面头部 SHALL 显示 `启动` 和 `删除` 按钮
+
+#### Scenario: Draft Console 提供删除入口
+- **WHEN** 用户访问 `/draft/apps/my-app/console`
+- **THEN** 页面头部 SHALL 显示 `删除 APP` 按钮

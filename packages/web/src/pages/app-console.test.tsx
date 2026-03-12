@@ -102,4 +102,60 @@ describe('App console UI shell', () => {
     expect(stableHtml).not.toContain('文件目录');
     expect(stableHtml).not.toContain('Draft APP 源码');
   });
+
+  test('stable console shows stop action while running', () => {
+    const html = renderWithAppContext(
+      <AppConsolePage />,
+      {
+        mode: 'stable',
+        app: {
+          slug: 'myapp',
+          displayName: 'My App',
+          description: 'Test app',
+          stableStatus: 'running',
+          hasDraft: true,
+          current_version: 2,
+          published_version: 1,
+        },
+      },
+      '/stable/apps/myapp/console',
+    );
+
+    expect(html).toContain('停止');
+    expect(html).not.toContain('删除 APP');
+  });
+
+  test('stable console shows start and delete actions while stopped', () => {
+    const html = renderWithAppContext(
+      <AppConsolePage />,
+      {
+        mode: 'stable',
+        app: {
+          slug: 'myapp',
+          displayName: 'My App',
+          description: 'Test app',
+          stableStatus: 'stopped',
+          hasDraft: true,
+          current_version: 2,
+          published_version: 1,
+        },
+      },
+      '/stable/apps/myapp/console',
+    );
+
+    expect(html).toContain('启动');
+    expect(html).toContain('删除');
+  });
+
+  test('draft console shows delete app action', () => {
+    const html = renderWithAppContext(
+      <AppConsolePage />,
+      {
+        mode: 'draft',
+      },
+      '/draft/apps/myapp/console',
+    );
+
+    expect(html).toContain('删除 APP');
+  });
 });

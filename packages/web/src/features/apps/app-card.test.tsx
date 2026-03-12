@@ -18,7 +18,7 @@ const app: AppSummary = {
 };
 
 describe('AppCard', () => {
-  test('renders a stable console action in the more menu', () => {
+  test('does not render the old more-menu actions', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <AppCard
@@ -29,7 +29,6 @@ describe('AppCard', () => {
       </MemoryRouter>,
     );
 
-    expect(html).toContain('控制台');
-    expect(html).toContain('/stable/apps/orders/console');
+    expect(html).not.toContain('控制台');
   });
 });

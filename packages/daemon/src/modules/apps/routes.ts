@@ -147,6 +147,40 @@ export function createAppRoutes(
     });
   });
 
+  app.patch('/apps/:slug', async (c) => {
+    const slug = c.req.param('slug')!;
+
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new BadRequestError('Invalid JSON body');
+    }
+
+    const updates: { description?: string; displayName?: string } = {};
+
+    if (body.description !== undefined) {
+      if (typeof body.description !== 'string') {
+        throw new BadRequestError('Field "description" must be a string');
+      }
+      updates.description = body.description;
+    }
+
+    if (body.display_name !== undefined) {
+      if (typeof body.display_name !== 'string') {
+        throw new BadRequestError('Field "display_name" must be a string');
+      }
+      updates.displayName = body.display_name.trim();
+    }
+
+    if (updates.description === undefined && updates.displayName === undefined) {
+      throw new BadRequestError('Request body must include "description" or "display_name"');
+    }
+
+    const result = manager.update(slug, updates);
+    return c.json({ data: result });
+  });
+
   // PUT /apps/:slug/files/* - Single file update
   app.put('/apps/:slug/files/*', async (c) => {
     const slug = c.req.param('slug')!;

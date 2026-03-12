@@ -14,6 +14,7 @@ interface AppSectionHeaderProps {
   breadcrumbs?: Array<{ label: string; to?: string }>;
   toggleSidebar: () => void;
   sidebarVisible: boolean;
+  titleAddon?: ReactNode;
   actions?: ReactNode;
 }
 
@@ -26,6 +27,7 @@ export function AppSectionHeader({
   breadcrumbs,
   toggleSidebar,
   sidebarVisible,
+  titleAddon,
   actions,
 }: AppSectionHeaderProps) {
   const title = appDisplayName || appName || '应用';
@@ -63,6 +65,7 @@ export function AppSectionHeader({
               <div className='truncate font-["Outfit",sans-serif] text-[22px] font-extrabold text-[#18181B]'>
                 {title}
               </div>
+              {titleAddon}
               {badge ? (
                 <span className={clsx('inline-flex items-center rounded-md px-2 py-1 text-[11px] font-semibold', badge.className)}>
                   {badge.label}

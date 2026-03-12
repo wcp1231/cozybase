@@ -308,6 +308,52 @@ export async function run() {
     });
   });
 
+  describe('PATCH /apps/:slug', () => {
+    test('updates display_name metadata', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp', {
+        displayName: 'Old Name',
+      });
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request(jsonReq('/api/v1/apps/myapp', 'PATCH', { display_name: '  New Name  ' }));
+      expect(res.status).toBe(200);
+
+      const body = await jsonBody(res);
+      expect(body.data.slug).toBe('myapp');
+      expect(body.data.displayName).toBe('New Name');
+      expect(handle.workspace.getPlatformRepo().apps.findBySlug('myapp')?.display_name).toBe('New Name');
+    });
+
+    test('rejects patch requests with no supported fields', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp');
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request(jsonReq('/api/v1/apps/myapp', 'PATCH', {}));
+      expect(res.status).toBe(400);
+
+      const body = await jsonBody(res);
+      expect(body.error.code).toBe('BAD_REQUEST');
+    });
+
+    test('rejects non-string display_name', async () => {
+      handle = createTestWorkspace();
+      createTestApp(handle, 'myapp');
+
+      const { app } = createServer(createTestConfig(handle.root));
+
+      const res = await app.request(jsonReq('/api/v1/apps/myapp', 'PATCH', { display_name: 123 }));
+      expect(res.status).toBe(400);
+
+      const body = await jsonBody(res);
+      expect(body.error.code).toBe('BAD_REQUEST');
+      expect(body.error.message).toContain('display_name');
+    });
+  });
+
   // --- Path traversal safety ---
 
   describe('path traversal protection', () => {

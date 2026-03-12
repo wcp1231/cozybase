@@ -123,6 +123,22 @@ describe('AppManager', () => {
     expect(events).toEqual(['start:myapp', 'stop:myapp', 'delete:myapp']);
   });
 
+  test('update supports editing displayName without changing lifecycle state', () => {
+    handle = createTestWorkspace();
+    createTestApp(handle, 'myapp', {
+      migrations: { '001_init.sql': MIGRATION_CREATE_TODOS },
+      displayName: 'Old Name',
+    });
+
+    const manager = new AppManager(handle.workspace);
+    const updated = manager.update('myapp', { displayName: 'New Name' });
+
+    expect(updated.displayName).toBe('New Name');
+    expect(updated.stableStatus).toBeNull();
+    expect(updated.hasDraft).toBe(true);
+    expect(handle.workspace.getPlatformRepo().apps.findBySlug('myapp')?.display_name).toBe('New Name');
+  });
+
   test('updateFile hot-exports functions and reports no rebuild needed', () => {
     handle = createTestWorkspace();
     createTestApp(handle, 'myapp', {

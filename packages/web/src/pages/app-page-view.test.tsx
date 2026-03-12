@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { PagesJson } from '@cozybase/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 
 import { EditorToolbar, PropertyPanel } from '../features/editor';
+import { AppSectionHeader } from '../features/apps/app-section-header';
 
 const samplePages: PagesJson = {
   pages: [
@@ -101,5 +103,45 @@ describe('Editor chrome rendering', () => {
     expect(html).toContain('当前字段:');
     expect(html).toContain('Email');
     expect(html).toContain('字段属性');
+  });
+
+  test('app section header renders title addon beside the app title', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AppSectionHeader
+          mode="draft"
+          appName="myapp"
+          appDisplayName="My App"
+          appHomeTo="/draft/apps/myapp/home"
+          stableStatus="running"
+          toggleSidebar={() => {}}
+          sidebarVisible
+          titleAddon={<button type="button" aria-label="修改显示名称">edit</button>}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('My App');
+    expect(html).toContain('aria-label="修改显示名称"');
+  });
+
+  test('app section header renders action slot for console entry', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AppSectionHeader
+          mode="stable"
+          appName="myapp"
+          appDisplayName="My App"
+          appHomeTo="/stable/apps/myapp/home"
+          stableStatus="running"
+          toggleSidebar={() => {}}
+          sidebarVisible
+          actions={<a href="/stable/apps/myapp/console">控制台</a>}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('控制台');
+    expect(html).toContain('/stable/apps/myapp/console');
   });
 });
