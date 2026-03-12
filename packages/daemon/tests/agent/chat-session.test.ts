@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { existsSync, readFileSync } from 'fs';
 import {
   type AgentEvent,
   type AgentProvider,
@@ -11,6 +12,8 @@ import {
 import { ChatSession } from '../../src/ai/builder/session';
 import { RuntimeSessionStore } from '../../src/ai/runtime-session-store';
 import { SessionStore } from '../../src/ai/builder/session-store';
+import { daemonLogger } from '../../src/core/daemon-logger';
+import { resolveDaemonLogFilePath } from '../../src/runtime-paths';
 import { createTestApp, createTestWorkspace, type TestWorkspaceHandle } from '../helpers/test-workspace';
 
 class StubAgentQuery implements AgentQuery {
@@ -143,8 +146,10 @@ class FakeWebSocket {
 
 describe('ChatSession', () => {
   let handle: TestWorkspaceHandle;
+  let previousHome: string | undefined;
 
   afterEach(() => {
+    process.env.HOME = previousHome;
     handle?.cleanup();
   });
 
@@ -325,5 +330,56 @@ describe('ChatSession', () => {
         state: { resumeSessionId: 'thread-codex-1' },
       },
     });
+  });
+
+  test('writes builder MCP debug trace when MCP usage fails', async () => {
+    handle = createTestWorkspace();
+    previousHome = process.env.HOME;
+    process.env.HOME = handle.root;
+    createTestApp(handle, 'orders');
+    const store = new SessionStore(handle.workspace.getPlatformDb());
+    const runtimeStore = new RuntimeSessionStore(handle.workspace.getPlatformDb());
+    handle.workspace.getPlatformRepo().settings.set('daemon.log_level', 'DEBUG');
+    daemonLogger.configure(handle.workspace.getPlatformRepo());
+
+    const provider = new StubRuntimeProvider('codex', () => new StubAgentQuery([
+      { type: 'conversation.run.started' },
+      {
+        type: 'conversation.tool.started',
+        toolUseId: 'tool-1',
+        toolName: 'cozybase.create_app',
+        input: { app_name: 'orders' },
+      },
+      {
+        type: 'conversation.tool.completed',
+        toolUseId: 'tool-1',
+        toolName: 'cozybase.create_app',
+        summary: 'failed: request timeout',
+      },
+      { type: 'conversation.error', message: 'Codex turn failed' },
+    ]));
+
+    const session = new ChatSession(
+      'orders',
+      {
+        agentProvider: provider,
+        providerKind: 'codex',
+        agentDir: handle.root,
+      },
+      store,
+      runtimeStore,
+    );
+    const ws = new FakeWebSocket();
+    session.connect(ws);
+
+    await session.handleMessage(ws, JSON.stringify({ type: 'chat:send', message: 'hello' }));
+
+    const logPath = resolveDaemonLogFilePath();
+    expect(existsSync(logPath)).toBeTrue();
+    const content = readFileSync(logPath, 'utf-8');
+    expect(content).toContain('Builder MCP failure trace app=orders provider=codex');
+    expect(content).toContain('"toolName":"cozybase.create_app"');
+    expect(content).toContain('"summary":"failed: request timeout"');
+    expect(content).toContain('"message":"Codex turn failed"');
   });
 });

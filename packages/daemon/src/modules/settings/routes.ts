@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import type { PlatformRepository } from '../../core/platform-repository';
+import { DAEMON_LOG_LEVELS, type DaemonLogLevel } from '../../core/daemon-logger';
+import { resolveDaemonLogFilePath } from '../../runtime-paths';
 import {
   VALID_AGENT_PROVIDERS,
   VALID_MODELS,
@@ -40,6 +42,23 @@ class SettingsValidationError extends Error {
 
 export function createSettingsRoutes(platformRepo: PlatformRepository) {
   const app = new Hono();
+
+  app.get('/settings/general', (c) => {
+    return c.json(readGeneralSettingsResponse(platformRepo));
+  });
+
+  app.put('/settings/general', async (c) => {
+    const body = await c.req.json<{ logLevel?: string }>();
+    try {
+      updateGeneralSettings(platformRepo, body);
+      return c.json(readGeneralSettingsResponse(platformRepo));
+    } catch (error) {
+      if (error instanceof SettingsValidationError) {
+        return c.json({ error: { code: error.code, message: error.message } }, 400);
+      }
+      throw error;
+    }
+  });
 
   app.get('/settings/agent', (c) => {
     return c.json(readBuilderAgentSettingsResponse(platformRepo));
@@ -244,6 +263,35 @@ function readOpenClawSettings(platformRepo: PlatformRepository): OpenClawStatus 
   };
 }
 
+function readGeneralSettingsResponse(platformRepo: PlatformRepository) {
+  const stored = platformRepo.settings.get('daemon.log_level');
+  const logLevel = isDaemonLogLevel(stored) ? stored : 'INFO';
+
+  return {
+    data: {
+      logLevel,
+      logFilePath: resolveDaemonLogFilePath(),
+    },
+    meta: {
+      logLevels: [...DAEMON_LOG_LEVELS],
+    },
+  };
+}
+
+function updateGeneralSettings(
+  platformRepo: PlatformRepository,
+  body: { logLevel?: string },
+) {
+  if (!isDaemonLogLevel(body.logLevel)) {
+    throw new SettingsValidationError(
+      'INVALID_LOG_LEVEL',
+      `Invalid log level. Must be one of: ${DAEMON_LOG_LEVELS.join(', ')}`,
+    );
+  }
+
+  platformRepo.settings.set('daemon.log_level', body.logLevel);
+}
+
 function updateBuilderAgentSettings(
   platformRepo: PlatformRepository,
   body: { provider?: string; model?: string },
@@ -442,4 +490,8 @@ function readCozyBaseAgentSettingsResponse(platformRepo: PlatformRepository) {
     data: { provider: agentProvider, modelProvider, model },
     meta: getCozyBaseProviderMeta(),
   };
+}
+
+function isDaemonLogLevel(value: string | null | undefined): value is DaemonLogLevel {
+  return value === 'DEBUG' || value === 'INFO' || value === 'WARNING' || value === 'ERROR';
 }

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createServer } from '../../src/server';
 import type { Config } from '../../src/config';
+import { resolveDaemonLogFilePath } from '../../src/runtime-paths';
 import { createTestWorkspace, type TestWorkspaceHandle } from '../helpers/test-workspace';
 
 function createTestConfig(root: string): Config {
@@ -58,6 +59,62 @@ describe('Settings API (/api/v1/settings)', () => {
       data: {
         provider: 'claude',
         model: 'claude-sonnet-4-6',
+      },
+    });
+  });
+
+  test('returns the default daemon log level and log file path for general settings', async () => {
+    handle = createTestWorkspace();
+    process.env.HOME = handle.root;
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request('/api/v1/settings/general');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      data: {
+        logLevel: 'INFO',
+        logFilePath: resolveDaemonLogFilePath(),
+      },
+      meta: {
+        logLevels: ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+      },
+    });
+  });
+
+  test('stores general daemon log level in platform settings', async () => {
+    handle = createTestWorkspace();
+    process.env.HOME = handle.root;
+    const { app, workspace } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request(
+      jsonReq('/api/v1/settings/general', 'PUT', {
+        logLevel: 'DEBUG',
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      data: {
+        logLevel: 'DEBUG',
+      },
+    });
+    expect(workspace.getPlatformRepo().settings.get('daemon.log_level')).toBe('DEBUG');
+  });
+
+  test('validates general daemon log level values', async () => {
+    handle = createTestWorkspace();
+    const { app } = createServer(createTestConfig(handle.root));
+
+    const res = await app.request(
+      jsonReq('/api/v1/settings/general', 'PUT', {
+        logLevel: 'TRACE',
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: 'INVALID_LOG_LEVEL',
       },
     });
   });

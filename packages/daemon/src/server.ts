@@ -22,6 +22,7 @@ import { AppManager } from './modules/apps/manager';
 import { extractAppInfo, deduplicateSlug } from '@cozybase/builder-agent';
 import { eventBus } from './core/event-bus';
 import { ScheduleManager } from './core/schedule-manager';
+import { daemonLogger } from './core/daemon-logger';
 import { resolveWebDistDir } from './runtime-paths';
 import { bootstrapAi } from './ai/bootstrap';
 
@@ -33,13 +34,14 @@ export function createServer(config: Config) {
 
   let justInitialized = false;
   if (!workspace.isInitialized()) {
-    console.log('Initializing new workspace...');
+    daemonLogger.info('Initializing new workspace');
     workspace.init();
-    console.log(`  Workspace created at ${workspace.root}`);
+    daemonLogger.info(`Workspace created at ${workspace.root}`);
     justInitialized = true;
   }
 
   workspace.load();
+  daemonLogger.configure(workspace.getPlatformRepo());
 
   // --- Core services ---
   const appErrorRecorder = new AppErrorRecorder(workspace.getPlatformRepo());
@@ -104,7 +106,7 @@ export function createServer(config: Config) {
     {
       onStableStarted: (appSlug) => {
         void scheduleManager.loadApp(appSlug).catch((err) => {
-          console.error(`Failed to load schedules for '${appSlug}' after start`, err);
+          daemonLogger.error(`Failed to load schedules for '${appSlug}' after start`, err);
         });
       },
       onStableStopped: (appSlug) => {
@@ -129,7 +131,7 @@ export function createServer(config: Config) {
         err.statusCode as any,
       );
     }
-    console.error('Unhandled error:', err);
+    daemonLogger.error('Unhandled error', err);
     return c.json(
       { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
       500,
@@ -383,7 +385,7 @@ export function createServer(config: Config) {
     // 4. Start Agent with the original idea text (fire-and-forget)
     const session = chatSessionManager.getOrCreate(slug);
     session.injectPrompt(body.idea.trim()).catch((err) => {
-      console.error(`Failed to inject prompt for '${slug}':`, err);
+      daemonLogger.error(`Failed to inject prompt for '${slug}'`, err);
     });
 
     // 5. Return slug for frontend navigation
@@ -449,22 +451,22 @@ async function initializeRuntime(
 ) {
   // Auto-publish template apps on first workspace initialization
   if (justInitialized) {
-    console.log('Auto-publishing template apps...');
+    daemonLogger.info('Auto-publishing template apps');
     workspace.refreshAllAppStates();
     for (const appDef of workspace.scanApps()) {
       const state = workspace.getAppState(appDef.slug);
       if (state?.stableStatus === null && state.hasDraft) {
-        console.log(`  Auto-publishing template app: ${appDef.slug}`);
+        daemonLogger.info(`Auto-publishing template app '${appDef.slug}'`);
         try {
           const result = await publisher.publish(appDef.slug);
           if (result.success) {
-            console.log(`  Published: ${appDef.slug}`);
+            daemonLogger.info(`Published template app '${appDef.slug}'`);
             workspace.refreshAppState(appDef.slug);
           } else {
-            console.error(`  Failed to auto-publish '${appDef.slug}': ${result.error}`);
+            daemonLogger.error(`Failed to auto-publish '${appDef.slug}': ${result.error}`);
           }
         } catch (err) {
-          console.error(`  Failed to auto-publish '${appDef.slug}':`, err);
+          daemonLogger.error(`Failed to auto-publish '${appDef.slug}'`, err);
         }
       }
     }
@@ -484,10 +486,10 @@ async function initializeRuntime(
           functionsDir: join(appContext.stableDataDir, 'functions'),
           uiDir: join(appContext.stableDataDir, 'ui'),
         });
-        console.log(`  Started app: ${appDef.slug}:stable`);
+        daemonLogger.info(`Started app '${appDef.slug}:stable'`);
         await scheduleManager.loadApp(appDef.slug);
       } catch (err) {
-        console.error(`  Failed to start ${appDef.slug}:stable:`, err);
+        daemonLogger.error(`Failed to start '${appDef.slug}:stable'`, err);
       }
     }
 
@@ -502,9 +504,9 @@ async function initializeRuntime(
           functionsDir: join(appContext.draftDataDir, 'functions'),
           uiDir: join(appContext.draftDataDir, 'ui'),
         });
-        console.log(`  Started app: ${appDef.slug}:draft`);
+        daemonLogger.info(`Started app '${appDef.slug}:draft'`);
       } catch (err) {
-        console.error(`  Failed to start ${appDef.slug}:draft:`, err);
+        daemonLogger.error(`Failed to start '${appDef.slug}:draft'`, err);
       }
     }
   }

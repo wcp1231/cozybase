@@ -198,7 +198,7 @@ function getPanelConfig(kind: ChatSessionKind, appName?: string) {
   }
 
   return {
-    title: 'AI Builder',
+    title: 'Builder Agent',
     introMessage: `我可以继续帮你修改「${appName ?? ''}」的界面、组件和交互。`,
     suggestions: ['新增页面', '生成表单', '调整布局'],
     inputPlaceholder: '告诉 AI 如何修改这个应用...',

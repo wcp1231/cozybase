@@ -244,4 +244,100 @@ describe('CodexProvider', () => {
       { type: 'conversation.run.completed', sessionId: 'thread-new' },
     ]);
   });
+
+  test('includes MCP tool input in conversation.tool.started events', async () => {
+    sdkState.threadFactory = (threadId: string) => ({
+      id: threadId,
+      async runStreamed(_input: string, _options?: Record<string, unknown>) {
+        async function* events() {
+          yield { type: 'thread.started', thread_id: threadId };
+          yield {
+            type: 'item.started',
+            item: {
+              id: 'tool-item-1',
+              type: 'mcp_tool_call',
+              server: 'cozybase',
+              tool: 'create_app',
+              input: { app_name: 'orders' },
+            },
+          };
+          yield {
+            type: 'item.completed',
+            item: {
+              id: 'tool-item-1',
+              type: 'mcp_tool_call',
+              server: 'cozybase',
+              tool: 'create_app',
+              status: 'completed',
+            },
+          };
+        }
+        return { events: events() };
+      },
+      async run() {
+        return { items: [], finalResponse: '', usage: null };
+      },
+    });
+
+    const provider = new CodexProvider();
+    const events = await collectEvents(provider.createQuery({
+      prompt: 'stream',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(events).toContainEqual({
+      type: 'conversation.tool.started',
+      toolUseId: 'tool-1',
+      toolName: 'cozybase.create_app',
+      input: { app_name: 'orders' },
+    });
+  });
+
+  test('prefixes failed MCP tool summaries with failed', async () => {
+    sdkState.threadFactory = (threadId: string) => ({
+      id: threadId,
+      async runStreamed(_input: string, _options?: Record<string, unknown>) {
+        async function* events() {
+          yield { type: 'thread.started', thread_id: threadId };
+          yield {
+            type: 'item.started',
+            item: {
+              id: 'tool-item-1',
+              type: 'mcp_tool_call',
+              server: 'cozybase',
+              tool: 'create_app',
+            },
+          };
+          yield {
+            type: 'item.completed',
+            item: {
+              id: 'tool-item-1',
+              type: 'mcp_tool_call',
+              server: 'cozybase',
+              tool: 'create_app',
+              status: 'failed',
+              error: { message: 'request timeout' },
+            },
+          };
+        }
+        return { events: events() };
+      },
+      async run() {
+        return { items: [], finalResponse: '', usage: null };
+      },
+    });
+
+    const provider = new CodexProvider();
+    const events = await collectEvents(provider.createQuery({
+      prompt: 'stream',
+      cwd: '/tmp/cozybase-agent',
+    }));
+
+    expect(events).toContainEqual({
+      type: 'conversation.tool.completed',
+      toolUseId: 'tool-1',
+      toolName: 'cozybase.create_app',
+      summary: 'failed: request timeout',
+    });
+  });
 });

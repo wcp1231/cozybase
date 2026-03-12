@@ -415,11 +415,16 @@ class CodexQuery implements AgentQuery {
         toolName,
       };
       this.toolStates.set(itemId, state);
-      events.push({
+      const startedEvent: AgentEvent = {
         type: 'conversation.tool.started',
         toolUseId: state.toolUseId,
         toolName: state.toolName,
-      });
+      };
+      const input = this.extractToolInput(item);
+      if (input) {
+        startedEvent.input = input;
+      }
+      events.push(startedEvent);
     }
 
     if (phase === 'completed' || this.isTerminalToolStatus(item.status)) {
@@ -454,12 +459,33 @@ class CodexQuery implements AgentQuery {
       const server = String(item.server ?? 'mcp');
       const tool = String(item.tool ?? 'tool');
       if (status === 'failed') {
-        return item.error?.message ?? `${server}.${tool} failed`;
+        return `failed: ${item.error?.message ?? `${server}.${tool} failed`}`;
       }
       return `${status}: ${server}.${tool}`;
     }
 
     return 'completed';
+  }
+
+  private extractToolInput(item: any): Record<string, unknown> | undefined {
+    const candidate = item?.input ?? item?.arguments ?? item?.params;
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as Record<string, unknown>;
+    }
+
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return { raw: candidate };
+      }
+      return { raw: candidate };
+    }
+
+    return undefined;
   }
 
   private computeDelta(previous: string, next: string): string {

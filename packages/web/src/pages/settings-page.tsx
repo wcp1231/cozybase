@@ -49,6 +49,17 @@ interface OpenClawStatus {
   acpxConfigIssue: string | null;
 }
 
+type DaemonLogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+
+interface GeneralSettingsConfig {
+  logLevel: DaemonLogLevel;
+  logFilePath: string;
+}
+
+interface GeneralSettingsMeta {
+  logLevels: DaemonLogLevel[];
+}
+
 interface AgentSettingsBundle {
   builder: {
     data: AgentConfig;
@@ -98,7 +109,7 @@ const SETTINGS_TABS: SettingsTab[] = [
 export function SettingsPage() {
   const { toggleSidebar, sidebarVisible } = useAppContext();
 
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('agent');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('general');
   const [openClawEnabled, setOpenClawEnabled] = useState(false);
   const [openClawStatus, setOpenClawStatus] = useState<OpenClawStatus | null>(null);
   const [openClawLoading, setOpenClawLoading] = useState(true);
@@ -106,6 +117,12 @@ export function SettingsPage() {
   const [openClawActionLoading, setOpenClawActionLoading] = useState<'configure-acpx' | 'create-skills-dir' | null>(null);
   const [openClawError, setOpenClawError] = useState<string | null>(null);
   const [openClawSuccess, setOpenClawSuccess] = useState<string | null>(null);
+  const [generalConfig, setGeneralConfig] = useState<GeneralSettingsConfig | null>(null);
+  const [generalMeta, setGeneralMeta] = useState<GeneralSettingsMeta | null>(null);
+  const [generalLoading, setGeneralLoading] = useState(true);
+  const [generalSaving, setGeneralSaving] = useState(false);
+  const [generalSaveSuccess, setGeneralSaveSuccess] = useState(false);
+  const [generalError, setGeneralError] = useState<string | null>(null);
   const [builderConfig, setBuilderConfig] = useState<AgentConfig | null>(null);
   const [builderMeta, setBuilderMeta] = useState<AgentMeta | null>(null);
   const [operatorConfig, setOperatorConfig] = useState<AdvancedAgentConfig | null>(null);
@@ -122,7 +139,7 @@ export function SettingsPage() {
   const [agentError, setAgentError] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([fetchAgentConfig(), fetchOpenClawStatus()]);
+    void Promise.all([fetchGeneralSettings(), fetchAgentConfig(), fetchOpenClawStatus()]);
   }, []);
 
   useEffect(() => {
@@ -173,6 +190,26 @@ export function SettingsPage() {
     }
   }
 
+  async function fetchGeneralSettings() {
+    setGeneralLoading(true);
+    setGeneralError(null);
+    try {
+      const res = await fetch('/api/v1/settings/general');
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      }
+
+      const json = await res.json() as { data: GeneralSettingsConfig; meta: GeneralSettingsMeta };
+      setGeneralConfig(json.data);
+      setGeneralMeta(json.meta);
+    } catch (err) {
+      setGeneralError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneralLoading(false);
+    }
+  }
+
   async function fetchOpenClawStatus() {
     setOpenClawLoading(true);
     setOpenClawError(null);
@@ -216,6 +253,33 @@ export function SettingsPage() {
       setOpenClawError(err instanceof Error ? err.message : String(err));
     } finally {
       setOpenClawToggleSaving(false);
+    }
+  }
+
+  async function saveGeneralSettings(logLevel: DaemonLogLevel) {
+    setGeneralSaving(true);
+    setGeneralSaveSuccess(false);
+    setGeneralError(null);
+    try {
+      const res = await fetch('/api/v1/settings/general', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logLevel }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error?.message ?? `HTTP ${res.status}`);
+      }
+
+      const json = await res.json() as { data: GeneralSettingsConfig; meta: GeneralSettingsMeta };
+      setGeneralConfig(json.data);
+      setGeneralMeta(json.meta);
+      setGeneralSaveSuccess(true);
+      setTimeout(() => setGeneralSaveSuccess(false), 2000);
+    } catch (err) {
+      setGeneralError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneralSaving(false);
     }
   }
 
@@ -426,7 +490,24 @@ export function SettingsPage() {
             className="max-w-2xl"
           >
             {activeTab === 'general' ? (
-              <div className="min-h-64 rounded-2xl border border-dashed border-[#CBD5E1] bg-white/70 p-10" />
+              generalLoading ? (
+                <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
+                  正在加载设置...
+                </div>
+              ) : generalError && !generalConfig ? (
+                <div className="rounded-2xl border border-[#FECACA] bg-white p-6 text-sm text-[#B91C1C]">
+                  加载失败：{generalError}
+                </div>
+              ) : generalConfig && generalMeta ? (
+                <GeneralSettingsCard
+                  config={generalConfig}
+                  meta={generalMeta}
+                  saving={generalSaving}
+                  saveSuccess={generalSaveSuccess}
+                  error={generalError}
+                  onLogLevelChange={(logLevel) => void saveGeneralSettings(logLevel)}
+                />
+              ) : null
             ) : null}
 
             {activeTab === 'openclaw' ? (
@@ -596,6 +677,84 @@ export function SettingsPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+function GeneralSettingsCard({
+  config,
+  meta,
+  saving,
+  saveSuccess,
+  error,
+  onLogLevelChange,
+}: {
+  config: GeneralSettingsConfig;
+  meta: GeneralSettingsMeta;
+  saving: boolean;
+  saveSuccess: boolean;
+  error: string | null;
+  onLogLevelChange: (logLevel: DaemonLogLevel) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-[#E2E8F0] bg-white">
+      <div className="flex items-center gap-3 border-b border-[#E2E8F0] px-6 py-4">
+        <div>
+          <h2 className='m-0 font-["Outfit",sans-serif] text-base font-bold text-[#18181B]'>
+            Daemon 日志
+          </h2>
+          <p className="m-0 text-xs text-[#94A3B8]">
+            控制 daemon 写入文件日志的最小级别。
+          </p>
+        </div>
+        {saveSuccess ? (
+          <div className="ml-auto flex items-center gap-1 text-xs font-semibold text-[#16A34A]">
+            <Check className="h-3.5 w-3.5" />
+            已保存
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-5 p-6">
+        {error ? (
+          <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-xs text-[#B91C1C]">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-[#334155]">
+            日志级别
+          </label>
+          <p className="m-0 text-xs text-[#94A3B8]">
+            仅记录大于或等于所选级别的 daemon 日志，修改后立即生效。
+          </p>
+          <div className="relative">
+            <select
+              value={config.logLevel}
+              disabled={saving}
+              onChange={(e) => onLogLevelChange(e.target.value as DaemonLogLevel)}
+              className={`h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white px-3 pr-8 text-sm text-[#334155] outline-none transition-colors focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] ${saving ? 'opacity-60' : ''}`}
+            >
+              {meta.logLevels.map((logLevel) => (
+                <option key={logLevel} value={logLevel}>
+                  {logLevel}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+          <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]">
+            Log File
+          </p>
+          <code className="mt-2 block text-[12px] leading-5 text-[#334155]">
+            {config.logFilePath}
+          </code>
+        </div>
+      </div>
+    </section>
   );
 }
 

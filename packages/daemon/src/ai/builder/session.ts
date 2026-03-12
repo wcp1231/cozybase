@@ -8,6 +8,7 @@
 import type { AgentEvent, AgentRuntimeProvider, AgentSessionSpec, StoredMessage } from '@cozybase/ai-runtime';
 import { buildSystemPrompt } from '@cozybase/builder-agent';
 import type { EventBus } from '../../core/event-bus';
+import { daemonLogger } from '../../core/daemon-logger';
 import { RuntimeAgentSession } from '../runtime-agent-session';
 import type { RuntimeSessionStore } from '../runtime-session-store';
 import type { SessionStore } from './session-store';
@@ -35,12 +36,25 @@ interface WebSocketLike {
   readyState: number;
 }
 
+interface BuilderMcpTraceEntry {
+  at: string;
+  phase: 'started' | 'progress' | 'completed' | 'error';
+  toolUseId?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  summary?: string;
+  message?: string;
+}
+
 export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
   private unsubscribeReconcile: (() => void) | null = null;
   private toolStartedAt = new Map<string, string>();
   private lastPersistMs = 0;
   private sameMsSequence = 0;
   private lastAssistantMessage: string | null = null;
+  private activePromptProviderKind: string | null = null;
+  private mcpTraceBuffer: BuilderMcpTraceEntry[] = [];
+  private builderMcpFailure = false;
   private readonly eventBus?: EventBus;
 
   constructor(
@@ -122,9 +136,13 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
     });
     this.toolStartedAt = new Map();
     this.lastAssistantMessage = null;
+    this.activePromptProviderKind = this.resolveRuntimeConfig().providerKind;
+    this.mcpTraceBuffer = [];
+    this.builderMcpFailure = false;
   }
 
   protected afterPrompt(): void {
+    this.flushBuilderMcpTraceIfNeeded();
     if (this.delegatedTaskId && this.eventBus) {
       if (this.lastPromptError) {
         this.eventBus.emit('task:failed', {
@@ -144,6 +162,9 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
     this.runEventBuffer = [];
     this.toolStartedAt = new Map();
     this.lastAssistantMessage = null;
+    this.activePromptProviderKind = null;
+    this.mcpTraceBuffer = [];
+    this.builderMcpFailure = false;
   }
 
   protected onPromptError(message: string): void {
@@ -158,6 +179,21 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
     switch (event.type) {
       case 'conversation.tool.started':
         this.toolStartedAt.set(event.toolUseId, this.nextCreatedAt());
+        this.trackBuilderMcpEvent({
+          at: new Date().toISOString(),
+          phase: 'started',
+          toolUseId: event.toolUseId,
+          toolName: event.toolName,
+          input: event.input,
+        });
+        break;
+      case 'conversation.tool.progress':
+        this.trackBuilderMcpEvent({
+          at: new Date().toISOString(),
+          phase: 'progress',
+          toolUseId: event.toolUseId,
+          toolName: event.toolName,
+        });
         break;
       case 'conversation.message.completed':
         if (event.role === 'assistant' && event.content) {
@@ -180,11 +216,23 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
           toolSummary: event.summary,
           createdAt: toolStartedAt,
         });
+        this.trackBuilderMcpEvent({
+          at: new Date().toISOString(),
+          phase: 'completed',
+          toolUseId: event.toolUseId,
+          toolName: event.toolName,
+          summary: event.summary,
+        });
         this.toolStartedAt.delete(event.toolUseId);
         this.trimToolFromBuffer(event.toolUseId);
         break;
       }
       case 'conversation.error':
+        this.trackBuilderMcpEvent({
+          at: new Date().toISOString(),
+          phase: 'error',
+          message: event.message,
+        });
         this.store.addMessage(this.appSlug, {
           role: 'assistant',
           content: `Error: ${event.message}`,
@@ -201,6 +249,63 @@ export class ChatSession extends RuntimeAgentSession<ChatSessionRuntimeConfig> {
     this.unsubscribeReconcile = null;
     this.toolStartedAt = new Map();
     this.lastAssistantMessage = null;
+    this.activePromptProviderKind = null;
+    this.mcpTraceBuffer = [];
+    this.builderMcpFailure = false;
+  }
+
+  private trackBuilderMcpEvent(entry: BuilderMcpTraceEntry): void {
+    if (entry.toolName && !this.isBuilderMcpTool(entry.toolName)) {
+      return;
+    }
+
+    if (entry.phase === 'completed' && entry.summary && /^failed:/i.test(entry.summary)) {
+      this.builderMcpFailure = true;
+    }
+    if (entry.phase === 'error' && this.mcpTraceBuffer.length > 0) {
+      this.builderMcpFailure = true;
+    }
+
+    if (entry.phase === 'error' && this.mcpTraceBuffer.length === 0) {
+      return;
+    }
+
+    this.mcpTraceBuffer.push(entry);
+  }
+
+  private flushBuilderMcpTraceIfNeeded(): void {
+    if (!this.builderMcpFailure || this.mcpTraceBuffer.length === 0) {
+      return;
+    }
+
+    const provider = this.activePromptProviderKind ?? this.runtimeProviderKind ?? 'unknown';
+    let tracedErrorMessage: string | undefined;
+    for (let i = this.mcpTraceBuffer.length - 1; i >= 0; i -= 1) {
+      const entry = this.mcpTraceBuffer[i];
+      if (entry.phase === 'error') {
+        tracedErrorMessage = entry.message;
+        break;
+      }
+    }
+    const errorMessage = this.lastPromptError
+      ?? tracedErrorMessage
+      ?? 'Unknown MCP failure';
+
+    daemonLogger.debug(
+      `Builder MCP failure trace app=${this.appSlug} provider=${provider} events=${this.mcpTraceBuffer.length} error=${JSON.stringify(errorMessage)}`,
+    );
+
+    for (const entry of this.mcpTraceBuffer) {
+      daemonLogger.debug(`Builder MCP trace ${JSON.stringify({
+        appSlug: this.appSlug,
+        provider,
+        ...entry,
+      })}`);
+    }
+  }
+
+  private isBuilderMcpTool(toolName: string): boolean {
+    return toolName.startsWith('cozybase.') || toolName.startsWith('mcp__cozybase__');
   }
 
   private trimMessageFromBuffer(messageId: string): void {

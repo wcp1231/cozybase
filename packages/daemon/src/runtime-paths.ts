@@ -22,8 +22,21 @@ export function resolveWorkspaceDir(options: ResolveOptions = {}): string {
   return resolve(
     (values.workspace as string | undefined)
       ?? env.COZYBASE_WORKSPACE
-      ?? join(homedir(), '.cozybase'),
+      ?? resolveCozybaseDataDir(env),
   );
+}
+
+export function resolveCozybaseHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.HOME?.trim();
+  return configured && configured.length > 0 ? resolve(configured) : homedir();
+}
+
+export function resolveCozybaseDataDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(resolveCozybaseHomeDir(env), '.cozybase');
+}
+
+export function resolveDaemonLogFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(resolveCozybaseDataDir(env), 'logs', 'daemon.log');
 }
 
 export function resolveBunExecutable(env: NodeJS.ProcessEnv = process.env): string {

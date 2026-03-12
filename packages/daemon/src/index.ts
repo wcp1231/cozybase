@@ -3,6 +3,7 @@ import { createServer } from './server';
 import { writePidFile, cleanupPidFile } from './daemon-ctl';
 import type { OperatorSession } from './ai/operator/session';
 import type { CozyBaseSession } from './ai/cozybase/session';
+import { daemonLogger } from './core/daemon-logger';
 
 const config = loadConfig();
 const {
@@ -150,38 +151,12 @@ const server = Bun.serve<WsData>({
 
 // Write PID and port files for daemon management
 writePidFile(config.workspaceDir, process.pid, server.port ?? config.port);
-
-console.log(`
-  ╔═══════════════════════════════════════╗
-  ║           cozybase v0.1.0             ║
-  ╠═══════════════════════════════════════╣
-  ║  Local BaaS Platform for AI Agents    ║
-  ╚═══════════════════════════════════════╝
-
-  Server:    http://${config.host}:${config.port}
-  Workspace: ${config.workspaceDir}
-
-  API:
-    GET  /health
-    GET  /api/v1/apps
-    GET  /api/v1/apps/:appName
-    WS   /api/v1/agent/ws
-    WS   /api/v1/chat/ws?app=<appName>
-    WS   /api/v1/operator/ws?app=<appName>
-    WS   /api/v1/cozybase/ws
-    POST /api/v1/ui/inspect
-    *    /stable/apps/:appName/fn/:fnName
-    *    /stable/apps/:appName/fn/_db/*
-    *    /draft/apps/:appName/fn/:fnName
-    *    /draft/apps/:appName/fn/_db/*
-    POST /draft/apps/:appName/rebuild
-    POST /draft/apps/:appName/verify
-    POST /draft/apps/:appName/publish
-`);
+daemonLogger.info(`Daemon started on http://${config.host}:${server.port ?? config.port}`);
+daemonLogger.info(`Daemon workspace ${config.workspaceDir}`);
 
 // Graceful shutdown
 async function shutdown() {
-  console.log('\nShutting down...');
+  daemonLogger.info('Shutting down daemon');
   cleanupPidFile(config.workspaceDir);
 
   // Close all browser WebSocket sessions

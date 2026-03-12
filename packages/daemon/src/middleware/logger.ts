@@ -1,4 +1,5 @@
 import { createMiddleware } from 'hono/factory';
+import { daemonLogger } from '../core/daemon-logger';
 
 export function logger() {
   return createMiddleware(async (c, next) => {
@@ -8,6 +9,6 @@ export function logger() {
     const status = c.res.status;
     const method = c.req.method;
     const path = c.req.path;
-    console.log(`${method} ${path} ${status} ${ms}ms`);
+    daemonLogger.debug(`${method} ${path} ${status} ${ms}ms`);
   });
 }
