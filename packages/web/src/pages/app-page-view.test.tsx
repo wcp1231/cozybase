@@ -125,6 +125,32 @@ describe('Editor chrome rendering', () => {
     expect(html).toContain('aria-label="修改显示名称"');
   });
 
+  test('app section header renders page breadcrumbs without prepending app title', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <AppSectionHeader
+          mode="draft"
+          appName="myapp"
+          appDisplayName="My App"
+          appHomeTo="/draft/apps/myapp/home"
+          stableStatus="running"
+          breadcrumbs={[
+            { label: '订单列表', to: '/draft/apps/myapp/orders' },
+            { label: '退款' },
+          ]}
+          toggleSidebar={() => {}}
+          sidebarVisible
+        />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('My App');
+    expect(html).toContain('订单列表');
+    expect(html).toContain('退款');
+    expect(html).toContain('/draft/apps/myapp/orders');
+    expect(html.match(/>My App<\/a>/)).toBeNull();
+  });
+
   test('app section header renders action slot for console entry', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>

@@ -22,7 +22,6 @@ export function AppSectionHeader({
   mode,
   appName,
   appDisplayName,
-  appHomeTo,
   stableStatus,
   breadcrumbs,
   toggleSidebar,
@@ -80,16 +79,9 @@ export function AppSectionHeader({
 
       {breadcrumbs?.length ? (
         <div className="flex min-h-10 items-center gap-2 px-4 pb-2 text-xs md:px-8">
-          {appHomeTo ? (
-            <Link to={appHomeTo} className="truncate font-medium text-[#94A3B8] no-underline hover:text-[#64748B]">
-              {title}
-            </Link>
-          ) : (
-            <span className="truncate font-medium text-[#94A3B8]">{title}</span>
-          )}
           {breadcrumbs.map((item, index) => (
             <div key={`${item.label}-${index}`} className="contents">
-              <span className="text-[#CBD5E1]">/</span>
+              {index > 0 ? <span className="text-[#CBD5E1]">/</span> : null}
               {item.to ? (
                 <Link to={item.to} className="truncate font-medium text-[#64748B] no-underline hover:text-[#334155]">
                   {item.label}

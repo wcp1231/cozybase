@@ -72,6 +72,7 @@ describe('App console UI shell', () => {
 
     expect(html).toContain('My App');
     expect(html).toContain('草稿');
+    expect(html).toContain('订单列表');
     expect(html).toContain('Console');
     expect(html).toContain('href="/draft/apps/myapp/orders"');
     expect(html).toContain('错误日志');

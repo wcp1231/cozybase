@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Database, FileCode2, FolderTree, History, Loader2, Pencil, Play, RefreshCw, Save, Square, Trash2, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAppContext } from './app-layout';
-import { getDefaultPagePath, toAppListPath, toAppPagePath, type AppMode } from './content-slot';
+import { getDefaultPagePath, resolvePageTitle, toAppListPath, toAppPagePath, type AppMode } from './content-slot';
 import { AppSectionHeader } from '../features/apps/app-section-header';
 
 type ConsoleTab = 'errors' | 'schedules' | 'database' | 'source';
@@ -101,9 +101,17 @@ export function AppConsolePage() {
   } = useAppContext();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const appHomeTo = appName
-    ? toAppPagePath(appName, getDefaultPagePath(pagesJson?.pages ?? []), mode)
+  const defaultPagePath = getDefaultPagePath(pagesJson?.pages ?? []);
+  const defaultPage = pagesJson?.pages.find((page) => page.path === defaultPagePath);
+  const appHomeTo = appName && defaultPagePath
+    ? toAppPagePath(appName, defaultPagePath, mode)
     : undefined;
+  const consoleBreadcrumbs = defaultPage && appHomeTo
+    ? [
+        { label: resolvePageTitle(defaultPage, {}), to: appHomeTo },
+        { label: 'Console' },
+      ]
+    : [{ label: 'Console' }];
 
   const sourceTabEnabled = mode === 'draft';
   const requestedTab = parseConsoleTab(searchParams.get('tab'));
@@ -264,7 +272,7 @@ export function AppConsolePage() {
         appDisplayName={app?.displayName}
         appHomeTo={appHomeTo}
         stableStatus={app?.stableStatus ?? null}
-        breadcrumbs={[{ label: 'Console' }]}
+        breadcrumbs={consoleBreadcrumbs}
         toggleSidebar={toggleSidebar}
         sidebarVisible={sidebarVisible}
         actions={mode === 'stable' ? (
