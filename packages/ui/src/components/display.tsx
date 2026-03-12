@@ -221,6 +221,9 @@ function StatComp({ schema, exprContext }: SchemaComponentProps) {
   const resolvedSuffix = s.suffix
     ? resolveExpression(s.suffix, exprContext)
     : null;
+  const isStandaloneNumericValue = resolvedPrefix == null
+    && resolvedSuffix == null
+    && isNumericMetricValue(resolvedValue);
 
   return (
     <div
@@ -230,7 +233,10 @@ function StatComp({ schema, exprContext }: SchemaComponentProps) {
       <div className="text-[13px] text-text-muted mb-1">
         {String(resolvedLabel ?? '')}
       </div>
-      <div className="text-2xl font-semibold text-text">
+      <div className={clsx(
+        'font-semibold text-text',
+        isStandaloneNumericValue ? 'text-4xl leading-tight' : 'text-2xl',
+      )}>
         {resolvedPrefix != null && (
           <span className="text-sm font-normal mr-1">
             {String(resolvedPrefix)}
@@ -245,6 +251,16 @@ function StatComp({ schema, exprContext }: SchemaComponentProps) {
       </div>
     </div>
   );
+}
+
+function isNumericMetricValue(value: unknown): boolean {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return /^-?\d+(?:,\d{3})*(?:\.\d+)?$/.test(value.trim());
 }
 
 // ============================================================

@@ -16,6 +16,7 @@ import type {
   MarkdownComponent,
   PageSchema,
   RowComponent,
+  StatComponent,
   TableComponent,
   TextComponent,
 } from '../schema/types';
@@ -135,6 +136,18 @@ describe('default styling helpers', () => {
     } as unknown as MarkdownComponent);
     expect(markdown.className).toContain('[&_table]:w-full');
     expect(markdown.className).toContain('[&_a]:text-primary');
+
+    const stat = applyBuiltinSchemaDefaults({
+      type: 'stat',
+      id: 'stat-default',
+      label: 'Revenue',
+      value: '4200',
+    } as unknown as StatComponent);
+    expect(stat.style).toEqual(expect.objectContaining({
+      minWidth: 180,
+      flex: '1 1 180px',
+      boxShadow: 'var(--cz-shadow-sm)',
+    }));
 
     const table = applyBuiltinSchemaDefaults({
       type: 'table',
@@ -283,5 +296,46 @@ describe('SchemaRenderer default styling', () => {
     expect(tableWrapper?.getAttribute('style')).toContain('overflow-x: auto');
     expect(tableWrapper?.getAttribute('style')).toContain('border-radius: var(--cz-radius-md)');
     expect(tableWrapper?.getAttribute('style')).not.toContain('margin');
+  });
+
+  test('renders standalone numeric stat values larger than suffixed metrics', async () => {
+    const schema: PageSchema = {
+      path: 'home',
+      title: 'Home',
+      body: [
+        {
+          type: 'row',
+          id: 'stats-row',
+          children: [
+            {
+              type: 'stat',
+              id: 'stat-orders',
+              label: 'Orders',
+              value: '128',
+            } as unknown as StatComponent,
+            {
+              type: 'stat',
+              id: 'stat-growth',
+              label: 'Growth',
+              value: '12.5',
+              suffix: '%',
+            } as unknown as StatComponent,
+          ],
+        } as unknown as RowComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const statWrappers = container.querySelectorAll('[data-schema-type="stat"]');
+    const plainValue = (statWrappers[0]?.firstElementChild as HTMLDivElement | null)
+      ?.lastElementChild as HTMLDivElement | null;
+    const suffixedValue = (statWrappers[1]?.firstElementChild as HTMLDivElement | null)
+      ?.lastElementChild as HTMLDivElement | null;
+
+    expect(plainValue).not.toBeNull();
+    expect(suffixedValue).not.toBeNull();
+    expect(plainValue?.className).toContain('text-4xl');
+    expect(suffixedValue?.className).toContain('text-2xl');
   });
 });

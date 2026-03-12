@@ -208,6 +208,8 @@ function getDefaultPatch(schema: ComponentSchema): DefaultPatch | null {
     case 'stat':
       return {
         style: {
+          minWidth: 180,
+          flex: '1 1 180px',
           boxShadow: 'var(--cz-shadow-sm)',
         },
       };
