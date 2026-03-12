@@ -19,7 +19,7 @@ pub enum TrayVisualState {
 }
 
 pub struct TrayHandles {
-  pub icon: TrayIcon<Wry>,
+  pub _icon: TrayIcon<Wry>,
   pub status: CheckMenuItem<Wry>,
   pub restart: MenuItem<Wry>,
 }
@@ -67,7 +67,11 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<TrayHandles> {
     })
     .build(app)?;
 
-  Ok(TrayHandles { icon, status, restart })
+  Ok(TrayHandles {
+    _icon: icon,
+    status,
+    restart,
+  })
 }
 
 pub fn update(handles: &TrayHandles, state: TrayVisualState, text: &str) {

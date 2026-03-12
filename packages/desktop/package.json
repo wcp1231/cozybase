@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bunx tauri dev",
-    "build": "bunx tauri build",
+    "dev": "bun run prepare:resources && bun run prepare:sidecar && bunx tauri dev",
+    "build": "bun run prepare:resources && bun run prepare:sidecar && bunx tauri build",
     "prepare:resources": "bun run scripts/build-resources.ts",
     "prepare:sidecar": "bun run scripts/prepare-sidecar.ts",
     "sign:adhoc": "bun run scripts/adhoc-sign.ts",

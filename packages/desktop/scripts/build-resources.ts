@@ -1,11 +1,13 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs';
-import { dirname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 
 const repoRoot = resolve(import.meta.dir, '..', '..', '..');
 const desktopRoot = resolve(import.meta.dir, '..');
 const brandIconSource = join(repoRoot, 'assets', 'brand', 'cozybase-icon.png');
+const brandIcnsSource = join(repoRoot, 'assets', 'brand', 'cozybase.icns');
+const tauriIconDir = join(desktopRoot, 'src-tauri', 'icons');
+const tauriIcnsTarget = join(tauriIconDir, 'icon.icns');
 const resourceRoot = join(desktopRoot, 'src-tauri', 'resources');
-const tauriIconTarget = join(desktopRoot, 'src-tauri', 'icons', 'icon.png');
 const daemonEntry = join(repoRoot, 'packages', 'daemon', 'src', 'cli.ts');
 const daemonOutput = join(resourceRoot, 'daemon.js');
 const webDistDir = join(repoRoot, 'packages', 'web', 'dist');
@@ -42,12 +44,26 @@ function copyTree(from: string, to: string) {
   cpSync(from, to, { recursive: true });
 }
 
-function copyFile(from: string, to: string) {
-  if (!existsSync(from)) {
-    throw new Error(`Required resource file not found: ${from}`);
+async function generateTauriIcons() {
+  if (!existsSync(brandIconSource)) {
+    throw new Error(`Required brand icon not found: ${brandIconSource}`);
   }
-  mkdirSync(dirname(to), { recursive: true });
-  cpSync(from, to);
+
+  mkdirSync(tauriIconDir, { recursive: true });
+
+  const proc = Bun.spawn(['bunx', 'tauri', 'icon', brandIconSource, '--output', tauriIconDir], {
+    cwd: desktopRoot,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`Failed to generate Tauri icons from ${brandIconSource}`);
+  }
+
+  if (existsSync(brandIcnsSource)) {
+    cpSync(brandIcnsSource, tauriIcnsTarget);
+  }
 }
 
 async function main() {
@@ -64,7 +80,7 @@ async function main() {
   rmSync(`${daemonOutput}.map`, { force: true });
 
   await bundleDaemon();
-  copyFile(brandIconSource, tauriIconTarget);
+  await generateTauriIcons();
   copyTree(webDistDir, join(resourceRoot, 'web'));
   copyTree(templatesDir, join(resourceRoot, 'templates'));
   copyTree(guidesDir, join(resourceRoot, 'guides'));
