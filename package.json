@@ -3,16 +3,16 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun run build:ui && bun packages/daemon/src/cli.ts daemon",
-    "builder-mcp": "bun packages/daemon/src/cli.ts builder-mcp",
-    "build:ui": "cd packages/ui && bun run build",
-    "build:web": "bun run build:ui && cd packages/web && bun run build",
-    "build:all": "bun run build:web",
-    "build:daemon": "cd packages/desktop && bun run prepare:resources && bun run prepare:sidecar",
-    "desktop:dev": "bun run build:web && cd packages/desktop && bun run dev",
-    "desktop:build": "bun run build:web && cd packages/desktop && bun run build",
-    "desktop:sign:adhoc": "cd packages/desktop && bun run sign:adhoc",
-    "desktop:package:nightly": "cd packages/desktop && bun run package:nightly",
-    "desktop:build:adhoc": "bun run desktop:build && bun run desktop:package:nightly"
+    "dev": "bun run scripts/dev.ts",
+    "desktop:prepare": "bun run scripts/desktop-prepare.ts",
+    "build:daemon": "bun run desktop:prepare",
+    "desktop:dev": "bun run scripts/desktop-dev.ts",
+    "desktop:build": "bun run scripts/desktop-build.ts",
+    "desktop:sign:adhoc": "bun run --filter @cozybase/desktop sign:adhoc",
+    "desktop:package:nightly": "bun run --filter @cozybase/desktop package:nightly",
+    "desktop:build:adhoc": "bun run desktop:build && bun run desktop:package:nightly",
+    "typecheck": "bun run --workspaces --if-present typecheck",
+    "test": "bun run --workspaces --if-present test",
+    "check": "bun run typecheck && bun run --filter @cozybase/daemon check:ui-guide-props"
   }
 }

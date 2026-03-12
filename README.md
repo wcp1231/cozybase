@@ -46,11 +46,10 @@ packages/
 ### Common Commands
 
 ```bash
-bun run dev                  # Build UI components and start daemon
-bun run build:web            # Build UI + web frontend
-bun run builder-mcp          # Start MCP server for external agents
+bun run dev                  # Start daemon + web development flow
 bun run desktop:dev          # Start desktop app (Tauri dev mode)
 bun run desktop:build        # Build desktop app for distribution
+bun run desktop:build:adhoc  # Build and ad-hoc sign the nightly-ready app archive
 ```
 
 ## More Documentation

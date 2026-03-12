@@ -238,14 +238,14 @@ fn ensure_daemon_ready(app: &AppHandle<Wry>) -> Result<(), String> {
 
   if !bun_path.exists() {
     return Err(format!(
-      "Bun sidecar 不存在：{}。先运行 bun run build:daemon 生成 resources。",
+      "Bun sidecar 不存在：{}。先运行 bun run desktop:prepare 生成 resources。",
       bun_path.display()
     ));
   }
 
   if !daemon_entry.exists() {
     return Err(format!(
-      "Daemon bundle 不存在：{}。先运行 bun run build:daemon 生成 resources。",
+      "Daemon bundle 不存在：{}。先运行 bun run desktop:prepare 生成 resources。",
       daemon_entry.display()
     ));
   }

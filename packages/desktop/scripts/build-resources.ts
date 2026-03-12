@@ -68,7 +68,9 @@ async function generateTauriIcons() {
 
 async function main() {
   if (!existsSync(webDistDir)) {
-    throw new Error(`Web dist not found at ${webDistDir}. Run "bun run build:web" first.`);
+    throw new Error(
+      `Web dist not found at ${webDistDir}. Run "bun run desktop:prepare" from the repo root, or build the web bundle before calling the package-local desktop prepare step.`,
+    );
   }
 
   mkdirSync(resourceRoot, { recursive: true });

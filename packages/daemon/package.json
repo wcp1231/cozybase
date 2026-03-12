@@ -8,8 +8,12 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
     "test": "bun test tests/",
     "acp": "bun run src/acp/acp-entry.ts",
+    "mcp:builder": "bun run src/mcp/mcp-entry.ts",
+    "mcp:operator": "bun run src/ai/operator/mcp-entry.ts",
+    "mcp:cozybase": "bun run src/ai/cozybase/mcp-entry.ts",
     "mcp": "bun run src/mcp/mcp-entry.ts",
     "sync:ui-guide-props": "bun run scripts/sync-ui-guide-props.ts",
     "check:ui-guide-props": "bun run scripts/sync-ui-guide-props.ts --check"

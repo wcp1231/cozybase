@@ -46,11 +46,10 @@ packages/
 ### 常用命令
 
 ```bash
-bun run dev                  # 构建 UI 组件并启动 daemon
-bun run build:web            # 构建 UI + Web 前端
-bun run builder-mcp          # 启动 MCP 服务（供外部 Agent 接入）
+bun run dev                  # 启动 daemon + Web 联调开发链路
 bun run desktop:dev          # 启动桌面应用（Tauri 开发模式）
 bun run desktop:build        # 构建桌面应用发布包
+bun run desktop:build:adhoc  # 构建并生成适合 nightly 上传的 ad-hoc 签名包
 ```
 
 ## 更多文档
