@@ -93,6 +93,36 @@ describe('CardRenderer', () => {
     expect(card!.className).not.toContain('cursor-pointer');
   });
 
+  test('card content area uses a default vertical gap for multiple children', async () => {
+    const schema: PageSchema = {
+      path: 'test',
+      title: 'Test',
+      body: [
+        {
+          type: 'card',
+          id: 'stacked-card',
+          title: 'Stacked Card',
+          children: [
+            { type: 'text', text: 'First block' },
+            { type: 'text', text: 'Second block' },
+          ],
+        } as unknown as CardComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const cardWrapper = container.querySelector('[data-schema-type="card"]') as HTMLDivElement | null;
+    const card = cardWrapper?.firstElementChild as HTMLDivElement | null;
+    const contentArea = card?.lastElementChild as HTMLDivElement | null;
+
+    expect(card).not.toBeNull();
+    expect(contentArea).not.toBeNull();
+    expect(contentArea?.className).toContain('flex');
+    expect(contentArea?.className).toContain('flex-col');
+    expect(contentArea?.className).toContain('gap-3');
+  });
+
   test('card with action triggers dispatchAction on click', async () => {
     const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),

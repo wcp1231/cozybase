@@ -82,7 +82,7 @@ function PageBody({
   extraContext?: Partial<ExpressionContext>;
 }) {
   return (
-    <>
+    <div className="flex flex-col gap-3">
       {toArray<ComponentSchema>(body).map((child, i) => (
         <NodeRenderer
           key={(child as { id?: string }).id ?? i}
@@ -92,7 +92,7 @@ function PageBody({
           siblingIndex={i}
         />
       ))}
-    </>
+    </div>
   );
 }
 

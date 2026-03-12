@@ -211,6 +211,46 @@ describe('SchemaRenderer default styling', () => {
     expect(button?.className).toContain('focus-visible:ring-2');
   });
 
+  test('applies a default vertical stack gap between top-level body siblings', async () => {
+    const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const schema: PageSchema = {
+      path: 'home',
+      title: 'Home',
+      body: [
+        {
+          type: 'row',
+          id: 'toolbar-row',
+          children: [
+            {
+              type: 'button',
+              id: 'btn-filter',
+              label: '筛选',
+              action: { type: 'close' },
+            } as unknown as ButtonComponent,
+          ],
+        } as unknown as RowComponent,
+        {
+          type: 'table',
+          id: 'table-orders',
+          api: { url: '/fn/orders' },
+          columns: [],
+        } as unknown as TableComponent,
+      ],
+    };
+
+    await renderPage(schema);
+
+    const bodyStack = container.firstElementChild as HTMLDivElement | null;
+    expect(bodyStack).not.toBeNull();
+    expect(bodyStack?.className).toContain('flex');
+    expect(bodyStack?.className).toContain('flex-col');
+    expect(bodyStack?.className).toContain('gap-3');
+  });
+
   test('keeps explicit root-level style overrides when applying defaults', async () => {
     const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 })),
@@ -242,5 +282,6 @@ describe('SchemaRenderer default styling', () => {
     expect(tableWrapper?.getAttribute('style')).toContain('box-shadow: none');
     expect(tableWrapper?.getAttribute('style')).toContain('overflow-x: auto');
     expect(tableWrapper?.getAttribute('style')).toContain('border-radius: var(--cz-radius-md)');
+    expect(tableWrapper?.getAttribute('style')).not.toContain('margin');
   });
 });

@@ -140,7 +140,7 @@ function CardComp({ schema, renderChild, exprContext }: SchemaComponentProps) {
           {titleText}
         </div>
       )}
-      <div style={{ padding }}>
+      <div className="flex flex-col gap-3" style={{ padding }}>
         {s.children?.map((child: ComponentSchema, i: number) =>
           renderChild(child, (child as { id?: string }).id ?? i),
         )}

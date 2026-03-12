@@ -189,6 +189,81 @@ Implement dynamic filtering by combining `api.params` with other components:
 
 When the tabs selected value changes, the table automatically reloads its data.
 
+## Toolbar Layout
+
+When you place action buttons above a table, prefer wrapping the toolbar row and the table in a `col` so the spacing stays explicit and easy to tune:
+
+```json
+{
+  "type": "col",
+  "gap": 12,
+  "children": [
+    {
+      "type": "row",
+      "justify": "space-between",
+      "children": [
+        { "type": "button", "label": "刷新", "action": { "type": "reload", "target": "todo-table" } },
+        { "type": "button", "label": "仅看待办", "action": { "type": "close" } }
+      ]
+    },
+    {
+      "type": "table",
+      "id": "todo-table",
+      "api": {
+        "url": "/fn/_db/tables/todo",
+        "params": {
+          "order": "created_at.desc"
+        }
+      },
+      "columns": [
+        { "name": "title", "label": "Title" }
+      ]
+    }
+  ]
+}
+```
+
+The renderer also applies a small default vertical gap between top-level body siblings, so plain `[row, table]` layouts no longer appear visually glued together. Use a `col` when you want tighter control over the spacing.
+
+## External Sorting
+
+Sorting should continue to be driven by external controls that update `api.params.order`, instead of relying on built-in clickable table headers.
+
+```json
+[
+  {
+    "type": "tabs",
+    "id": "sort-tabs",
+    "items": [
+      { "label": "最新创建", "value": "created_at.desc" },
+      { "label": "最早创建", "value": "created_at.asc" },
+      { "label": "标题 A-Z", "value": "title.asc" }
+    ]
+  },
+  {
+    "type": "table",
+    "id": "todo-table",
+    "api": {
+      "url": "/fn/_db/tables/todo",
+      "params": {
+        "order": "${sort-tabs.value}"
+      }
+    },
+    "columns": [
+      { "name": "title", "label": "Title" },
+      { "name": "created_at", "label": "Created At" }
+    ]
+  }
+]
+```
+
+The built-in CRUD query layer supports both:
+
+- `where` for filtering
+- `order` for sorting
+
+For more advanced behavior, combine `tabs`, `form`, `button`, and `reload` actions rather than expanding Table into a full data-grid component.
+
 ## Full Example
 
 ```json
