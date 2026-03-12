@@ -11,8 +11,8 @@ export const COMPONENT_CATEGORIES = {
   /** Layout containers — always have `children: ComponentSchema[]` */
   container: ['page', 'row', 'col', 'card', 'dialog'] as const,
 
-  /** Text display — primary content is a `text` string field */
-  text: ['text', 'heading', 'tag'] as const,
+  /** Text display — primary content is a `text` or `content` string field */
+  text: ['text', 'markdown', 'heading', 'tag'] as const,
 
   /** Data-driven — load remote data via `api: ApiConfig` */
   data: ['table', 'list', 'form'] as const,
@@ -76,7 +76,7 @@ export function getComponentSummary(node: Record<string, unknown>): string {
       return `${count} children`;
     }
     case 'text': {
-      const text = node.text ?? node.label ?? node.message ?? '';
+      const text = node.text ?? node.content ?? node.label ?? node.message ?? '';
       return truncate(String(text), 40);
     }
     case 'data': {

@@ -34,6 +34,8 @@ export function createDefaultComponent(type: string): Record<string, unknown> {
       };
     case 'text':
       return { type, id, text: 'New text' };
+    case 'markdown':
+      return { type, id, content: '## Markdown\n\nLong-form content here.' };
     case 'heading':
       return { type, id, text: 'Heading', level: 2 };
     case 'tag':

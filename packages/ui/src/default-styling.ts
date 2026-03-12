@@ -176,6 +176,27 @@ function getDefaultPatch(schema: ComponentSchema): DefaultPatch | null {
           lineHeight: 1.6,
         },
       };
+    case 'markdown':
+      return {
+        className: [
+          'text-sm leading-relaxed text-text-secondary',
+          '[&_p]:m-0 [&_p+p]:mt-3',
+          '[&_h1]:m-0 [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:tracking-[-0.02em] [&_h1]:text-text',
+          '[&_h2]:m-0 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:tracking-[-0.02em] [&_h2]:text-text',
+          '[&_h3]:m-0 [&_h3]:text-xl [&_h3]:font-semibold [&_h3]:leading-snug [&_h3]:text-text',
+          '[&_h4]:m-0 [&_h4]:text-lg [&_h4]:font-semibold [&_h4]:leading-snug [&_h4]:text-text',
+          '[&_h1+*]:mt-4 [&_h2+*]:mt-4 [&_h3+*]:mt-3 [&_h4+*]:mt-3',
+          '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1',
+          '[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border-strong [&_blockquote]:pl-3 [&_blockquote]:text-text-muted',
+          '[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-bg-subtle [&_pre]:p-3',
+          '[&_code]:rounded [&_code]:bg-bg-subtle [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-text',
+          '[&_pre>code]:bg-transparent [&_pre>code]:p-0',
+          '[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse',
+          '[&_th]:border [&_th]:border-border [&_th]:bg-bg-subtle [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold [&_th]:text-text',
+          '[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_td]:align-top',
+          '[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2',
+        ].join(' '),
+      };
     case 'heading':
       return { style: headingStyle((schema as HeadingComponent).level ?? 2) };
     case 'tag':

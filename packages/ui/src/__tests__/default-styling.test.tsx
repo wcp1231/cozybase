@@ -13,6 +13,7 @@ import type {
   CardComponent,
   FormComponent,
   HeadingComponent,
+  MarkdownComponent,
   PageSchema,
   RowComponent,
   TableComponent,
@@ -126,6 +127,14 @@ describe('default styling helpers', () => {
       color: 'var(--cz-text-secondary)',
       lineHeight: 1.6,
     }));
+
+    const markdown = applyBuiltinSchemaDefaults({
+      type: 'markdown',
+      id: 'markdown-default',
+      content: '## Summary',
+    } as unknown as MarkdownComponent);
+    expect(markdown.className).toContain('[&_table]:w-full');
+    expect(markdown.className).toContain('[&_a]:text-primary');
 
     const table = applyBuiltinSchemaDefaults({
       type: 'table',

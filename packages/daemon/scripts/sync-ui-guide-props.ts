@@ -30,6 +30,7 @@ const CATEGORY_BY_TYPE: Record<string, string> = {
   table: 'Data Display',
   list: 'Data Display',
   text: 'Data Display',
+  markdown: 'Data Display',
   heading: 'Data Display',
   tag: 'Data Display',
   stat: 'Data Display',

@@ -28,6 +28,7 @@ import type {
   rowActionSchema,
   listComponentSchema,
   textComponentSchema,
+  markdownComponentSchema,
   headingComponentSchema,
   tagComponentSchema,
   statComponentSchema,
@@ -78,6 +79,7 @@ export type ColumnSchema = z.infer<typeof columnSchema>;
 export type RowActionSchema = z.infer<typeof rowActionSchema>;
 export type ListComponent = z.infer<typeof listComponentSchema>;
 export type TextComponent = z.infer<typeof textComponentSchema>;
+export type MarkdownComponent = z.infer<typeof markdownComponentSchema>;
 export type HeadingComponent = z.infer<typeof headingComponentSchema>;
 export type TagComponent = z.infer<typeof tagComponentSchema>;
 export type StatComponent = z.infer<typeof statComponentSchema>;

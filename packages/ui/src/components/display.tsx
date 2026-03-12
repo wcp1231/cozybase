@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   registerBuiltinComponent,
   type SchemaComponentProps,
@@ -12,6 +14,7 @@ import type {
   TableComponent,
   ListComponent,
   TextComponent,
+  MarkdownComponent,
   HeadingComponent,
   TagComponent,
   StatComponent,
@@ -131,6 +134,26 @@ function TextComp({ schema, exprContext }: SchemaComponentProps) {
     <span className={s.className} style={s.style}>
       {String(resolved ?? '')}
     </span>
+  );
+}
+
+function MarkdownComp({ schema, exprContext }: SchemaComponentProps) {
+  const s = schema as MarkdownComponent;
+  const resolved = resolveExpression(s.content, exprContext);
+
+  return (
+    <div className={s.className} style={s.style}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: (props: React.ComponentPropsWithoutRef<'a'>) => (
+            <a {...props} target="_blank" rel="noreferrer noopener" />
+          ),
+        }}
+      >
+        {String(resolved ?? '')}
+      </ReactMarkdown>
+    </div>
   );
 }
 
@@ -560,6 +583,7 @@ function ListComp({ schema, exprContext: parentExprCtx }: SchemaComponentProps) 
 // ============================================================
 
 registerBuiltinComponent('text', TextComp);
+registerBuiltinComponent('markdown', MarkdownComp);
 registerBuiltinComponent('heading', HeadingComp);
 registerBuiltinComponent('tag', TagComp);
 registerBuiltinComponent('stat', StatComp);

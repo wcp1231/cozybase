@@ -12,6 +12,7 @@ describe('component-defaults', () => {
           title: 'Home',
           body: [
             createDefaultComponent('text'),
+            createDefaultComponent('markdown'),
             createDefaultComponent('button'),
             createDefaultComponent('row'),
             createDefaultComponent('list'),

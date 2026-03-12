@@ -11,6 +11,7 @@ import {
 describe('schema-map', () => {
   it('returns per-type schemas for builtin components', () => {
     expect(getComponentSchemaForType('text')).toBe(componentSchemaMap.text);
+    expect(getComponentSchemaForType('markdown')).toBe(componentSchemaMap.markdown);
     expect(getComponentSchemaForType('button')).toBe(componentSchemaMap.button);
     expect(getComponentSchemaForType('unknown-custom')).toBeNull();
   });
@@ -24,6 +25,7 @@ describe('schema-map', () => {
   it('lists all builtin component schema types', () => {
     const types = listComponentSchemaTypes();
     expect(types).toContain('text');
+    expect(types).toContain('markdown');
     expect(types).toContain('date-picker');
     expect(types).toHaveLength(Object.keys(componentSchemaMap).length);
   });
@@ -37,6 +39,10 @@ describe('schema-map', () => {
       kind: 'enum',
       optional: true,
       enumValues: ['primary', 'secondary', 'danger', 'ghost'],
+    });
+    expect(getComponentFieldMeta('markdown', 'content')).toEqual({
+      kind: 'string',
+      optional: false,
     });
   });
 });

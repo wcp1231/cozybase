@@ -33,7 +33,7 @@ export const componentBaseSchema = z.object({
 
 export const BUILTIN_COMPONENT_TYPES = [
   'page', 'row', 'col', 'card', 'tabs', 'divider',
-  'table', 'list', 'text', 'heading', 'tag', 'stat',
+  'table', 'list', 'text', 'markdown', 'heading', 'tag', 'stat',
   'form', 'input', 'textarea', 'number', 'select', 'switch',
   'checkbox', 'radio', 'date-picker',
   'button', 'link',
@@ -82,6 +82,7 @@ export type ComponentSchemaType =
   | { type: 'table'; id: string; api: ApiConfigType; columns: ColumnSchemaType[]; rowActions?: RowActionType[]; pagination?: boolean; pageSize?: number; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
   | { type: 'list'; id: string; api: ApiConfigType; itemRender: ComponentSchemaType; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
   | { type: 'text'; id: string; text: string; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
+  | { type: 'markdown'; id: string; content: string; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
   | { type: 'heading'; id: string; text: string; level?: 1 | 2 | 3 | 4 | 5 | 6; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
   | { type: 'tag'; id: string; text: string; color?: string; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
   | { type: 'stat'; id: string; label: string; value: string | number; prefix?: string; suffix?: string; visible?: string | boolean; className?: string; style?: Record<string, string | number> }
@@ -317,6 +318,15 @@ export const textComponentSchema = z.object({
   className: z.string().optional(),
   style: z.record(z.union([z.string(), z.number()])).optional(),
   text: z.string(),
+});
+
+export const markdownComponentSchema = z.object({
+  type: z.literal('markdown'),
+  id: z.string(),
+  visible: expressionOrBool.optional(),
+  className: z.string().optional(),
+  style: z.record(z.union([z.string(), z.number()])).optional(),
+  content: z.string(),
 });
 
 export const headingComponentSchema = z.object({
@@ -557,6 +567,7 @@ export const builtinComponentSchema: z.ZodType<ComponentSchemaType> = z.lazy(() 
     tableComponentSchema,
     listComponentSchema,
     textComponentSchema,
+    markdownComponentSchema,
     headingComponentSchema,
     tagComponentSchema,
     statComponentSchema,
@@ -625,4 +636,3 @@ export const expressionContextSchema = z.object({
   response: z.unknown().optional(),
   props: z.record(z.unknown()).optional(),
 });
-

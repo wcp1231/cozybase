@@ -1,6 +1,6 @@
 # Components
 
-Catalog of 26 built-in UI components. Each uses the `type` field to specify its kind.
+Catalog of 27 built-in UI components. Each uses the `type` field to specify its kind.
 
 Shared JSON fields for all components:
 
@@ -44,6 +44,9 @@ List with API data source and custom item rendering. Props: `api` (ApiConfig), `
 
 ### text
 Text display. Props: `text` (string, supports expressions).
+
+### markdown
+Markdown display for long-form text. Props: `content` (string, supports expressions, rendered as safe GFM). → `get_guide("ui/components/markdown")`
 
 ### heading
 Heading text. Props: `text` (string, supports expressions), `level` (1-6, default 1).

@@ -46,12 +46,12 @@ Each element in `body` is a component object, identified by its `type` field.
 
 All built-in components ship with a default visual baseline. If you omit `style` and `className`, the renderer still applies basic spacing, typography, container, and input visuals at runtime. These runtime defaults are **not** written back into `ui/pages.json`.
 
-26 built-in component types:
+27 built-in component types:
 
 | Category | Components |
 |----------|------------|
 | Layout | `page`, `row`, `col`, `card`, `tabs`, `divider` |
-| Data Display | `table`, `list`, `text`, `heading`, `tag`, `stat` |
+| Data Display | `table`, `list`, `text`, `markdown`, `heading`, `tag`, `stat` |
 | Data Input | `form`, `input`, `textarea`, `number`, `select`, `switch`, `checkbox`, `radio`, `date-picker` |
 | Interaction | `button`, `link` |
 | Feedback | `dialog`, `alert`, `empty` |
