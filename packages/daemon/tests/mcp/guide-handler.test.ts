@@ -65,6 +65,11 @@ describe('handleGetGuide', () => {
 
     expect(uiBatch).toContain('# ui_batch');
     expect(uiBatch).toContain('Refs are always resolved in operation-level fields');
+    expect(uiBatch).toContain('operations` must be an array of operation objects');
+    expect(uiBatch).toContain('use `"$self"` instead');
+    expect(uiBatch).toContain('children: []');
+    expect(uiBatch).not.toContain('page_add", ref: "$page", id:');
+    expect(uiBatch).not.toContain('`page_id`');
     expect(schedules).toContain('# Scheduled Tasks');
     expect(schedules).toContain('Manual Trigger Endpoints');
   });

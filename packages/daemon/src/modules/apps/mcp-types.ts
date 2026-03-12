@@ -464,6 +464,7 @@ export const TOOL_DESCRIPTIONS = {
     'Execute multiple page/component operations in one `ui/pages.json` round trip.\n\n' +
     'Supports mixed operations: `get`, `insert`, `update`, `delete`, `move`, `page_add`, `page_remove`, `page_update`.\n' +
     'Operations run in order and return per-operation statuses (`ok`, `error`, `skipped`).\n\n' +
+    '`operations` must be an array of operation objects. Each operation object uses `op` as the discriminator, not `type`.\n\n' +
     'Use `ref` (must start with `$`) to bind IDs from earlier operations, then reference them via `$ref` in later operations.\n' +
     'When an operation fails, unrelated operations continue; dependent `$ref` operations are marked `skipped`.\n' +
     'A batch writes `ui/pages.json` once only if at least one write operation succeeds.\n\n' +
@@ -473,13 +474,14 @@ export const TOOL_DESCRIPTIONS = {
     '- update: { node_id, props }\n' +
     '- delete: { node_id }\n' +
     '- move: { node_id, new_parent_id, index? }\n' +
-    '- page_add: { id, title, index? }\n' +
-    '- page_remove: { page_id }\n' +
-    '- page_update: { page_id, title }\n\n' +
+    '- page_add: { path, title, index? }\n' +
+    '- page_remove: { page_path }\n' +
+    '- page_update: { page_path, title }\n\n' +
     'All ops accept optional `ref` (must start with `$`).\n' +
     'Refs resolve in top-level operation fields and also in nested exact-match string values inside `insert.node` and `update.props`.\n' +
-    'Use `"$self"` inside `insert.node` to reference the inserted node\'s generated ID; unresolved nested refs raise a validation error.\n' +
+    'Use `"$self"` inside `insert.node` to reference the inserted node\'s generated ID. Earlier batch refs also resolve inside `insert.node` and `update.props`, but future refs and same-operation self references do not; unresolved nested refs raise a validation error.\n' +
     'Insert always generates a fresh component ID and ignores any caller-provided `id`.\n' +
+    'When creating an empty `row`, `col`, `card`, or `dialog` as a future parent, include `children: []`.\n' +
     'Cannot modify `id` or `type` via update (use delete + insert).\n' +
     'Call `get_guide("ui/batch")` for examples.',
 

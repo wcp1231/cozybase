@@ -1,7 +1,7 @@
-import { prepareDesktopArtifacts, repoRoot } from './lib/cozybase';
+import { buildWebArtifacts, repoRoot } from './lib/cozybase';
 import { runCommand, workspaceScript } from './lib/process';
 
-await prepareDesktopArtifacts();
+await buildWebArtifacts();
 
 await runCommand({
   label: 'desktop',

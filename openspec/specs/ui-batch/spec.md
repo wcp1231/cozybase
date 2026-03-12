@@ -16,7 +16,7 @@
 
 ### Requirement: 系统支持基于 `$ref` 的跨操作引用
 
-`ui_batch` 中的操作可以声明 `ref` 名称，系统 SHALL 将成功操作产生的节点或页面 ID 绑定到该名称。后续操作中以 `$` 开头的 `parent_id`、`node_id` 或 `new_parent_id` MUST 被解析为已绑定 ID。
+`ui_batch` 中的操作可以声明 `ref` 名称，系统 SHALL 将成功操作产生的节点或页面 ID 绑定到该名称。后续操作中以 `$` 开头的 `parent_id`、`node_id`、`new_parent_id` 或 `page_path` MUST 被解析为已绑定 ID。
 
 #### Scenario: 使用前序插入节点作为后续父节点
 
@@ -40,7 +40,7 @@
 
 #### Scenario: 创建页面并立即插入内容
 
-- **WHEN** Agent 在同一次 `ui_batch` 中先执行 `page_add(ref: "$settings", id: "settings")`，再执行 `insert(parent_id: "$settings")`
+- **WHEN** Agent 在同一次 `ui_batch` 中先执行 `page_add(ref: "$settings", path: "settings")`，再执行 `insert(parent_id: "$settings")`
 - **THEN** 系统 SHALL 在新增页面下插入目标节点
 - **AND** 返回结果 SHALL 指示两个操作均成功
 

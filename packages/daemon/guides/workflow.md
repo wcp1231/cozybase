@@ -56,7 +56,7 @@ Use `ui_batch` as the default UI editing tool:
 ```
 # Batch page + component edits in one call
 ui_batch(app_name: "my-app", operations: [
-  { op: "page_add", ref: "$usersPage", id: "user-list", title: "User List" },
+  { op: "page_add", ref: "$usersPage", path: "user-list", title: "User List" },
   { op: "insert", ref: "$title", parent_id: "$usersPage", node: { type: "heading", text: "Users" } },
   { op: "insert", parent_id: "$usersPage", node: { type: "table", api: { url: "/fn/_db/tables/users", method: "GET" }, columns: [
     { name: "id", label: "ID" },
@@ -84,6 +84,7 @@ update_app_file(app_name: "my-app", path: "ui/pages.json")
 
 - **IDs are auto-generated** — You don't need to invent unique IDs; the system generates stable `{type}-{nanoid5}` IDs automatically
 - **Nested ref wiring is supported** — use exact-match `"$self"` inside `ui_insert` / `ui_batch.insert` payloads, or earlier batch refs like `"$table"` inside `ui_batch.insert` / `ui_batch.update` nested JSON
+- **Only earlier refs resolve** — future refs and same-operation self references like `ref: "$table"` plus `"target": "$table"` in the same insert payload will fail; use `"$self"` for the inserted node itself
 - **Validated before write** — Every edit is validated against the full schema before writing; invalid edits are rejected without corrupting the file
 - **Fewer round trips** — `ui_batch` can complete multiple related edits in one call, reducing repeated read/validate/write cycles
 - **Targeted changes** — Use `ui_get` to inspect a specific node, then `ui_update` with only the props you want to change
@@ -119,6 +120,8 @@ inspect_ui(app_name: "my-app")         # verify UI renders correctly
 
 Only these types accept children via insert/move operations (`ui_insert`, `ui_move`, or `ui_batch` with `insert` / `move`):
 `page`, `row`, `col`, `card`, `dialog`
+
+When creating an empty `row`, `col`, `card`, or `dialog` that will receive children later, include `children: []` in the initial insert payload.
 
 Attempting to insert into a non-container type will return an error.
 

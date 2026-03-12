@@ -2,6 +2,8 @@
 
 `ui_batch` executes multiple page and component operations on `ui/pages.json` in a single call.
 
+`operations` must be an array of operation objects. Do not pass JSON-encoded strings. Each operation object must use the `op` field, not `type`.
+
 ## Operations
 
 ### get
@@ -57,7 +59,7 @@ Add a new page.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | string | yes | Page ID (becomes the URL route segment, e.g. `user-list`) |
+| `path` | string | yes | Page path (becomes the URL route segment, e.g. `user-list`) |
 | `title` | string | yes | Display title |
 | `index` | number | no | Position in page list; appends if omitted |
 
@@ -67,7 +69,7 @@ Remove a page and all its components.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `page_id` | string | yes | ID of the page to remove |
+| `page_path` | string | yes | Path of the page to remove |
 
 ### page_update
 
@@ -75,7 +77,7 @@ Rename a page.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `page_id` | string | yes | ID of the page to update |
+| `page_path` | string | yes | Path of the page to update |
 | `title` | string | yes | New title |
 
 ## Ref System
@@ -83,10 +85,10 @@ Rename a page.
 Every operation accepts an optional `ref` field (must start with `$`). The ref binds the resulting node ID so later operations can reference it.
 
 - **Insert**: `ref` binds the auto-generated node ID
-- **page_add**: `ref` binds the page ID (same as the `id` you provided)
+- **page_add**: `ref` binds the page path (same as the `path` you provided)
 - **get/update/delete/move**: `ref` binds the `node_id`
 
-Refs are always resolved in operation-level fields such as `parent_id`, `node_id`, `new_parent_id`, and `page_id`.
+Refs are always resolved in operation-level fields such as `parent_id`, `node_id`, `new_parent_id`, and `page_path`.
 
 Nested exact-match string values are also resolved in:
 - `insert.node`
@@ -95,6 +97,10 @@ Nested exact-match string values are also resolved in:
 Supported nested tokens:
 - `"$self"` inside `insert.node` → the inserted node's generated ID
 - earlier batch refs like `"$table"` or `"$row"` inside `insert.node` / `update.props`
+
+Unsupported nested references:
+- future refs from later operations
+- the current operation's own `ref` name inside the same `insert` payload; use `"$self"` instead
 
 Nested refs only work when the full string value is exactly the token. These examples resolve:
 - `"target": "$self"`
@@ -131,8 +137,8 @@ When an operation **fails**, any later operation that references its `$ref` is a
 
 ```
 ui_batch(app_name: "my-app", operations: [
-  { op: "page_add", ref: "$page", id: "user-list", title: "User List" },
-  { op: "insert", ref: "$header", parent_id: "$page", node: { type: "row", justify: "between", align: "center" } },
+  { op: "page_add", ref: "$page", path: "user-list", title: "User List" },
+  { op: "insert", ref: "$header", parent_id: "$page", node: { type: "row", justify: "between", align: "center", children: [] } },
   { op: "insert", parent_id: "$header", node: { type: "heading", level: 2, text: "Users" } },
   { op: "insert", parent_id: "$header", node: { type: "button", label: "Create User", action: { type: "link", url: "/users/new" } } },
   { op: "insert", parent_id: "$page", node: { type: "table", api: { url: "/fn/_db/tables/users", method: "GET" }, columns: [
@@ -147,8 +153,8 @@ ui_batch(app_name: "my-app", operations: [
 
 ```
 ui_batch(app_name: "my-app", operations: [
-  { op: "insert", ref: "$card", parent_id: "dashboard", node: { type: "card", title: "Stats" } },
-  { op: "insert", ref: "$row", parent_id: "$card", node: { type: "row", gap: 4 } },
+  { op: "insert", ref: "$card", parent_id: "dashboard", node: { type: "card", title: "Stats", children: [] } },
+  { op: "insert", ref: "$row", parent_id: "$card", node: { type: "row", gap: 4, children: [] } },
   { op: "insert", parent_id: "$row", node: { type: "stat", label: "Total Users", value: "${stats.total}" } },
   { op: "insert", parent_id: "$row", node: { type: "stat", label: "Active Users", value: "${stats.active}" } }
 ])
@@ -204,6 +210,47 @@ ui_batch(app_name: "my-app", operations: [
 ])
 ```
 
+### Unsupported: using an operation's own ref inside its insert payload
+
+```
+ui_batch(app_name: "my-app", operations: [
+  { op: "insert", ref: "$table", parent_id: "user-list", node: {
+    type: "table",
+    api: { url: "/fn/_db/tables/users", method: "GET" },
+    columns: [{ name: "id", label: "ID" }],
+    rowActions: [{
+      label: "Refresh",
+      action: { type: "reload", target: "$table" }
+    }]
+  } }
+])
+```
+
+This fails because `"$table"` is not available until the insert operation succeeds. Inside the current insert payload, use `"$self"` when you need the inserted node's generated ID.
+
+### Unsupported: forward reference to a later operation
+
+```
+ui_batch(app_name: "my-app", operations: [
+  { op: "insert", parent_id: "toolbar", node: {
+    type: "button",
+    label: "New Task",
+    action: { type: "dialog", body: {
+      type: "form",
+      fields: [],
+      onSuccess: [{ type: "reload", target: "$pendingTable" }]
+    } }
+  } },
+  { op: "insert", ref: "$pendingTable", parent_id: "tasks", node: {
+    type: "table",
+    api: { url: "/fn/_db/tables/tasks", method: "GET" },
+    columns: [{ name: "title", label: "Title" }]
+  } }
+])
+```
+
+This fails because only refs from earlier successful operations are available.
+
 ### Read-only batch (multiple gets)
 
 ```
@@ -219,7 +266,7 @@ Returns `committed: false` (no writes performed). Each result contains the full 
 
 ```
 ui_batch(app_name: "my-app", operations: [
-  { op: "insert", ref: "$container", parent_id: "missing-parent", node: { type: "row" } },
+  { op: "insert", ref: "$container", parent_id: "missing-parent", node: { type: "row", children: [] } },
   { op: "insert", parent_id: "$container", node: { type: "text", text: "Child" } },
   { op: "update", node_id: "txt-title", props: { text: "Independent" } }
 ])
@@ -236,4 +283,5 @@ Result:
 - Insert always generates a fresh component ID and ignores any caller-provided `id`
 - Nested refs only resolve when the full string value is exactly `"$self"` or an earlier batch ref like `"$table"`
 - Insert and move only work with container types: `page`, `row`, `col`, `card`, `dialog`
+- When creating an empty `row`, `col`, `card`, or `dialog` as a future parent, include `children: []`
 - `ref` must start with `$` (e.g. `$myRef`, `$row1`)

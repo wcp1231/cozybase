@@ -20,11 +20,15 @@ export async function buildWebArtifacts() {
   });
 }
 
-export async function prepareDesktopArtifacts() {
-  await buildWebArtifacts();
+export async function syncDesktopResources() {
   await runCommand({
     label: 'desktop',
     cmd: workspaceScript('@cozybase/desktop', 'prepare:app'),
     cwd: repoRoot,
   });
+}
+
+export async function prepareDesktopArtifacts() {
+  await buildWebArtifacts();
+  await syncDesktopResources();
 }
