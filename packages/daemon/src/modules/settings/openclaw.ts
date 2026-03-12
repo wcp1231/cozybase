@@ -30,7 +30,7 @@ interface CommandRunResult {
 }
 
 interface ConfigureAcpxOptions {
-  runAcpxInit?: () => CommandRunResult;
+  runAcpxInit?: (executablePath: string) => CommandRunResult;
 }
 
 export const COZYBASE_ACPX_COMMAND = '~/.cozybase/bin/cozybase acp';
@@ -118,8 +118,12 @@ function findExecutableOnPath(name: string): string | null {
   return null;
 }
 
-function runDefaultAcpxInit(): CommandRunResult {
-  const proc = Bun.spawnSync(['acpx', 'config', 'init'], {
+function resolveAcpxExecutablePath(): string | null {
+  return findExecutableOnPath('acpx');
+}
+
+function runDefaultAcpxInit(executablePath: string): CommandRunResult {
+  const proc = Bun.spawnSync([executablePath, 'config', 'init'], {
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',
@@ -160,7 +164,7 @@ export function readOpenClawStatus(): OpenClawStatus {
   const skillsDirPath = resolveHomePath('.openclaw', 'skills', 'cozybase');
   const skillFilePath = join(skillsDirPath, 'SKILL.md');
   const acpxConfigPath = resolveHomePath('.acpx', 'config.json');
-  const acpxExecutablePath = findExecutableOnPath('acpx');
+  const acpxExecutablePath = resolveAcpxExecutablePath();
   const configStatus = readAcpxConfigStatus(acpxConfigPath);
 
   return {
@@ -187,13 +191,18 @@ export function configureAcpxForCozybase(options: ConfigureAcpxOptions = {}): Op
   mkdirSync(configDirPath, { recursive: true });
 
   if (!existsSync(configPath)) {
-    const result = runAcpxInit();
+    const executablePath = resolveAcpxExecutablePath();
+    if (!executablePath) {
+      throw new Error('未检测到 acpx 可执行文件。请将 `acpx` 加入 PATH。');
+    }
+
+    const result = runAcpxInit(executablePath);
     if (!result.success) {
       const detail = result.stderr ? `：${result.stderr}` : '';
-      throw new Error(`执行 \`acpx config init\` 失败${detail}`);
+      throw new Error(`执行 \`${executablePath} config init\` 失败${detail}`);
     }
     if (!existsSync(configPath)) {
-      throw new Error('执行 `acpx config init` 后仍未生成 ~/.acpx/config.json。');
+      throw new Error(`执行 \`${executablePath} config init\` 后仍未生成 ~/.acpx/config.json。`);
     }
   }
 

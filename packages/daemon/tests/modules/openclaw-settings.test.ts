@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -13,15 +13,18 @@ import {
 describe('OpenClaw settings helpers', () => {
   let tempHome: string;
   let previousHome: string | undefined;
+  let previousPath: string | undefined;
 
   beforeEach(() => {
     previousHome = process.env.HOME;
+    previousPath = process.env.PATH;
     tempHome = mkdtempSync(join(tmpdir(), 'cozybase-openclaw-test-'));
     process.env.HOME = tempHome;
   });
 
   afterEach(() => {
     process.env.HOME = previousHome;
+    process.env.PATH = previousPath;
     rmSync(tempHome, { recursive: true, force: true });
   });
 
@@ -54,10 +57,16 @@ describe('OpenClaw settings helpers', () => {
 
   test('initializes missing config via acpx config init before applying cozybase command', () => {
     let initCalled = 0;
+    const acpxPath = join(tempHome, 'bin', 'acpx');
+    mkdirSync(join(tempHome, 'bin'), { recursive: true });
+    writeFileSync(acpxPath, '#!/bin/sh\nexit 0\n', 'utf-8');
+    chmodSync(acpxPath, 0o755);
+    process.env.PATH = join(tempHome, 'bin');
 
     const status = configureAcpxForCozybase({
-      runAcpxInit: () => {
+      runAcpxInit: (executablePath) => {
         initCalled += 1;
+        expect(executablePath).toBe(acpxPath);
         const configDir = join(tempHome, '.acpx');
         mkdirSync(configDir, { recursive: true });
         writeFileSync(join(configDir, 'config.json'), JSON.stringify({ agents: {} }, null, 2), 'utf-8');
@@ -86,7 +95,7 @@ describe('OpenClaw settings helpers', () => {
     expect(status.skillsDirExists).toBe(true);
     expect(status.skillFileExists).toBe(true);
     const skillText = readFileSync(join(tempHome, '.openclaw', 'skills', 'cozybase', 'SKILL.md'), 'utf-8');
-    expect(skillText).toContain('title: CozyBase App Agent');
+    expect(skillText).toContain('name: cozybase');
     expect(skillText).toContain('`acpx cozybase exec "<Prompt text>"`');
     expect(readFileSync(customFile, 'utf-8')).toBe('keep me');
   });

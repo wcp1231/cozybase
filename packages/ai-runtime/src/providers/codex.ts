@@ -22,7 +22,6 @@ import type {
   AgentRuntimeSession,
   AgentSessionSpec,
 } from '../types.js';
-import { resolveCliExecutablePath } from './cli-paths.js';
 import { QueryBackedRuntimeSession } from '../runtime-session.js';
 
 type JsonObject = Record<string, unknown>;
@@ -238,14 +237,7 @@ class CodexQuery implements AgentQuery {
   }
 
   private loadCodex(codexConfig: JsonObject): CodexLike {
-    const codexPathOverride = resolveCliExecutablePath('codex', [
-      'COZYBASE_CODEX_PATH',
-      'CODEX_PATH',
-    ]);
-    return new Codex({
-      ...(codexPathOverride ? { codexPathOverride } : {}),
-      config: codexConfig as any,
-    }) as unknown as CodexLike;
+    return new Codex({ config: codexConfig as any }) as unknown as CodexLike;
   }
 
   private buildCodexConfig(): JsonObject {

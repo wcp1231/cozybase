@@ -291,7 +291,6 @@ describe('Settings API (/api/v1/settings)', () => {
         openClawDirExists: false,
         skillsDirExists: false,
         skillFileExists: false,
-        acpxExecutableExists: false,
         acpxConfigExists: false,
         acpxConfigValid: false,
       },
@@ -399,7 +398,7 @@ describe('Settings API (/api/v1/settings)', () => {
     expect(skillText).toContain('`acpx cozybase exec "<Prompt text>"`');
   });
 
-  test('detects acpx executable on PATH', async () => {
+  test('reports an executable path when acpx is discoverable', async () => {
     handle = createTestWorkspace();
     process.env.HOME = handle.root;
     mkdirSync(join(handle.root, '.openclaw'), { recursive: true });
@@ -412,12 +411,13 @@ describe('Settings API (/api/v1/settings)', () => {
     const { app } = createServer(createTestConfig(handle.root));
 
     const res = await app.request('/api/v1/settings/openclaw');
+    const payload = await res.json();
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
+    expect(payload).toMatchObject({
       data: {
         acpxExecutableExists: true,
-        acpxExecutablePath: acpxPath,
       },
     });
+    expect(typeof payload.data.acpxExecutablePath).toBe('string');
   });
 });

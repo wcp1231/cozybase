@@ -115,16 +115,14 @@ describe('ClaudeCodeProvider', () => {
     expect(sdkState.calls[1]?.options.resume).toBe('sess-old');
   });
 
-  test('prefers the user-installed claude CLI when available on PATH', async () => {
-    globalThis.Bun.which = mock(() => '/opt/homebrew/bin/claude');
-
+  test('does not override the claude executable path', async () => {
     const provider = new ClaudeCodeProvider();
     await collectEvents(provider.createQuery({
       prompt: 'hello',
       cwd: '/tmp/cozybase-agent',
     }));
 
-    expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBe('/opt/homebrew/bin/claude');
+    expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBeUndefined();
   });
 
   test('completes tool call when tool_use_summary has empty preceding_tool_use_ids', async () => {

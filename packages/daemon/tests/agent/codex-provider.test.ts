@@ -124,9 +124,7 @@ describe('CodexProvider', () => {
     ]);
   });
 
-  test('prefers the user-installed codex CLI when available on PATH', async () => {
-    globalThis.Bun.which = mock(() => '/opt/homebrew/bin/codex');
-
+  test('does not override the codex executable path', async () => {
     const provider = new CodexProvider();
     await collectEvents(provider.createQuery({
       prompt: 'build app',
@@ -134,7 +132,6 @@ describe('CodexProvider', () => {
     }));
 
     expect(sdkState.codexInitCalls).toEqual([{
-      codexPathOverride: '/opt/homebrew/bin/codex',
       config: {},
     }]);
   });
