@@ -43,7 +43,6 @@ bun run desktop:build:adhoc
 
 1. `packages/desktop/scripts/build-resources.ts`
    - 生成 `src-tauri/resources/daemon.js`
-   - 复制 Claude Agent SDK 运行时到 `src-tauri/resources/node_modules`
    - 复制 `packages/web/dist` 到 `src-tauri/resources/web`
    - 复制 `packages/daemon/guides` 和 `packages/daemon/templates`
 2. `packages/desktop/scripts/prepare-sidecar.ts`
@@ -75,6 +74,26 @@ Tauri 壳启动 Daemon bundle 时会注入：
 - `COZYBASE_TEMPLATES_DIR`
 
 这些变量让同一个 Daemon bundle 同时兼容本地源码运行和桌面 bundle 运行。
+
+## Agent CLI 依赖
+
+桌面版不会打包 Claude Code 或 Codex 的运行时，默认直接使用用户本机已安装的 CLI。
+
+- Claude Code: `claude`
+- Codex: `codex`
+
+桌面版会按以下顺序查找：
+
+1. 显式环境变量
+   - `COZYBASE_CLAUDE_CODE_PATH`
+   - `COZYBASE_CODEX_PATH`
+2. `PATH` 里的 `claude` / `codex`
+3. 常见安装位置
+   - `~/.bun/bin`
+   - `/opt/homebrew/bin`
+   - `/usr/local/bin`
+
+如果桌面壳启动时拿不到正确的 `PATH`，建议显式设置上述环境变量。
 
 ## 已知限制
 

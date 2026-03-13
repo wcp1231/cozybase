@@ -15,7 +15,8 @@ const sdkState = {
   queryImpl: ((_args: QueryArgs) => makeSdkQuery([])) as (args: QueryArgs) => FakeSdkQuery,
 };
 const originalBunWhich = globalThis.Bun.which;
-const originalResourceDir = process.env.COZYBASE_RESOURCE_DIR;
+const originalClaudePath = process.env.COZYBASE_CLAUDE_CODE_PATH;
+const originalHome = process.env.HOME;
 
 mock.module('@anthropic-ai/claude-agent-sdk', () => ({
   query(args: QueryArgs) {
@@ -53,15 +54,21 @@ beforeEach(() => {
   sdkState.calls = [];
   sdkState.queryImpl = (_args) => makeSdkQuery([]);
   globalThis.Bun.which = mock(() => null);
-  delete process.env.COZYBASE_RESOURCE_DIR;
+  delete process.env.COZYBASE_CLAUDE_CODE_PATH;
+  process.env.HOME = join(tmpdir(), 'cozybase-claude-tests-home');
 });
 
 afterAll(() => {
   globalThis.Bun.which = originalBunWhich;
-  if (originalResourceDir === undefined) {
-    delete process.env.COZYBASE_RESOURCE_DIR;
+  if (originalClaudePath === undefined) {
+    delete process.env.COZYBASE_CLAUDE_CODE_PATH;
   } else {
-    process.env.COZYBASE_RESOURCE_DIR = originalResourceDir;
+    process.env.COZYBASE_CLAUDE_CODE_PATH = originalClaudePath;
+  }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
   }
 });
 
@@ -161,18 +168,12 @@ describe('ClaudeCodeProvider', () => {
     expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBeUndefined();
   });
 
-  test('uses packaged claude executable when desktop resources include the sdk runtime', async () => {
-    const resourceDir = mkdtempSync(join(tmpdir(), 'cozybase-claude-sdk-'));
-    const packagedCliPath = join(
-      resourceDir,
-      'node_modules',
-      '@anthropic-ai',
-      'claude-agent-sdk',
-      'cli.js',
-    );
-    mkdirSync(join(resourceDir, 'node_modules', '@anthropic-ai', 'claude-agent-sdk'), { recursive: true });
-    writeFileSync(packagedCliPath, '#!/usr/bin/env node\n');
-    process.env.COZYBASE_RESOURCE_DIR = resourceDir;
+  test('uses user-installed claude executable when explicit path is configured', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'cozybase-claude-sdk-'));
+    const installedCliPath = join(tempDir, 'claude');
+    mkdirSync(tempDir, { recursive: true });
+    writeFileSync(installedCliPath, '#!/usr/bin/env node\n');
+    process.env.COZYBASE_CLAUDE_CODE_PATH = installedCliPath;
 
     try {
       const provider = new ClaudeCodeProvider();
@@ -181,9 +182,9 @@ describe('ClaudeCodeProvider', () => {
         cwd: '/tmp/cozybase-agent',
       }));
 
-      expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBe(packagedCliPath);
+      expect(sdkState.calls[0]?.options.pathToClaudeCodeExecutable).toBe(installedCliPath);
     } finally {
-      rmSync(resourceDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

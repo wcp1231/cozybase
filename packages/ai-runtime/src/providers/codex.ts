@@ -50,6 +50,26 @@ export interface CodexProviderOptions {
   codexConfig?: JsonObject;
 }
 
+function resolveUserInstalledCodex(): string | undefined {
+  const explicitPath = process.env.COZYBASE_CODEX_PATH?.trim();
+  if (explicitPath && existsSync(explicitPath)) {
+    return explicitPath;
+  }
+
+  const resolvedFromPath = Bun.which('codex');
+  if (resolvedFromPath) {
+    return resolvedFromPath;
+  }
+
+  const commonCandidates = [
+    join(homedir(), '.bun', 'bin', 'codex'),
+    join('/opt/homebrew/bin', 'codex'),
+    join('/usr/local/bin', 'codex'),
+  ];
+
+  return commonCandidates.find((candidate) => existsSync(candidate));
+}
+
 export class CodexProvider implements AgentProvider, AgentRuntimeProvider {
   readonly kind = 'codex';
   readonly capabilities = {
@@ -237,7 +257,10 @@ class CodexQuery implements AgentQuery {
   }
 
   private loadCodex(codexConfig: JsonObject): CodexLike {
-    return new Codex({ config: codexConfig as any }) as unknown as CodexLike;
+    return new Codex({
+      config: codexConfig as any,
+      codexPathOverride: resolveUserInstalledCodex(),
+    }) as unknown as CodexLike;
   }
 
   private buildCodexConfig(): JsonObject {

@@ -5,6 +5,7 @@
 
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   Query,
@@ -36,20 +37,28 @@ export interface ClaudeCodeProviderOptions {
   spawnClaudeCodeProcess?: Options['spawnClaudeCodeProcess'];
 }
 
-function resolvePackagedClaudeCodeExecutable(): string | undefined {
-  const resourceDir = process.env.COZYBASE_RESOURCE_DIR?.trim();
-  if (!resourceDir) {
-    return undefined;
+function resolveUserInstalledCommand(
+  commandName: string,
+  explicitEnvVar: string,
+): string | undefined {
+  const explicitPath = process.env[explicitEnvVar]?.trim();
+  if (explicitPath && existsSync(explicitPath)) {
+    return explicitPath;
   }
 
-  const packagedCliPath = join(
-    resourceDir,
-    'node_modules',
-    '@anthropic-ai',
-    'claude-agent-sdk',
-    'cli.js',
-  );
-  return existsSync(packagedCliPath) ? packagedCliPath : undefined;
+  const resolvedFromPath = Bun.which(commandName);
+  if (resolvedFromPath) {
+    return resolvedFromPath;
+  }
+
+  const home = homedir();
+  const commonCandidates = [
+    join(home, '.bun', 'bin', commandName),
+    join('/opt/homebrew/bin', commandName),
+    join('/usr/local/bin', commandName),
+  ];
+
+  return commonCandidates.find((candidate) => existsSync(candidate));
 }
 
 function resolveClaudeDebugFilePath(): string | undefined {
@@ -120,9 +129,9 @@ export class ClaudeCodeProvider implements AgentProvider, AgentRuntimeProvider {
       options.resume = config.resumeSessionId;
     }
 
-    const packagedCliPath = resolvePackagedClaudeCodeExecutable();
-    if (packagedCliPath) {
-      options.pathToClaudeCodeExecutable = packagedCliPath;
+    const installedClaudePath = resolveUserInstalledCommand('claude', 'COZYBASE_CLAUDE_CODE_PATH');
+    if (installedClaudePath) {
+      options.pathToClaudeCodeExecutable = installedClaudePath;
     }
 
     const debugFilePath = resolveClaudeDebugFilePath();

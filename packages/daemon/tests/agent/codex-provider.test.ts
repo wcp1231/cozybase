@@ -1,4 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 type CodexInitArgs = Record<string, unknown> | undefined;
 type ThreadStartArgs = Record<string, unknown> | undefined;
@@ -19,6 +22,8 @@ const sdkState = {
   } as any,
 };
 const originalBunWhich = globalThis.Bun.which;
+const originalCodexPath = process.env.COZYBASE_CODEX_PATH;
+const originalHome = process.env.HOME;
 
 mock.module('@openai/codex-sdk', () => ({
   Codex: class {
@@ -77,10 +82,22 @@ beforeEach(() => {
     usage: null,
   };
   globalThis.Bun.which = mock(() => null);
+  delete process.env.COZYBASE_CODEX_PATH;
+  process.env.HOME = join(tmpdir(), 'cozybase-codex-tests-home');
 });
 
 afterAll(() => {
   globalThis.Bun.which = originalBunWhich;
+  if (originalCodexPath === undefined) {
+    delete process.env.COZYBASE_CODEX_PATH;
+  } else {
+    process.env.COZYBASE_CODEX_PATH = originalCodexPath;
+  }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 });
 
 describe('CodexProvider', () => {
@@ -100,12 +117,14 @@ describe('CodexProvider', () => {
       },
     }));
 
-    expect(sdkState.codexInitCalls).toEqual([{ config: {
-      approval_policy: 'never',
-      sandbox_mode: 'workspace-write',
-      skip_git_repo_check: true,
-      model: 'gpt-5-codex',
-    } }]);
+    expect(sdkState.codexInitCalls).toEqual([expect.objectContaining({
+      config: {
+        approval_policy: 'never',
+        sandbox_mode: 'workspace-write',
+        skip_git_repo_check: true,
+        model: 'gpt-5-codex',
+      },
+    })]);
     expect(sdkState.startCalls).toEqual([{ 
       workingDirectory: '/tmp/cozybase-agent',
       model: 'gpt-5-codex',
@@ -127,16 +146,27 @@ describe('CodexProvider', () => {
     ]);
   });
 
-  test('does not override the codex executable path', async () => {
-    const provider = new CodexProvider();
-    await collectEvents(provider.createQuery({
-      prompt: 'build app',
-      cwd: '/tmp/cozybase-agent',
-    }));
+  test('uses user-installed codex executable when explicit path is configured', async () => {
+    const resourceDir = mkdtempSync(join(tmpdir(), 'cozybase-codex-sdk-'));
+    const installedBinaryPath = join(resourceDir, process.platform === 'win32' ? 'codex.exe' : 'codex');
+    mkdirSync(resourceDir, { recursive: true });
+    writeFileSync(installedBinaryPath, '');
+    process.env.COZYBASE_CODEX_PATH = installedBinaryPath;
 
-    expect(sdkState.codexInitCalls).toEqual([{
-      config: {},
-    }]);
+    try {
+      const provider = new CodexProvider();
+      await collectEvents(provider.createQuery({
+        prompt: 'build app',
+        cwd: '/tmp/cozybase-agent',
+      }));
+
+      expect(sdkState.codexInitCalls).toEqual([{
+        config: {},
+        codexPathOverride: installedBinaryPath,
+      }]);
+    } finally {
+      rmSync(resourceDir, { recursive: true, force: true });
+    }
   });
 
   test('resumes an existing thread when resumeSessionId is provided', async () => {
