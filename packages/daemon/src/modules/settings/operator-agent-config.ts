@@ -13,7 +13,7 @@ export const VALID_OPERATOR_MODELS: Record<Exclude<OperatorAgentProviderKind, 'p
   'claude-code': ['claude-sonnet-4-6', 'claude-opus-4-6'],
 };
 
-export const DEFAULT_OPERATOR_AGENT_PROVIDER: OperatorAgentProviderKind = 'pi-agent-core';
+export const DEFAULT_OPERATOR_AGENT_PROVIDER: OperatorAgentProviderKind = 'codex';
 export const DEFAULT_OPERATOR_MODEL_PROVIDER: OperatorModelProviderKind = 'anthropic';
 export const DEFAULT_PI_AGENT_MODEL = 'claude-sonnet-4-20250514';
 

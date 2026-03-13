@@ -3,6 +3,7 @@ import { getModel } from '@mariozechner/pi-ai';
 import type { Workspace } from '../../core/workspace';
 import { resolveEffectiveAgentConfig } from '../../modules/settings/agent-config';
 import {
+  DEFAULT_OPERATOR_AGENT_PROVIDER,
   DEFAULT_OPERATOR_MODEL_PROVIDER,
   DEFAULT_PI_AGENT_MODEL,
   type OperatorAgentProviderKind,
@@ -124,21 +125,21 @@ function resolveAvailableProviderKind(
   providerKind: OperatorAgentProviderKind | null,
   explicit: boolean,
 ): OperatorAgentProviderKind {
-  const resolved = providerKind ?? 'pi-agent-core';
+  const resolved = providerKind ?? DEFAULT_OPERATOR_AGENT_PROVIDER;
   const registryKind = PROVIDER_REGISTRY_KIND[resolved];
   try {
     providerRegistry.require(registryKind);
     return resolved;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (resolved === 'pi-agent-core' || explicit) {
+    if (resolved === DEFAULT_OPERATOR_AGENT_PROVIDER || explicit) {
       throw err;
     }
     console.warn(
       `[operator] Runtime provider '${resolved}' is unavailable. ` +
-        `Falling back to 'pi-agent-core'. ${message}`,
+        `Falling back to '${DEFAULT_OPERATOR_AGENT_PROVIDER}'. ${message}`,
     );
-    return 'pi-agent-core';
+    return DEFAULT_OPERATOR_AGENT_PROVIDER;
   }
 }
 

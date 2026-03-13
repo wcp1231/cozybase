@@ -82,10 +82,10 @@ operator:
     handle.workspace.load();
 
     const runtime = resolveOperatorRuntime(handle.workspace, createProviderRegistry());
-    expect(runtime.providerKind).toBe('pi-agent-core');
-    expect(runtime.toolMode).toBe('native');
-    expect(runtime.getApiKey).toBeFunction();
-    expect(JSON.stringify(runtime.model)).toContain('claude-sonnet-4-20250514');
+    expect(runtime.providerKind).toBe('codex');
+    expect(runtime.toolMode).toBe('mcp');
+    expect(runtime.getApiKey).toBeUndefined();
+    expect(runtime.model).toBe('gpt-5.4');
   });
 
   test('inherits builder provider in tool-free debug mode when operator provider is unset', () => {
@@ -118,7 +118,7 @@ operator:
 
     const runtime = resolveOperatorRuntime(handle.workspace, createProviderRegistry());
 
-    expect(runtime.providerKind).toBe('pi-agent-core');
+    expect(runtime.providerKind).toBe('codex');
   });
 
   test('prefers persisted operator settings', () => {

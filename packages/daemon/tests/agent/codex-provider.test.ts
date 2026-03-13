@@ -95,6 +95,7 @@ describe('CodexProvider', () => {
         codexConfig: {
           approval_policy: 'never',
           sandbox_mode: 'workspace-write',
+          skip_git_repo_check: true,
         },
       },
     }));
@@ -102,6 +103,7 @@ describe('CodexProvider', () => {
     expect(sdkState.codexInitCalls).toEqual([{ config: {
       approval_policy: 'never',
       sandbox_mode: 'workspace-write',
+      skip_git_repo_check: true,
       model: 'gpt-5-codex',
     } }]);
     expect(sdkState.startCalls).toEqual([{ 
@@ -109,6 +111,7 @@ describe('CodexProvider', () => {
       model: 'gpt-5-codex',
       sandboxMode: 'workspace-write',
       approvalPolicy: 'never',
+      skipGitRepoCheck: true,
     }]);
     expect(sdkState.runCalls[0]?.input).toBe('system\n\nUser request:\nbuild app');
     expect(events).toEqual([

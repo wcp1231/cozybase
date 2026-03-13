@@ -262,6 +262,11 @@ class CodexQuery implements AgentQuery {
     if (typeof codexConfig.approval_policy === 'string') {
       options.approvalPolicy = codexConfig.approval_policy as ThreadOptions['approvalPolicy'];
     }
+    if (typeof codexConfig.skip_git_repo_check === 'boolean') {
+      options.skipGitRepoCheck = codexConfig.skip_git_repo_check;
+    } else if (typeof codexConfig.skipGitRepoCheck === 'boolean') {
+      options.skipGitRepoCheck = codexConfig.skipGitRepoCheck;
+    }
 
     return options;
   }

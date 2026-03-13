@@ -106,6 +106,7 @@ export class CozyBaseSessionManager {
           codexConfig: {
             approval_policy: process.env.COZYBASE_CODEX_APPROVAL_POLICY ?? 'never',
             sandbox_mode: process.env.COZYBASE_CODEX_SANDBOX_MODE ?? 'workspace-write',
+            skip_git_repo_check: true,
             mcp_servers: {
               cozybase: buildCozyBaseCodexMcpServerConfig({
                 workspaceDir: this.config.workspace.root,

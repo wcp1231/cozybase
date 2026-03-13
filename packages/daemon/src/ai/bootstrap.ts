@@ -147,6 +147,7 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
       const baseCodexConfig: Record<string, unknown> = {
         approval_policy: codexApprovalPolicy,
         sandbox_mode: mode === 'extract' ? 'read-only' : codexSandboxMode,
+        skip_git_repo_check: true,
       };
 
       if (mode === 'extract') {

@@ -172,9 +172,9 @@ describe('Settings API (/api/v1/settings)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       data: {
-        provider: 'pi-agent-core',
-        modelProvider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
+        provider: 'codex',
+        modelProvider: null,
+        model: 'gpt-5.4',
       },
     });
   });
@@ -254,9 +254,9 @@ describe('Settings API (/api/v1/settings)', () => {
         },
         operator: {
           data: {
-            provider: 'pi-agent-core',
-            modelProvider: 'anthropic',
-            model: 'claude-sonnet-4-20250514',
+            provider: 'codex',
+            modelProvider: null,
+            model: 'gpt-5.4',
           },
         },
         cozybase: {
@@ -292,7 +292,7 @@ describe('Settings API (/api/v1/settings)', () => {
         },
         operator: {
           data: {
-            provider: 'pi-agent-core',
+            provider: 'codex',
           },
         },
         cozybase: {
