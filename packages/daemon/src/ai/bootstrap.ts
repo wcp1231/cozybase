@@ -28,6 +28,7 @@ import { RuntimeSessionStore } from './runtime-session-store';
 import { OperatorSessionManager } from './operator/session-manager';
 import { resolveOperatorRuntime } from './operator/runtime-config';
 import { CozyBaseSessionManager } from './cozybase/session-manager';
+import { buildClaudeSdkLoggingOptions } from './claude-sdk-logging';
 import { initWorkspace } from '../workspace-init';
 import {
   resolveEffectiveAgentConfig,
@@ -124,6 +125,7 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
             allowedTools: [],
             permissionMode: 'acceptEdits',
             settingSources: ['project'],
+            ...buildClaudeSdkLoggingOptions('builder-extract'),
           };
         }
 
@@ -141,6 +143,7 @@ export function bootstrapAi(deps: BootstrapAiDeps): BootstrapAiResult {
           mcpServers: { cozybase: sdkMcpServer },
           permissionMode: 'acceptEdits',
           settingSources: ['project'],
+          ...buildClaudeSdkLoggingOptions('builder-chat'),
         };
       }
 

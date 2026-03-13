@@ -11,6 +11,7 @@ import type { OperatorRuntimeConfig } from './runtime-config';
 import { createOperatorSdkMcpServer } from './sdk-mcp-server';
 import type { EventBus } from '../../core/event-bus';
 import { buildOperatorCodexMcpServerConfig } from '../codex-mcp-config';
+import { buildClaudeSdkLoggingOptions } from '../claude-sdk-logging';
 
 interface WebSocketLike {
   send(data: string): void;
@@ -148,6 +149,7 @@ export class OperatorSession extends RuntimeAgentSession<OperatorRuntimeConfig> 
         allowedTools: ['mcp__operator__*'],
         permissionMode: 'acceptEdits',
         settingSources: ['project'],
+        ...buildClaudeSdkLoggingOptions('operator', this.appSlug),
       };
     }
 

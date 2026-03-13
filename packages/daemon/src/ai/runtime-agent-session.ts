@@ -7,6 +7,7 @@ import type {
   StoredMessage,
 } from '@cozybase/ai-runtime';
 import type { RuntimeSessionStore, RuntimeSessionUsageType } from './runtime-session-store';
+import { daemonLogger } from '../core/daemon-logger';
 
 export type ChatInboundMessage =
   | { type: 'chat:send'; message: string }
@@ -129,6 +130,7 @@ export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLi
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.lastPromptError = message;
+      this.logClaudePromptFailure(message);
       this.sendToWs({ type: 'conversation.error', message });
       this.onPromptError(message);
     } finally {
@@ -269,4 +271,22 @@ export abstract class RuntimeAgentSession<TRuntimeConfig extends RuntimeConfigLi
   protected abstract getUsageType(): RuntimeSessionUsageType;
 
   protected abstract buildSessionSpec(runtime: TRuntimeConfig): Promise<AgentSessionSpec>;
+
+  private isClaudeProviderKind(providerKind: string | null): boolean {
+    return providerKind === 'claude' || providerKind === 'claude-code';
+  }
+
+  private logClaudePromptFailure(message: string): void {
+    const providerKind = this.runtimeProviderKind ?? this.resolveRuntimeConfig().providerKind;
+    if (!this.isClaudeProviderKind(providerKind)) {
+      return;
+    }
+
+    daemonLogger.error('[agent] claude prompt failed', {
+      usageType: this.getUsageType(),
+      appSlug: this.appSlug,
+      providerKind,
+      message,
+    });
+  }
 }

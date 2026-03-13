@@ -26,6 +26,7 @@ import { createCozyBaseSdkMcpServer } from './mcp-server';
 import { CozyBaseSession } from './session';
 import { TaskRegistry, type EnqueueTaskInput } from './task-registry';
 import { buildCozyBaseCodexMcpServerConfig } from '../codex-mcp-config';
+import { buildClaudeSdkLoggingOptions } from '../claude-sdk-logging';
 
 export interface CozyBaseSessionManagerConfig {
   workspace: Workspace;
@@ -99,6 +100,7 @@ export class CozyBaseSessionManager {
             allowedTools: ['mcp__cozybase__*'],
             permissionMode: 'acceptEdits',
             settingSources: ['project'],
+            ...buildClaudeSdkLoggingOptions('cozybase'),
           };
         }
 

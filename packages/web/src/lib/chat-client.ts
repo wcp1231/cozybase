@@ -11,6 +11,7 @@ export class ChatClient {
   private onStatus: StatusHandler | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
+  private pendingMessages: string[] = [];
 
   constructor(
     private url: string,
@@ -35,11 +36,17 @@ export class ChatClient {
       this.ws.close();
       this.ws = null;
     }
+    this.pendingMessages = [];
   }
 
   send(data: unknown): void {
+    const serialized = JSON.stringify(data);
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+      this.ws.send(serialized);
+      return;
+    }
+    if (this.shouldReconnect) {
+      this.pendingMessages.push(serialized);
     }
   }
 
@@ -57,6 +64,7 @@ export class ChatClient {
 
     ws.addEventListener('open', () => {
       this.onStatus?.(true);
+      this.flushPendingMessages(ws);
     });
 
     ws.addEventListener('message', (event) => {
@@ -81,6 +89,18 @@ export class ChatClient {
     });
 
     this.ws = ws;
+  }
+
+  private flushPendingMessages(ws: WebSocket): void {
+    if (this.pendingMessages.length === 0 || ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const queued = [...this.pendingMessages];
+    this.pendingMessages = [];
+    for (const payload of queued) {
+      ws.send(payload);
+    }
   }
 }
 

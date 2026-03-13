@@ -3,6 +3,8 @@
  * SDK-specific SDKMessage events into normalized AgentEvent streams.
  */
 
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   Query,
@@ -28,6 +30,40 @@ export interface ClaudeCodeProviderOptions {
   allowedTools?: string[];
   permissionMode?: string;
   settingSources?: string[];
+  debug?: boolean;
+  debugFile?: string;
+  stderr?: (data: string) => void;
+  spawnClaudeCodeProcess?: Options['spawnClaudeCodeProcess'];
+}
+
+function resolvePackagedClaudeCodeExecutable(): string | undefined {
+  const resourceDir = process.env.COZYBASE_RESOURCE_DIR?.trim();
+  if (!resourceDir) {
+    return undefined;
+  }
+
+  const packagedCliPath = join(
+    resourceDir,
+    'node_modules',
+    '@anthropic-ai',
+    'claude-agent-sdk',
+    'cli.js',
+  );
+  return existsSync(packagedCliPath) ? packagedCliPath : undefined;
+}
+
+function resolveClaudeDebugFilePath(): string | undefined {
+  const workspaceDir = process.env.COZYBASE_WORKSPACE?.trim();
+  if (workspaceDir) {
+    return join(workspaceDir, 'logs', 'claude-code.debug.log');
+  }
+
+  const homeDir = process.env.HOME?.trim();
+  if (homeDir) {
+    return join(homeDir, '.cozybase', 'logs', 'claude-code.debug.log');
+  }
+
+  return undefined;
 }
 
 /**
@@ -59,6 +95,18 @@ export class ClaudeCodeProvider implements AgentProvider, AgentRuntimeProvider {
     if (config.systemPrompt) {
       options.systemPrompt = config.systemPrompt;
     }
+    if (typeof providerOptions.debug === 'boolean') {
+      options.debug = providerOptions.debug;
+    }
+    if (typeof providerOptions.debugFile === 'string' && providerOptions.debugFile.length > 0) {
+      options.debugFile = providerOptions.debugFile;
+    }
+    if (typeof providerOptions.stderr === 'function') {
+      options.stderr = providerOptions.stderr;
+    }
+    if (typeof providerOptions.spawnClaudeCodeProcess === 'function') {
+      options.spawnClaudeCodeProcess = providerOptions.spawnClaudeCodeProcess;
+    }
     if (providerOptions.tools) {
       options.tools = providerOptions.tools as Options['tools'];
     }
@@ -70,6 +118,16 @@ export class ClaudeCodeProvider implements AgentProvider, AgentRuntimeProvider {
     }
     if (config.resumeSessionId) {
       options.resume = config.resumeSessionId;
+    }
+
+    const packagedCliPath = resolvePackagedClaudeCodeExecutable();
+    if (packagedCliPath) {
+      options.pathToClaudeCodeExecutable = packagedCliPath;
+    }
+
+    const debugFilePath = resolveClaudeDebugFilePath();
+    if (debugFilePath) {
+      options.debugFile = debugFilePath;
     }
 
     const sdkQuery = query({ prompt: config.prompt, options });
@@ -183,6 +241,21 @@ class ClaudeCodeQuery implements AgentQuery {
       yield {
         type: 'conversation.notice',
         message: `Session initialized. Model: ${model}. Tools: ${tools.join(', ')}`,
+      };
+      return;
+    }
+
+    // ---- auth_status: login/authentication progress ----
+    if (msg.type === 'auth_status') {
+      const m = msg as any;
+      const output = Array.isArray(m.output) ? m.output.filter((line: unknown): line is string => typeof line === 'string') : [];
+      const suffix = typeof m.error === 'string' && m.error.length > 0
+        ? ` Error: ${m.error}`
+        : '';
+      const details = output.length > 0 ? ` ${output.join(' ')}` : '';
+      yield {
+        type: 'conversation.notice',
+        message: `Claude authentication status:${details}${suffix}`.trim(),
       };
       return;
     }

@@ -43,6 +43,7 @@ bun run desktop:build:adhoc
 
 1. `packages/desktop/scripts/build-resources.ts`
    - 生成 `src-tauri/resources/daemon.js`
+   - 复制 Claude Agent SDK 运行时到 `src-tauri/resources/node_modules`
    - 复制 `packages/web/dist` 到 `src-tauri/resources/web`
    - 复制 `packages/daemon/guides` 和 `packages/daemon/templates`
 2. `packages/desktop/scripts/prepare-sidecar.ts`

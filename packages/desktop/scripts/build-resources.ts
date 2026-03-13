@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join, resolve } from 'path';
 
 const repoRoot = resolve(import.meta.dir, '..', '..', '..');
@@ -13,6 +13,10 @@ const daemonOutput = join(resourceRoot, 'daemon.js');
 const webDistDir = join(repoRoot, 'packages', 'web', 'dist');
 const guidesDir = join(repoRoot, 'packages', 'daemon', 'guides');
 const templatesDir = join(repoRoot, 'packages', 'daemon', 'templates');
+const bunStoreDir = join(repoRoot, 'node_modules', '.bun');
+const resourceNodeModulesDir = join(resourceRoot, 'node_modules');
+const resourceClaudeSdkDir = join(resourceNodeModulesDir, '@anthropic-ai', 'claude-agent-sdk');
+const resourceZodDir = join(resourceNodeModulesDir, 'zod');
 
 async function bundleDaemon() {
   const result = await Bun.build({
@@ -21,7 +25,7 @@ async function bundleDaemon() {
     naming: 'daemon.js',
     target: 'bun',
     sourcemap: 'linked',
-    external: ['bun:sqlite'],
+    external: ['bun:sqlite', '@anthropic-ai/claude-agent-sdk'],
     minify: false,
   });
 
@@ -42,6 +46,35 @@ function copyTree(from: string, to: string) {
   }
   rmSync(to, { recursive: true, force: true });
   cpSync(from, to, { recursive: true });
+}
+
+function findBunPackageDir(pattern: string): string {
+  const matcher = new RegExp(`^${pattern}$`);
+  const matches = readdirSync(bunStoreDir)
+    .filter((entry) => matcher.test(entry))
+    .map((entry) => join(bunStoreDir, entry))
+    .sort((left, right) => right.localeCompare(left));
+  const packageDir = matches[0];
+  if (!packageDir) {
+    throw new Error(`Unable to locate Bun package store entry for ${pattern}`);
+  }
+  return packageDir;
+}
+
+function prepareClaudeSdkRuntime() {
+  const claudeStoreDir = findBunPackageDir('@anthropic-ai\\+claude-agent-sdk@.+');
+  const zodStoreDir = findBunPackageDir('zod@4.+');
+  const claudeSourceDir = join(
+    claudeStoreDir,
+    'node_modules',
+    '@anthropic-ai',
+    'claude-agent-sdk',
+  );
+  const zodSourceDir = join(zodStoreDir, 'node_modules', 'zod');
+
+  resetDirectory(resourceNodeModulesDir);
+  copyTree(claudeSourceDir, resourceClaudeSdkDir);
+  copyTree(zodSourceDir, resourceZodDir);
 }
 
 async function generateTauriIcons() {
@@ -81,6 +114,7 @@ async function main() {
   rmSync(daemonOutput, { force: true });
   rmSync(`${daemonOutput}.map`, { force: true });
 
+  prepareClaudeSdkRuntime();
   await bundleDaemon();
   await generateTauriIcons();
   copyTree(webDistDir, join(resourceRoot, 'web'));

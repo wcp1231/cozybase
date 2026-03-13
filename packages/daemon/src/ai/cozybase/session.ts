@@ -20,6 +20,7 @@ import {
   type LifecycleInboxEvent,
   type LifecycleState,
 } from './lifecycle-store';
+import { daemonLogger } from '../../core/daemon-logger';
 
 interface WebSocketLike {
   send(data: string): void;
@@ -354,6 +355,11 @@ export class CozyBaseSession {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      daemonLogger.error('[cozybase] conversation error', {
+        lifecycleId,
+        providerKind: runtime.providerKind,
+        message,
+      });
       const event: AgentEvent = { type: 'conversation.error', message };
       this.handleRuntimeEvent(event);
       this.runEventBuffer.push(event);
@@ -476,6 +482,10 @@ export class CozyBaseSession {
   }
 
   private failLifecycle(lifecycle: LifecycleState, message: string): void {
+    daemonLogger.error('[cozybase] lifecycle failed', {
+      lifecycleId: lifecycle.lifecycleId,
+      message,
+    });
     this.lifecycleStore.failLifecycle(lifecycle.lifecycleId, message);
     this.sendLifecycleEvent({
       type: 'lifecycle.failed',
