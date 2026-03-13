@@ -259,7 +259,7 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: [],
       streaming: false,
       connected: false,
-      canCancel: target.kind === 'builder',
+      canCancel: true,
     });
 
     const url = target.kind === 'builder'
@@ -288,7 +288,7 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   cancel() {
-    if (useChatStore.getState().activeSession?.kind !== 'builder') return;
+    if (!useChatStore.getState().activeSession) return;
     client?.send({ type: 'chat:cancel' });
   },
 

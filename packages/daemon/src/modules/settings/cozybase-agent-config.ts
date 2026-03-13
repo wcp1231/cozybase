@@ -11,9 +11,9 @@ export const VALID_COZYBASE_MODELS: Record<CozyBaseAgentProviderKind, readonly s
   codex: ['gpt-5.4', 'gpt-5.3-codex'],
 };
 
-export const DEFAULT_COZYBASE_AGENT_PROVIDER: CozyBaseAgentProviderKind = 'claude-code';
+export const DEFAULT_COZYBASE_AGENT_PROVIDER: CozyBaseAgentProviderKind = 'codex';
 export const DEFAULT_COZYBASE_MODEL_PROVIDER: CozyBaseModelProviderKind = 'anthropic';
-export const DEFAULT_COZYBASE_MODEL = 'claude-sonnet-4-6';
+export const DEFAULT_COZYBASE_MODEL = 'gpt-5.4';
 
 export interface StoredCozyBaseAgentConfig {
   agentProvider?: string | null;

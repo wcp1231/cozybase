@@ -227,7 +227,7 @@ describe('useChatStore', () => {
     const client = latestClient();
 
     expect(client.url).toBe('ws://operator/orders');
-    expect(useChatStore.getState().canCancel).toBe(false);
+    expect(useChatStore.getState().canCancel).toBe(true);
 
     client.emitStatus(true);
     useChatStore.getState().send('列出所有记录');
@@ -236,13 +236,13 @@ describe('useChatStore', () => {
     expect(client.sent).toEqual([{ type: 'chat:send', message: '列出所有记录' }]);
   });
 
-  test('does not send cancel for operator sessions', () => {
+  test('sends cancel for operator sessions', () => {
     useChatStore.getState().setActiveSession({ kind: 'operator', appName: 'orders' });
     const client = latestClient();
 
     useChatStore.getState().cancel();
 
-    expect(client.sent).toEqual([]);
+    expect(client.sent).toEqual([{ type: 'chat:cancel' }]);
   });
 
   test('uses cozybase endpoint and shared chat payload for cozybase sessions', () => {
@@ -250,12 +250,21 @@ describe('useChatStore', () => {
     const client = latestClient();
 
     expect(client.url).toBe('ws://cozybase');
-    expect(useChatStore.getState().canCancel).toBe(false);
+    expect(useChatStore.getState().canCancel).toBe(true);
 
     client.emitStatus(true);
     useChatStore.getState().send('帮我看看有哪些应用');
 
     expect(useChatStore.getState().messages.at(-1)).toEqual({ role: 'user', content: '帮我看看有哪些应用' });
     expect(client.sent).toEqual([{ type: 'chat:send', message: '帮我看看有哪些应用' }]);
+  });
+
+  test('sends cancel for cozybase sessions', () => {
+    useChatStore.getState().setActiveSession({ kind: 'cozybase' });
+    const client = latestClient();
+
+    useChatStore.getState().cancel();
+
+    expect(client.sent).toEqual([{ type: 'chat:cancel' }]);
   });
 });

@@ -25,6 +25,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_INTERVAL: Duration = Duration::from_secs(10);
 const WORKSPACE_BIN_DIR: &str = "bin";
+const WORKSPACE_LOG_DIR: &str = "logs";
 const WORKSPACE_CLI_NAME: &str = "cozybase";
 
 #[derive(Default)]
@@ -777,8 +778,9 @@ fn describe_child_state(child: Option<&mut Child>) -> String {
 #[cfg(test)]
 mod tests {
   use super::{
-    build_desktop_path_with_base, build_workspace_cli_script, write_workspace_cli,
-    WorkspaceCliPaths, WORKSPACE_BIN_DIR, WORKSPACE_CLI_NAME,
+    build_desktop_path_with_base, build_workspace_cli_script, resolve_desktop_log_path,
+    write_workspace_cli, WorkspaceCliPaths, WORKSPACE_BIN_DIR, WORKSPACE_CLI_NAME,
+    WORKSPACE_LOG_DIR,
   };
   use std::{
     ffi::OsStr,
@@ -854,6 +856,16 @@ mod tests {
     );
   }
 
+  #[test]
+  fn desktop_log_path_uses_workspace_logs_directory() {
+    let workspace_dir = PathBuf::from("/Users/example/.cozybase");
+
+    assert_eq!(
+      resolve_desktop_log_path(&workspace_dir),
+      workspace_dir.join(WORKSPACE_LOG_DIR).join("desktop-daemon.log")
+    );
+  }
+
   fn unique_temp_dir(prefix: &str) -> PathBuf {
     let unique = SystemTime::now()
       .duration_since(UNIX_EPOCH)
@@ -879,14 +891,21 @@ pub fn debug_log(app: &AppHandle<Wry>, message: &str) {
     let runtime = state.runtime.lock().expect("runtime lock poisoned");
     runtime
       .as_ref()
-      .map(|runtime| runtime.workspace_dir.join("desktop-daemon.log"))
+      .map(|runtime| resolve_desktop_log_path(&runtime.workspace_dir))
   };
 
   if let Some(log_path) = log_path {
+    if let Some(parent) = log_path.parent() {
+      let _ = fs::create_dir_all(parent);
+    }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
       let _ = file.write_all(line.as_bytes());
     }
   }
+}
+
+fn resolve_desktop_log_path(workspace_dir: &std::path::Path) -> PathBuf {
+  workspace_dir.join(WORKSPACE_LOG_DIR).join("desktop-daemon.log")
 }
 
 fn sidecar_name() -> String {
