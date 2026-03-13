@@ -1,6 +1,6 @@
 import { getComponentFieldMeta, getComponentSchemaShape } from '@cozybase/ui';
 
-export type PropertyEditorType = 'readonly' | 'string' | 'number' | 'boolean' | 'enum' | 'json';
+export type PropertyEditorType = 'readonly' | 'string' | 'textarea' | 'number' | 'boolean' | 'enum' | 'json';
 export type PropertyGroup = 'Identity' | 'Content' | 'Layout' | 'Behavior' | 'Data';
 
 export interface PropertyDescriptor {
@@ -103,6 +103,7 @@ function inferGroup(key: string): PropertyGroup {
 
 function inferEditor(componentType: string, key: string): PropertyEditorType {
   if (key === 'id' || key === 'type') return 'readonly';
+  if (componentType === 'markdown' && key === 'content') return 'textarea';
   if (JSON_KEYS.has(key)) return 'json';
   if (BOOLEAN_KEYS.has(key)) return 'boolean';
   if (NUMBER_KEYS.has(key)) return 'number';

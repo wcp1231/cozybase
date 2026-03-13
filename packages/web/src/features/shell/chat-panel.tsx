@@ -183,7 +183,7 @@ function getPanelConfig(kind: ChatSessionKind, appName?: string) {
     return {
       title: 'CozyBase Agent',
       introMessage: '我是 CozyBase Agent，可以帮你跨应用查看、创建、开发和操作整个 CozyBase 工作区。',
-      suggestions: ['看看我现在有哪些应用', '帮我创建一个记账应用', '开发一下现有应用', '我想操作某个应用里的数据'],
+      suggestions: [], //['看看我现在有哪些应用', '帮我创建一个记账应用', '开发一下现有应用', '我想操作某个应用里的数据'],
       inputPlaceholder: '告诉我你想在 CozyBase 里完成什么事...',
     };
   }
@@ -192,7 +192,7 @@ function getPanelConfig(kind: ChatSessionKind, appName?: string) {
     return {
       title: 'Operator Agent',
       introMessage: `我可以直接帮你操作「${appName ?? ''}」的已发布应用数据和函数。`,
-      suggestions: ['列出最近 10 条记录', '帮我查询今天新增的数据', '调用一个可用函数看看'],
+      suggestions: [], //['列出最近 10 条记录', '帮我查询今天新增的数据', '调用一个可用函数看看'],
       inputPlaceholder: '告诉我你想在这个 APP 里完成什么操作...',
     };
   }
@@ -200,7 +200,7 @@ function getPanelConfig(kind: ChatSessionKind, appName?: string) {
   return {
     title: 'Builder Agent',
     introMessage: `我可以继续帮你修改「${appName ?? ''}」的界面、组件和交互。`,
-    suggestions: ['新增页面', '生成表单', '调整布局'],
+    suggestions: [], //['新增页面', '生成表单', '调整布局'],
     inputPlaceholder: '告诉 AI 如何修改这个应用...',
   };
 }

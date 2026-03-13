@@ -1,138 +1,24 @@
 {
   "pages": [
     {
-      "path": "todo-list",
-      "title": "TODO List",
+      "path": "chinese",
+      "title": "中文说明",
       "body": [
         {
-          "type": "row",
-          "justify": "space-between",
-          "align": "center",
-          "children": [
-            {
-              "type": "tabs",
-              "id": "status-tabs",
-              "items": [
-                { "label": "All", "value": "" },
-                { "label": "Pending", "value": "0" },
-                { "label": "Completed", "value": "1" }
-              ]
-            },
-            {
-              "type": "button",
-              "label": "New Todo",
-              "variant": "primary",
-              "action": {
-                "type": "dialog",
-                "title": "New Todo",
-                "body": {
-                  "type": "form",
-                  "fields": [
-                    {
-                      "name": "title",
-                      "label": "Title",
-                      "type": "input",
-                      "required": true,
-                      "placeholder": "Enter todo title..."
-                    }
-                  ],
-                  "api": {
-                    "method": "POST",
-                    "url": "/fn/_db/tables/todo"
-                  },
-                  "onSuccess": [
-                    { "type": "reload", "target": "todo-table" },
-                    { "type": "close" }
-                  ]
-                }
-              }
-            }
-          ]
-        },
+          "type": "markdown",
+          "id": "markdown-y4_UK",
+          "content": "# Cozybase\n\nCozybase 是一个面向 AI Agent 的本地 BaaS（Backend-as-a-Service）平台。\n\n它为 AI Agent 提供完整的应用构建运行时：数据库迁移、TypeScript 函数、声明式 UI 页面，以及安全的 Draft-to-Stable 发布流程。用户用自然语言描述应用，AI Agent 通过 Cozybase 构建和测试应用，Cozybase 在本地提供服务。\n\n> Cozybase 当前仍处于 Alpha 阶段。接口和数据格式等后续仍可能调整，Bug 也会相对较多。请谨慎使用，暂时不要将其用于关键生产场景。\n\n## Features\n\n- **AI 驱动的应用构建** — 内置 AI 聊天面板，用自然语言描述应用，Agent 自动处理数据库、函数、UI 和部署。\n- **Draft / Stable 双环境** — 每个应用拥有隔离的 Draft 和 Stable 运行时，变更在 Draft 中测试后才能发布。\n- **TypeScript 函数** — 以 TypeScript 编写服务端逻辑，在沙箱运行时中执行。\n- **声明式 UI 页面** — 基于 React 和 Radix UI 的声明式组件模型构建应用界面。\n- **MCP / ACP 协议** — 通过 MCP 协议暴露完整工作流，可接入你自己的编程 Agent（Claude Code、Cursor 等）。\n- **桌面应用** — 基于 Tauri 的原生桌面应用。"
+        }
+      ]
+    },
+    {
+      "path": "english",
+      "title": "English",
+      "body": [
         {
-          "type": "table",
-          "id": "todo-table",
-          "api": {
-            "url": "/fn/_db/tables/todo",
-            "params": {
-              "completed": "${status-tabs.value}",
-              "order": "created_at.desc"
-            }
-          },
-          "columns": [
-            {
-              "name": "title",
-              "label": "Title"
-            },
-            {
-              "name": "completed",
-              "label": "Status",
-              "render": {
-                "type": "tag",
-                "text": "${row.completed === 1 ? 'Completed' : 'Pending'}",
-                "color": "${row.completed === 1 ? 'success' : 'default'}"
-              }
-            },
-            {
-              "name": "created_at",
-              "label": "Created At"
-            }
-          ],
-          "rowActions": [
-            {
-              "label": "Edit",
-              "action": {
-                "type": "dialog",
-                "title": "Edit Todo",
-                "body": {
-                  "type": "form",
-                  "fields": [
-                    {
-                      "name": "title",
-                      "label": "Title",
-                      "type": "input",
-                      "required": true,
-                      "defaultValue": "${row.title}"
-                    }
-                  ],
-                  "api": {
-                    "method": "PATCH",
-                    "url": "/fn/_db/tables/todo/${row.id}"
-                  },
-                  "onSuccess": [
-                    { "type": "reload", "target": "todo-table" },
-                    { "type": "close" }
-                  ]
-                }
-              }
-            },
-            {
-              "label": "${row.completed === 1 ? 'Mark Pending' : 'Mark Completed'}",
-              "action": {
-                "type": "api",
-                "method": "PATCH",
-                "url": "/fn/_db/tables/todo/${row.id}",
-                "body": {
-                  "completed": "${row.completed === 1 ? 0 : 1}"
-                },
-                "onSuccess": [
-                  { "type": "reload", "target": "todo-table" }
-                ]
-              }
-            },
-            {
-              "label": "Delete",
-              "confirm": "Are you sure you want to delete this todo?",
-              "action": {
-                "type": "api",
-                "method": "DELETE",
-                "url": "/fn/_db/tables/todo/${row.id}",
-                "onSuccess": [
-                  { "type": "reload", "target": "todo-table" }
-                ]
-              }
-            }
-          ]
+          "type": "markdown",
+          "id": "markdown-8oLkp",
+          "content": "# Cozybase\n\nCozybase is a local Backend-as-a-Service (BaaS) for AI Agents.\n\nIt gives an AI Agent a complete app-building runtime: database migrations, TypeScript functions, declarative UI pages, and a safe Draft-to-Stable publish flow. Users describe the app in natural language, the AI Agent builds and tests the app through Cozybase, and Cozybase serves the app locally.\n\n> Cozybase is currently in alpha. APIs and data formats may still change, and bugs are expected. Use it carefully and avoid relying on it for critical production workloads yet.\n\n## Features\n\n- **AI-Driven App Building** — Built-in AI chat panel lets you describe apps in natural language; the agent handles schema, functions, UI, and deployment.\n- **Draft / Stable Environments** — Every app has isolated Draft and Stable runtimes. Changes are tested in Draft before publishing.\n- **TypeScript Functions** — Write server-side logic as TypeScript functions, executed in a sandboxed runtime.\n- **Declarative UI Pages** — Build app UIs with a declarative component model powered by React and Radix UI.\n- **MCP / ACP Protocol** — Expose the full workflow over MCP so you can plug in your own coding agent (Claude Code, Cursor, etc.).\n- **Desktop App** — Optional Tauri-based native desktop wrapper."
         }
       ]
     }

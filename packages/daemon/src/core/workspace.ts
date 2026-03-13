@@ -54,6 +54,14 @@ export interface AppDefinition {
 const SUPPORTED_VERSION = 1;
 const TEMPLATES_DIR = resolveAppTemplatesDir();
 
+function humanizeAppSlug(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
 // --- Workspace ---
 
 export class Workspace {
@@ -295,8 +303,9 @@ export class Workspace {
   importAppFromDir(appSlug: string, dir: string): void {
     const repo = this.getPlatformRepo();
 
-    // Parse description from app.yaml if it exists
+    // Parse description and display name from app.yaml if it exists
     let description = '';
+    let displayName = '';
     const appYamlPath = join(dir, 'app.yaml');
     if (existsSync(appYamlPath)) {
       try {
@@ -304,11 +313,14 @@ export class Workspace {
         if (content) {
           const parsed = parseYAML(content);
           description = parsed?.description ?? '';
+          displayName = parsed?.display_name ?? parsed?.displayName ?? parsed?.name ?? '';
         }
       } catch {
         // Ignore parse errors
       }
     }
+
+    displayName = String(displayName || '').trim() || humanizeAppSlug(appSlug);
 
     // Check if app already exists
     if (repo.apps.exists(appSlug)) return;
@@ -317,6 +329,7 @@ export class Workspace {
     repo.transaction(() => {
       repo.apps.create({
         slug: appSlug,
+        displayName,
         description,
         currentVersion: 1,
         publishedVersion: 0,

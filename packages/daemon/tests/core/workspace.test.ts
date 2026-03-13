@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import {
   createTestWorkspace,
@@ -85,6 +85,42 @@ describe('Workspace', () => {
 
       const apps = handle.workspace.scanApps();
       expect(apps).toHaveLength(0);
+    });
+
+    test('imports app display name from app.yaml when present', () => {
+      handle = createTestWorkspace();
+      const appDir = join(handle.root, 'imported-app');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'app.yaml'),
+        'display_name: 订单管理\ndescription: Order management app\n',
+        'utf-8',
+      );
+
+      handle.workspace.importAppFromDir('orders', appDir);
+
+      const apps = handle.workspace.scanApps();
+      expect(apps).toHaveLength(1);
+      expect(apps[0].display_name).toBe('订单管理');
+      expect(apps[0].description).toBe('Order management app');
+    });
+
+    test('falls back to a humanized slug when imported app has no display name', () => {
+      handle = createTestWorkspace();
+      const appDir = join(handle.root, 'todo-import');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'app.yaml'),
+        'description: Todo app\n',
+        'utf-8',
+      );
+
+      handle.workspace.importAppFromDir('todo-app', appDir);
+
+      const apps = handle.workspace.scanApps();
+      expect(apps).toHaveLength(1);
+      expect(apps[0].display_name).toBe('Todo App');
+      expect(apps[0].description).toBe('Todo app');
     });
   });
 

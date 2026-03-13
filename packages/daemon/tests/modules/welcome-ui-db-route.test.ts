@@ -31,21 +31,18 @@ describe('Welcome template routes', () => {
     registry = null;
   });
 
-  test('welcome UI uses /fn/_db routes and they are callable', async () => {
+  test('welcome UI is auto-published and accessible in stable mode', async () => {
     root = mkdtempSync(join(tmpdir(), 'cozybase-welcome-'));
 
-    const { app, registry: runtimeRegistry, startup } = createServer(createTestConfig(root));
+    const { app, registry: runtimeRegistry, startup, workspace } = createServer(createTestConfig(root));
     registry = runtimeRegistry;
     await startup;
+
+    expect(workspace.getAppState('welcome')).toEqual({ stableStatus: 'running', hasDraft: false });
 
     const uiRes = await app.request('http://localhost/stable/apps/welcome/ui');
     expect(uiRes.status).toBe(200);
     const ui = await uiRes.json() as { data: unknown };
-    expect(JSON.stringify(ui.data)).toContain('/fn/_db/tables/todo');
-
-    const listRes = await app.request('http://localhost/stable/apps/welcome/fn/_db/tables/todo');
-    expect(listRes.status).toBe(200);
-    const listBody = await listRes.json() as { data: unknown[] };
-    expect(Array.isArray(listBody.data)).toBe(true);
+    expect(JSON.stringify(ui.data)).toContain('Cozybase');
   });
 });

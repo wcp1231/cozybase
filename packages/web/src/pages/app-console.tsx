@@ -667,11 +667,11 @@ export function AppConsolePage() {
               <div className="grid gap-4 xl:grid-cols-[200px_minmax(0,1fr)]">
                 <aside className="overflow-hidden rounded-[10px] border border-[#E7EBF2] bg-white">
                   <div className="border-b border-[#E7EBF2] px-3 py-3 text-sm font-semibold text-[#0F172A]">数据表</div>
-                  <div className="mt-2 space-y-1">
+                  <div className={clsx("space-y-1", tableNames.length > 0 ? 'mt-2' : '')}>
                     {databaseLoading && tableNames.length === 0 ? (
                       <PanelPlaceholder label="加载表结构中..." compact />
                     ) : tableNames.length === 0 ? (
-                      <PanelPlaceholder label="暂无数据表。" compact />
+                      <PanelPlaceholder label="暂无数据表。" />
                     ) : (
                       tableNames.map((tableName) => (
                         <button

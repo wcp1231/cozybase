@@ -13,7 +13,6 @@ It gives an AI Agent a complete app-building runtime: database migrations, TypeS
 
 - **AI-Driven App Building** — Built-in AI chat panel lets you describe apps in natural language; the agent handles schema, functions, UI, and deployment.
 - **Draft / Stable Environments** — Every app has isolated Draft and Stable runtimes. Changes are tested in Draft before publishing.
-- **Database Migrations** — Schema changes are managed as ordered, immutable migrations in `platform.sqlite`.
 - **TypeScript Functions** — Write server-side logic as TypeScript functions, executed in a sandboxed runtime.
 - **Declarative UI Pages** — Build app UIs with a declarative component model powered by React and Radix UI.
 - **MCP / ACP Protocol** — Expose the full workflow over MCP so you can plug in your own coding agent (Claude Code, Cursor, etc.).

@@ -161,7 +161,7 @@ export function PropertyPanel({
         </p>
       </div>
 
-      <div className="flex max-h-[calc(100vh-10rem)] flex-col gap-5 overflow-auto px-4 py-4">
+      <div className="flex max-h-[calc(100vh-14rem)] flex-col gap-5 overflow-auto px-4 py-4">
         {Array.from(sections.entries()).map(([group, items]) => (
           <section key={group} className="space-y-3">
             <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]">{group}</h4>
@@ -196,7 +196,7 @@ function ColumnPropertyPanel({
   onChange: (tableId: string, colIndex: number, key: string, value: unknown) => void;
 }) {
   return (
-    <div className="flex max-h-[calc(100vh-10rem)] flex-col gap-5 overflow-auto px-4 py-4">
+    <div className="flex max-h-[calc(100vh-14rem)] flex-col gap-5 overflow-auto px-4 py-4">
       <section className="space-y-3">
         <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]">列属性</h4>
         <div className="space-y-3">
@@ -259,7 +259,7 @@ function FieldPropertyPanel({
   onChange: (formId: string, fieldIndex: number, key: string, value: unknown) => void;
 }) {
   return (
-    <div className="flex max-h-[calc(100vh-10rem)] flex-col gap-5 overflow-auto px-4 py-4">
+    <div className="flex max-h-[calc(100vh-14rem)] flex-col gap-5 overflow-auto px-4 py-4">
       <section className="space-y-3">
         <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]">字段属性</h4>
         <div className="space-y-3">
@@ -405,6 +405,20 @@ function PropertyField({
             event.target.value === '' ? undefined : Number(event.target.value),
           )}
           className="h-9 rounded-lg border border-[#CBD5E1] px-3 text-sm text-[#0F172A]"
+        />
+      </label>
+    );
+  }
+
+  if (descriptor.editor === 'textarea') {
+    return (
+      <label className="flex flex-col gap-1.5 text-sm text-[#334155]">
+        <span>{descriptor.label}</span>
+        <textarea
+          value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
+          onChange={(event) => onChange(descriptor.key, event.target.value === '' ? undefined : event.target.value)}
+          rows={8}
+          className="min-h-32 rounded-lg border border-[#CBD5E1] px-3 py-2 text-sm text-[#0F172A]"
         />
       </label>
     );

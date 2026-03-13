@@ -95,7 +95,7 @@ export function CreateAppDialog({
               value={idea}
               onChange={(event) => setIdea(event.target.value)}
               rows={5}
-              placeholder="例如：我想创建一个健身追踪应用，可以记录每日运动数据和饮食摄入，生成周报分析，支持多种运动类型..."
+              placeholder="例如：我想创建一个待办事项应用，用户可以添加、编辑和删除任务，还能设置截止日期和优先级。"
               className="min-h-[148px] w-full resize-none rounded-[10px] border border-[#E2E8F0] bg-white px-[14px] py-3 text-sm leading-[1.6] text-[#0F172A] outline-none transition-colors placeholder:text-[#A1A1AA] focus:border-[#CBD5E1]"
             />
           </label>

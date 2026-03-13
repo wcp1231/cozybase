@@ -13,6 +13,7 @@ const samplePages: PagesJson = {
       title: 'Home',
       body: [
         { type: 'text', id: 'hero-title', text: 'Hello' },
+        { type: 'markdown', id: 'hero-markdown', content: '## Intro\n\nLong-form content' },
         {
           type: 'form',
           id: 'profile-form',
@@ -103,6 +104,27 @@ describe('Editor chrome rendering', () => {
     expect(html).toContain('当前字段:');
     expect(html).toContain('Email');
     expect(html).toContain('字段属性');
+  });
+
+  test('property panel renders markdown content as textarea', () => {
+    const html = renderToStaticMarkup(
+      <PropertyPanel
+        draftJson={samplePages}
+        currentPagePath="home"
+        selectedNodeId="hero-markdown"
+        selectedColumnKey={null}
+        selectedFieldKey={null}
+        onChange={() => {}}
+        onColumnChange={() => {}}
+        onFieldChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain('当前节点:');
+    expect(html).toContain('markdown');
+    expect(html).toContain('<textarea');
+    expect(html).toContain('## Intro');
+    expect(html).toContain('Long-form content');
   });
 
   test('app section header renders title addon beside the app title', () => {

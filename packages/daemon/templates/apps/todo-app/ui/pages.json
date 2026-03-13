@@ -1,0 +1,539 @@
+{
+  "pages": [
+    {
+      "path": "home",
+      "title": "首页",
+      "body": [
+        {
+          "type": "list",
+          "id": "list-XuiYD",
+          "api": {
+            "url": "/fn/task-summary"
+          },
+          "itemRender": {
+            "type": "row",
+            "id": "row-CaA_S",
+            "children": [
+              {
+                "type": "stat",
+                "id": "stat-ZxvEl",
+                "label": "Total Tasks",
+                "value": "${row.total_count}"
+              },
+              {
+                "type": "stat",
+                "id": "stat-fX1wF",
+                "label": "In Progress",
+                "value": "${row.pending_count}"
+              },
+              {
+                "type": "stat",
+                "id": "stat-opA12",
+                "label": "Completed",
+                "value": "${row.completed_count}"
+              },
+              {
+                "type": "stat",
+                "id": "stat-lcpEO",
+                "label": "Overdue",
+                "value": "${row.overdue_count}"
+              }
+            ],
+            "justify": "start",
+            "align": "stretch",
+            "gap": 16,
+            "wrap": true
+          }
+        },
+        {
+          "type": "divider",
+          "id": "divider-Xr0zC",
+          "label": "Tasks"
+        },
+        {
+          "type": "row",
+          "id": "row-R0Z0y",
+          "children": [
+            {
+              "type": "tabs",
+              "id": "tabs-ZsCtr",
+              "items": [
+                {
+                  "label": "All Tasks",
+                  "value": "all"
+                },
+                {
+                  "label": "In Progress",
+                  "value": "in_progress"
+                },
+                {
+                  "label": "Completed",
+                  "value": "completed"
+                }
+              ],
+              "defaultValue": "all"
+            },
+            {
+              "type": "button",
+              "id": "button--RsAm",
+              "label": "New Task",
+              "action": {
+                "type": "dialog",
+                "title": "New Task",
+                "body": {
+                  "type": "form",
+                  "id": "form-JrTx9",
+                  "fields": [
+                    {
+                      "name": "title",
+                      "label": "Task Name",
+                      "type": "input",
+                      "required": true,
+                      "placeholder": "Enter task name"
+                    },
+                    {
+                      "name": "due_date",
+                      "label": "Due Date",
+                      "type": "date-picker"
+                    },
+                    {
+                      "name": "priority",
+                      "label": "Priority",
+                      "type": "select",
+                      "options": [
+                        {
+                          "label": "High",
+                          "value": "3"
+                        },
+                        {
+                          "label": "Medium",
+                          "value": "2"
+                        },
+                        {
+                          "label": "Low",
+                          "value": "1"
+                        }
+                      ],
+                      "defaultValue": "2"
+                    },
+                    {
+                      "name": "description",
+                      "label": "Description",
+                      "type": "textarea",
+                      "placeholder": "Add task description"
+                    }
+                  ],
+                  "api": {
+                    "method": "POST",
+                    "url": "/fn/_db/tables/tasks"
+                  },
+                  "onSuccess": [
+                    {
+                      "type": "reload",
+                      "target": "table-hel_H"
+                    },
+                    {
+                      "type": "reload",
+                      "target": "list-XuiYD"
+                    },
+                    {
+                      "type": "close"
+                    }
+                  ]
+                }
+              },
+              "variant": "primary"
+            }
+          ],
+          "justify": "space-between",
+          "align": "center",
+          "gap": 12,
+          "wrap": true
+        },
+        {
+          "type": "table",
+          "id": "table-hel_H",
+          "api": {
+            "url": "/fn/task-list",
+            "params": {
+              "status": "${tabs-ZsCtr.value}"
+            }
+          },
+          "columns": [
+            {
+              "name": "title",
+              "label": "Task Name",
+              "render": {
+                "type": "link",
+                "id": "link-_bTOy",
+                "text": "${row.title}",
+                "action": {
+                  "type": "link",
+                  "url": "/home/tasks/${row.id}"
+                }
+              }
+            },
+            {
+              "name": "priority",
+              "label": "Priority",
+              "render": {
+                "type": "tag",
+                "id": "tag-p8xFG",
+                "text": "${row.priority === 3 ? 'High' : row.priority === 2 ? 'Medium' : 'Low'}",
+                "color": "${row.priority === 3 ? 'error' : row.priority === 2 ? 'warning' : 'success'}"
+              }
+            },
+            {
+              "name": "completed",
+              "label": "Status",
+              "render": {
+                "type": "tag",
+                "id": "tag-yJabm",
+                "text": "${row.completed === 1 ? 'Completed' : 'Pending'}",
+                "color": "${row.completed === 1 ? 'success' : 'default'}"
+              }
+            },
+            {
+              "name": "due_date",
+              "label": "Due Date",
+              "render": {
+                "type": "text",
+                "id": "text-BfazR",
+                "text": "${row.due_date === null ? 'Not set' : row.due_date}"
+              }
+            },
+            {
+              "name": "completed_at",
+              "label": "Completed Date",
+              "render": {
+                "type": "text",
+                "id": "text-Eaqja",
+                "text": "${row.completed_at === null ? 'Not completed' : row.completed_at}"
+              }
+            }
+          ],
+          "rowActions": [
+            {
+              "label": "Edit",
+              "action": {
+                "type": "dialog",
+                "title": "Edit Task",
+                "body": {
+                  "type": "form",
+                  "id": "form-pJbRo",
+                  "fields": [
+                    {
+                      "name": "title",
+                      "label": "Task Name",
+                      "type": "input",
+                      "required": true,
+                      "defaultValue": "${row.title}"
+                    },
+                    {
+                      "name": "due_date",
+                      "label": "Due Date",
+                      "type": "date-picker",
+                      "defaultValue": "${row.due_date}"
+                    },
+                    {
+                      "name": "priority",
+                      "label": "Priority",
+                      "type": "select",
+                      "options": [
+                        {
+                          "label": "High",
+                          "value": "3"
+                        },
+                        {
+                          "label": "Medium",
+                          "value": "2"
+                        },
+                        {
+                          "label": "Low",
+                          "value": "1"
+                        }
+                      ],
+                      "defaultValue": "${row.priority === 3 ? '3' : row.priority === 2 ? '2' : '1'}"
+                    },
+                    {
+                      "name": "description",
+                      "label": "Task Description",
+                      "type": "textarea",
+                      "defaultValue": "${row.description}"
+                    }
+                  ],
+                  "api": {
+                    "method": "PATCH",
+                    "url": "/fn/_db/tables/tasks/${row.id}"
+                  },
+                  "onSuccess": [
+                    {
+                      "type": "reload",
+                      "target": "table-hel_H"
+                    },
+                    {
+                      "type": "reload",
+                      "target": "list-XuiYD"
+                    },
+                    {
+                      "type": "close"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "label": "${row.completed === 1 ? 'Mark Pending' : 'Mark Complete'}",
+              "action": {
+                "type": "api",
+                "method": "PATCH",
+                "url": "/fn/toggle-task-status",
+                "body": {
+                  "id": "${row.id}",
+                  "completed": "${row.completed === 1 ? 0 : 1}"
+                },
+                "onSuccess": [
+                  {
+                    "type": "reload",
+                    "target": "table-hel_H"
+                  },
+                  {
+                    "type": "reload",
+                    "target": "list-XuiYD"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "Delete",
+              "action": {
+                "type": "api",
+                "method": "DELETE",
+                "url": "/fn/_db/tables/tasks/${row.id}",
+                "onSuccess": [
+                  {
+                    "type": "reload",
+                    "target": "table-hel_H"
+                  },
+                  {
+                    "type": "reload",
+                    "target": "list-XuiYD"
+                  }
+                ]
+              },
+              "confirm": "Delete this task?"
+            }
+          ],
+          "pagination": true,
+          "pageSize": 12
+        }
+      ]
+    },
+    {
+      "path": "home/tasks/:taskId",
+      "title": "任务详情",
+      "body": [
+        {
+          "type": "list",
+          "id": "list-mDT-7",
+          "api": {
+            "url": "/fn/_db/tables/tasks",
+            "params": {
+              "where": "id.eq.${params.taskId}"
+            }
+          },
+          "itemRender": {
+            "type": "card",
+            "id": "card-jIZ4j",
+            "title": "${row.title}",
+            "children": [
+              {
+                "type": "row",
+                "id": "row-FUZFZ",
+                "children": [
+                  {
+                    "type": "tag",
+                    "id": "tag-pfrju",
+                    "text": "${row.completed === 1 ? 'Completed' : 'Pending'}",
+                    "color": "${row.completed === 1 ? 'success' : 'default'}"
+                  },
+                  {
+                    "type": "tag",
+                    "id": "tag-b7xsD",
+                    "text": "${row.priority === 3 ? 'High' : row.priority === 2 ? 'Medium' : 'Low'}",
+                    "color": "${row.priority === 3 ? 'error' : row.priority === 2 ? 'warning' : 'success'}"
+                  }
+                ],
+                "gap": 12,
+                "wrap": true
+              },
+              {
+                "type": "text",
+                "id": "text-Ci7R9",
+                "text": "Due Date：${row.due_date === null ? 'Not Set' : row.due_date}"
+              },
+              {
+                "type": "text",
+                "id": "text-x1dQG",
+                "text": "Created Date：${row.created_at}"
+              },
+              {
+                "type": "divider",
+                "id": "divider-SHklo",
+                "label": "Description"
+              },
+              {
+                "type": "markdown",
+                "id": "markdown-pyGnq",
+                "content": "${row.description === '' ? 'No Task Description' : row.description}"
+              },
+              {
+                "type": "divider",
+                "id": "divider-S2W1x",
+                "label": "Actions"
+              },
+              {
+                "type": "row",
+                "id": "row-JdW0o",
+                "children": [
+                  {
+                    "type": "button",
+                    "id": "button-KYaI4",
+                    "label": "Edit Task",
+                    "action": {
+                      "type": "dialog",
+                      "title": "Edit Task",
+                      "body": {
+                        "type": "form",
+                        "id": "form-lWpBC",
+                        "fields": [
+                          {
+                            "name": "title",
+                            "label": "Task Name",
+                            "type": "input",
+                            "required": true,
+                            "defaultValue": "${row.title}"
+                          },
+                          {
+                            "name": "due_date",
+                            "label": "Due Date",
+                            "type": "date-picker",
+                            "defaultValue": "${row.due_date}"
+                          },
+                          {
+                            "name": "priority",
+                            "label": "Priority",
+                            "type": "select",
+                            "options": [
+                              {
+                                "label": "High",
+                                "value": "3"
+                              },
+                              {
+                                "label": "Medium",
+                                "value": "2"
+                              },
+                              {
+                                "label": "Low",
+                                "value": "1"
+                              }
+                            ],
+                            "defaultValue": "${row.priority === 3 ? '3' : row.priority === 2 ? '2' : '1'}"
+                          },
+                          {
+                            "name": "description",
+                            "label": "Task Description",
+                            "type": "textarea",
+                            "defaultValue": "${row.description}"
+                          }
+                        ],
+                        "api": {
+                          "method": "PATCH",
+                          "url": "/fn/_db/tables/tasks/${row.id}"
+                        },
+                        "onSuccess": [
+                          {
+                            "type": "reload",
+                            "target": "list-mDT-7"
+                          },
+                          {
+                            "type": "close"
+                          }
+                        ]
+                      }
+                    },
+                    "variant": "secondary"
+                  },
+                  {
+                    "type": "button",
+                    "id": "button-RXgjp",
+                    "visible": "${row.completed !== 1}",
+                    "label": "Mark Complete",
+                    "action": {
+                      "type": "api",
+                      "method": "PATCH",
+                      "url": "/fn/toggle-task-status",
+                      "body": {
+                        "id": "${row.id}",
+                        "completed": 1
+                      },
+                      "onSuccess": [
+                        {
+                          "type": "reload",
+                          "target": "list-mDT-7"
+                        }
+                      ]
+                    },
+                    "variant": "primary"
+                  },
+                  {
+                    "type": "button",
+                    "id": "button-XyYpv",
+                    "visible": "${row.completed === 1}",
+                    "label": "Mark Pending",
+                    "action": {
+                      "type": "api",
+                      "method": "PATCH",
+                      "url": "/fn/toggle-task-status",
+                      "body": {
+                        "id": "${row.id}",
+                        "completed": 0
+                      },
+                      "onSuccess": [
+                        {
+                          "type": "reload",
+                          "target": "list-mDT-7"
+                        }
+                      ]
+                    },
+                    "variant": "secondary"
+                  },
+                  {
+                    "type": "button",
+                    "id": "button-hVT_0",
+                    "label": "Delete Task",
+                    "action": {
+                      "type": "api",
+                      "method": "DELETE",
+                      "url": "/fn/_db/tables/tasks/${row.id}",
+                      "onSuccess": [
+                        {
+                          "type": "link",
+                          "url": "/home"
+                        }
+                      ]
+                    },
+                    "variant": "danger"
+                  }
+                ],
+                "gap": 12,
+                "wrap": true
+              }
+            ],
+            "padding": 20
+          }
+        }
+      ]
+    }
+  ]
+}

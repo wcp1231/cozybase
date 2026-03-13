@@ -628,8 +628,22 @@ export function SettingsPage() {
               ) : builderConfig && builderMeta && operatorConfig && operatorMeta && cozybaseConfig && cozybaseMeta ? (
                 <div className="space-y-6">
                   <AgentSettingsCard
+                    title="CozyBase Agent 配置"
+                    description="选择平台级 CozyBase Agent 使用的引擎和模型"
+                    providerDescription="选择平台统一入口 CozyBase Agent 的执行引擎"
+                    modelDescription={`选择 ${PROVIDER_LABELS[cozybaseConfig.provider] ?? cozybaseConfig.provider} 使用的具体模型`}
+                    config={cozybaseConfig}
+                    meta={cozybaseMeta}
+                    saving={savingCozybase}
+                    saveSuccess={cozybaseSaveSuccess}
+                    error={agentError}
+                    onProviderChange={handleCozybaseProviderChange}
+                    onModelChange={handleCozybaseModelChange}
+                  />
+
+                  <AgentSettingsCard
                     title="Builder Agent 配置"
-                    description="选择 AI Agent 引擎和模型"
+                    description="选择 APP 构建页聊天使用的 Agent 引擎和模型"
                     providerDescription="选择使用哪种 AI Agent 来驱动代码生成"
                     modelDescription={`选择 ${PROVIDER_LABELS[builderConfig.provider] ?? builderConfig.provider} 使用的具体模型`}
                     config={builderConfig}
@@ -655,20 +669,6 @@ export function SettingsPage() {
                     onModelChange={handleOperatorModelChange}
                     onModelProviderChange={handleOperatorModelProviderChange}
                     onModelInputChange={(value) => setOperatorConfig((prev) => (prev ? { ...prev, model: value } : prev))}
-                  />
-
-                  <AgentSettingsCard
-                    title="CozyBase Agent 配置"
-                    description="选择平台级 CozyBase Agent 使用的引擎和模型"
-                    providerDescription="选择平台统一入口 CozyBase Agent 的执行引擎"
-                    modelDescription={`选择 ${PROVIDER_LABELS[cozybaseConfig.provider] ?? cozybaseConfig.provider} 使用的具体模型`}
-                    config={cozybaseConfig}
-                    meta={cozybaseMeta}
-                    saving={savingCozybase}
-                    saveSuccess={cozybaseSaveSuccess}
-                    error={agentError}
-                    onProviderChange={handleCozybaseProviderChange}
-                    onModelChange={handleCozybaseModelChange}
                   />
                 </div>
               ) : null

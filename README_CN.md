@@ -13,7 +13,6 @@ Cozybase 是一个面向 AI Agent 的本地 BaaS（Backend-as-a-Service）平台
 
 - **AI 驱动的应用构建** — 内置 AI 聊天面板，用自然语言描述应用，Agent 自动处理数据库、函数、UI 和部署。
 - **Draft / Stable 双环境** — 每个应用拥有隔离的 Draft 和 Stable 运行时，变更在 Draft 中测试后才能发布。
-- **数据库迁移** — Schema 变更以有序、不可变的迁移文件管理，存储在 `platform.sqlite` 中。
 - **TypeScript 函数** — 以 TypeScript 编写服务端逻辑，在沙箱运行时中执行。
 - **声明式 UI 页面** — 基于 React 和 Radix UI 的声明式组件模型构建应用界面。
 - **MCP / ACP 协议** — 通过 MCP 协议暴露完整工作流，可接入你自己的编程 Agent（Claude Code、Cursor 等）。

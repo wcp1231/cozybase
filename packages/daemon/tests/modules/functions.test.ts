@@ -544,8 +544,8 @@ describe('createServer() first-init auto-publish', () => {
     const stableDbPath = join(tmpRoot, 'stable', 'welcome', 'db.sqlite');
     expect(existsSync(stableDbPath)).toBe(true);
 
-    // Stable function route should work
-    const res = await app.request('/stable/apps/welcome/fn/todos');
+    // Stable UI route should work
+    const res = await app.request('/stable/apps/welcome/ui');
     expect(res.status).toBe(200);
 
     registry.shutdownAll();
